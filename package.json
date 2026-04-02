@@ -1,7 +1,7 @@
 {
   "name": "village-ai-coach",
   "version": "2.1.0",
-  "description": "村官 AI 伙伴 - 智能问答助手（增强版）",
+  "description": "村官 AI 伙伴 - 智能问答助手",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -11,20 +11,20 @@ function getUserSessions(userId) {
   return stmt.all(userId);
 }
 
-function createSession(userId, { title = '新会话', type = 'chat' }) {
+function createSession(userId, { title = '新会话', type = 'chat', scenarioId = null }) {
   const sessionId = uuidv4();
   const now = new Date().toISOString();
   const stmt = db.prepare(`
-    INSERT INTO sessions (id, user_id, title, type, favorite, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, user_id, title, type, favorite, scenario_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(sessionId, userId, title, type, 0, now, now);
+  stmt.run(sessionId, userId, title, type, 0, scenarioId, now, now);
   return { id: sessionId, title, type, favorite: 0, createdAt: now, updatedAt: now, messages: [] };
 }
 
 function getSession(userId, sessionId) {
   const session = db.prepare(`
-    SELECT id, title, type, favorite, created_at as createdAt, updated_at as updatedAt
+    SELECT id, title, type, favorite, scenario_id as scenarioId, created_at as createdAt, updated_at as updatedAt
     FROM sessions
     WHERE id = ? AND user_id = ?
   `).get(sessionId, userId);

@@ -1,6 +1,7 @@
+// scripts/importKnowledge.js
 const Database = require('better-sqlite3');
 const path = require('path');
-const knowledgeData = require('../knowledge.json'); // 根据实际路径调整
+const knowledgeData = require('../knowledge.json');
 
 const dbPath = path.join(__dirname, '../data/village.db');
 const db = new Database(dbPath);
@@ -12,7 +13,6 @@ const insertStmt = db.prepare(`
 
 let count = 0;
 knowledgeData.forEach(k => {
-  // 将 tags 数组转为逗号分隔的字符串
   const tagsStr = Array.isArray(k.tags) ? k.tags.join(',') : k.tags;
   try {
     insertStmt.run(

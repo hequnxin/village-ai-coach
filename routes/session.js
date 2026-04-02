@@ -22,6 +22,10 @@ router.post('/session', (req, res) => {
     res.json({ session, sessionId: session.id });
   } catch (err) {
     console.error('创建会话失败:', err);
+    // 针对外键约束给出明确提示
+    if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+      return res.status(400).json({ error: '用户不存在，请重新登录' });
+    }
     res.status(500).json({ error: '创建会话失败', details: err.message });
   }
 });

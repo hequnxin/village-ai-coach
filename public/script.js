@@ -12,18 +12,11 @@ let currentFilter = 'all';
 let currentCategoryFilter = 'all';
 let messageFavorites = [];
 let currentView = 'chat';
+let voiceBtn;
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>]/g, function(m) {
-    if (m === '&') return '&amp;';
-    if (m === '<') return '&lt;';
-    if (m === '>') return '&gt;';
-    return m;
-  }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-    return c;
-  });
-}
+// 语音识别相关
+let recognition = null;
+let isRecording = false;
 
 // DOM 元素
 const authContainer = document.getElementById('authContainer');
@@ -48,45 +41,45 @@ const navSimulate = document.getElementById('navSimulate');
 const navKnowledge = document.getElementById('navKnowledge');
 const navProfile = document.getElementById('navProfile');
 
-// 问答视图内的元素（动态创建）
-let messagesDiv, userInput, sendBtn, voiceBtn, chatContainer, typingIndicator, infoContent, currentSessionTitle;
-
-// 对练视图内的元素
-let simulateMessagesDiv, simulateInput, simulateSendBtn, finishBtn;
-
-// 语音识别对象
-let recognition = null;
-let isRecording = false;
-
-// ==================== 全局错误捕获 ====================
-window.addEventListener('error', (event) => {
-  console.error('全局错误:', event.error);
-  alert('系统出现错误，请刷新页面重试。');
-});
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('未处理的Promise拒绝:', event.reason);
-  alert('系统出现错误，请刷新页面重试。');
-});
+// 辅助函数
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+    return c;
+  });
+}
 
 // ==================== token 刷新与统一请求 ====================
+let refreshPromise = null;
 async function refreshToken() {
-  const oldToken = localStorage.getItem('token');
-  if (!oldToken) return false;
-  try {
-    const res = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${oldToken}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      localStorage.setItem('token', data.token);
-      token = data.token;
-      return true;
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const oldToken = localStorage.getItem('token');
+    if (!oldToken) return false;
+    try {
+      const res = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${oldToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('token', data.token);
+        token = data.token;
+        return true;
+      }
+    } catch (e) {
+      console.error('刷新token失败', e);
     }
-  } catch (e) {
-    console.error('刷新token失败', e);
-  }
-  return false;
+    return false;
+  })();
+  const result = await refreshPromise;
+  refreshPromise = null;
+  return result;
 }
 
 async function fetchWithAuth(url, options = {}) {
@@ -95,7 +88,6 @@ async function fetchWithAuth(url, options = {}) {
     showAuth();
     throw new Error('未登录');
   }
-  
   let res = await fetch(url, {
     ...options,
     headers: {
@@ -103,7 +95,6 @@ async function fetchWithAuth(url, options = {}) {
       'Authorization': `Bearer ${currentToken}`
     }
   });
-  
   if (res.status === 401) {
     const refreshed = await refreshToken();
     if (refreshed) {
@@ -212,27 +203,18 @@ logoutBtn.addEventListener('click', () => {
 // ==================== 应用核心功能 ====================
 async function initApp() {
   token = localStorage.getItem('token');
-
-  // 加载会话列表，必须等待完成
   await loadSessions();
   await loadMessageFavorites();
-
-  // 根据会话列表决定显示哪个会话
   if (sessions.length > 0) {
-    // 有会话，切换到第一个
     await switchSession(sessions[0].id);
   } else {
-    // 没有会话，创建新会话（这会自动渲染聊天视图）
     await createSession();
   }
-
-  setInputEnabled(true);
   await loadKnowledge('all', 'all');
-  setupVoiceRecognition();
   setupSessionTabs();
   setupNavigation();
 
-  // 全局事件委托...
+  // 全局事件委托（保留原有）
   dynamicContent.addEventListener('click', (e) => {
     const target = e.target;
     if (target.classList.contains('start-simulate')) {
@@ -241,15 +223,27 @@ async function initApp() {
         const scenarioId = card.dataset.id;
         startSimulate(scenarioId);
       }
-    } else if (target.id === 'backToScenarios' || target.id === 'backToScenariosFromReport') {
-      renderSimulateView();
+    } else if (target.id === 'policyQuickSearch' || target.id === 'policyQuickSearchBtn') {
+      showPolicyQuickSearch();
     }
   });
 
   newSessionBtn.onclick = () => createSession();
 
+  window.addEventListener('beforeunload', () => {
+    if (recognition) {
+      try { recognition.abort(); } catch (e) {}
+    }
+  });
 }
+
 function setInputEnabled(enabled) {
+  const userInput = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const voiceBtn = document.getElementById('voiceBtn');
+  const simulateInput = document.getElementById('simulateInput');
+  const simulateSendBtn = document.getElementById('simulateSendBtn');
+  const finishBtn = document.getElementById('finishSimulateBtn');
   if (userInput) userInput.disabled = !enabled;
   if (sendBtn) sendBtn.disabled = !enabled;
   if (voiceBtn) voiceBtn.disabled = !enabled;
@@ -266,6 +260,7 @@ async function loadSessions() {
   const res = await fetchWithAuth('/api/sessions');
   if (!res.ok) throw new Error('加载会话失败');
   let sessionsData = await res.json();
+  if (!Array.isArray(sessionsData)) sessionsData = [];
   sessionsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   sessions = sessionsData;
   renderSessionList();
@@ -280,18 +275,21 @@ async function loadMessageFavorites() {
 }
 
 function renderSessionList() {
+  if (!sessions || !Array.isArray(sessions)) {
+    sessionListDiv.innerHTML = '<div class="empty">暂无会话</div>';
+    return;
+  }
   sessionListDiv.innerHTML = '';
   const filteredSessions = currentFilter === 'all' ? sessions : sessions.filter(s => s.favorite);
   filteredSessions.forEach(session => {
+    if (!session) return;
     const item = document.createElement('div');
     item.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
     item.dataset.id = session.id;
-
     const titleSpan = document.createElement('span');
     titleSpan.className = 'session-title';
     titleSpan.textContent = session.title || '新会话';
     item.appendChild(titleSpan);
-
     const favoriteBtn = document.createElement('button');
     favoriteBtn.className = `favorite-btn ${session.favorite ? 'favorited' : ''}`;
     favoriteBtn.innerHTML = session.favorite ? '★' : '☆';
@@ -301,7 +299,6 @@ function renderSessionList() {
       toggleSessionFavorite(session.id, !session.favorite);
     };
     item.appendChild(favoriteBtn);
-
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-session';
     deleteBtn.innerHTML = '✕';
@@ -310,7 +307,6 @@ function renderSessionList() {
       deleteSession(session.id);
     };
     item.appendChild(deleteBtn);
-
     item.addEventListener('click', () => switchSession(session.id));
     sessionListDiv.appendChild(item);
   });
@@ -328,8 +324,8 @@ function renderMessageFavoriteList() {
     item.dataset.sessionId = fav.sessionId;
     item.dataset.messageId = fav.messageId;
     item.innerHTML = `
-      <div class="session-title">📁 ${fav.sessionTitle || '未命名会话'}</div>
-      <div class="message-preview">${fav.content.substring(0, 50)}${fav.content.length > 50 ? '...' : ''}</div>
+      <div class="session-title">📁 ${escapeHtml(fav.sessionTitle || '未命名会话')}</div>
+      <div class="message-preview">${escapeHtml(fav.content.substring(0, 50))}${fav.content.length > 50 ? '...' : ''}</div>
       <div class="meta">
         <span>${fav.role === 'user' ? '👤' : '🤖'}</span>
         <span>${new Date(fav.favoritedAt).toLocaleString()}</span>
@@ -394,6 +390,13 @@ async function switchSession(sessionId) {
   currentSessionId = sessionId;
   const res = await fetchWithAuth(`/api/session/${sessionId}`);
   const session = await res.json();
+  if (!session.messages) session.messages = [];
+
+  if (currentView === 'chat') {
+    const titleElem = document.getElementById('currentSessionTitle');
+    if (titleElem) titleElem.textContent = session.title || '村官AI伙伴';
+  }
+
   if (session.type === 'simulate') {
     currentView = 'simulate';
     [navChat, navSimulate, navKnowledge, navProfile].forEach(btn => btn.classList.remove('active'));
@@ -406,16 +409,20 @@ async function switchSession(sessionId) {
       navChat.classList.add('active');
       renderChatView(session);
     } else {
-      if (currentSessionTitle) currentSessionTitle.textContent = session.title || '村官AI伙伴';
       renderSessionList();
       displayMessages(session.messages);
-      loadExtractedInfo(sessionId);
+      updateInfoPanelFromMessages(session.messages); // 异步，不等待
     }
   }
 }
 
 function displayMessages(messages) {
+  const messagesDiv = document.getElementById('messages');
   if (!messagesDiv) return;
+  if (!messages || !Array.isArray(messages)) {
+    messagesDiv.innerHTML = '';
+    return;
+  }
   messagesDiv.innerHTML = '';
   messages.forEach(msg => {
     const msgDiv = createMessageElement(msg.role, msg.content, msg.messageId);
@@ -436,9 +443,74 @@ function createMessageElement(role, content, messageId) {
   return msgDiv;
 }
 
-async function loadExtractedInfo(sessionId) {
-  // 可选：如果后端提供信息提取，可调用接口。这里留空或简化
-  if (infoContent) infoContent.textContent = '暂无提取信息';
+// ==================== 右侧信息提取面板（智能摘要） ====================
+async function updateInfoPanelFromMessages(messages) {
+  const infoContent = document.getElementById('infoContent');
+  if (!infoContent) return;
+
+  if (!messages || messages.length === 0) {
+    infoContent.innerHTML = '<div style="color:#888;">📭 暂无对话记录，提问后会自动提取要点。</div>';
+    return;
+  }
+
+  // 显示加载状态
+  infoContent.innerHTML = '<div style="color:#888;">🤖 正在分析对话要点...</div>';
+
+  // 重试机制
+  let retries = 2;
+  let success = false;
+
+  while (retries >= 0 && !success) {
+    try {
+      const res = await fetchWithAuth('/api/chat/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: messages.slice(-20) })
+      });
+      const data = await res.json();
+      const summary = data.summary || { points: [], status: '', reasons: [], suggestions: [], references: [] };
+
+      // 构建 HTML
+      let html = '<div style="font-size:0.9rem;">';
+
+      if (summary.points && summary.points.length) {
+        html += '<div style="margin-bottom:12px;"><strong>📌 问题要点</strong><ul style="margin:5px 0 0 20px;">';
+        summary.points.forEach(p => { html += `<li>${escapeHtml(p)}</li>`; });
+        html += '</ul></div>';
+      }
+      if (summary.status) {
+        html += `<div style="margin-bottom:12px;"><strong>📋 现状</strong><div style="margin-top:4px;">${escapeHtml(summary.status)}</div></div>`;
+      }
+      if (summary.reasons && summary.reasons.length) {
+        html += '<div style="margin-bottom:12px;"><strong>🔍 原因分析</strong><ul style="margin:5px 0 0 20px;">';
+        summary.reasons.forEach(r => { html += `<li>${escapeHtml(r)}</li>`; });
+        html += '</ul></div>';
+      }
+      if (summary.suggestions && summary.suggestions.length) {
+        html += '<div style="margin-bottom:12px;"><strong>💡 建议</strong><ul style="margin:5px 0 0 20px;">';
+        summary.suggestions.forEach(s => { html += `<li>${escapeHtml(s)}</li>`; });
+        html += '</ul></div>';
+      }
+      if (summary.references && summary.references.length) {
+        html += '<div style="margin-bottom:12px;"><strong>📚 参考案例/政策</strong><ul style="margin:5px 0 0 20px;">';
+        summary.references.forEach(ref => { html += `<li>${escapeHtml(ref)}</li>`; });
+        html += '</ul></div>';
+      }
+
+      html += '</div>';
+      infoContent.innerHTML = html;
+      success = true;
+    } catch (err) {
+      console.error('获取摘要失败，剩余重试次数:', retries, err);
+      retries--;
+      if (retries < 0) {
+        infoContent.innerHTML = '<div style="color:#888;">⚠️ 摘要生成失败，请稍后重试。</div>';
+      } else {
+        // 等待 1 秒后重试
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
 }
 
 // ==================== 知识库功能 ====================
@@ -466,14 +538,10 @@ function renderKnowledgeList(data) {
     return;
   }
   data.forEach(item => {
-    // 确保 tags 是数组
     let tagsArray = [];
     if (item.tags) {
-      if (Array.isArray(item.tags)) {
-        tagsArray = item.tags;
-      } else if (typeof item.tags === 'string') {
-        tagsArray = item.tags.split(',').map(t => t.trim());
-      }
+      if (Array.isArray(item.tags)) tagsArray = item.tags;
+      else if (typeof item.tags === 'string') tagsArray = item.tags.split(',').map(t => t.trim());
     }
     const div = document.createElement('div');
     div.className = 'knowledge-item';
@@ -493,14 +561,10 @@ function renderKnowledgeList(data) {
 }
 
 function showKnowledgeDetail(item) {
-  // 确保 tags 是数组
   let tagsArray = [];
   if (item.tags) {
-    if (Array.isArray(item.tags)) {
-      tagsArray = item.tags;
-    } else if (typeof item.tags === 'string') {
-      tagsArray = item.tags.split(',').map(t => t.trim());
-    }
+    if (Array.isArray(item.tags)) tagsArray = item.tags;
+    else if (typeof item.tags === 'string') tagsArray = item.tags.split(',').map(t => t.trim());
   }
   const modal = document.createElement('div');
   modal.className = 'modal';
@@ -578,14 +642,12 @@ function showUploadModal() {
     </div>
   `;
   document.body.appendChild(modal);
-
   modal.querySelector('.modal-close').addEventListener('click', () => {
     document.body.removeChild(modal);
   });
   modal.addEventListener('click', (e) => {
     if (e.target === modal) document.body.removeChild(modal);
   });
-
   const form = modal.querySelector('#uploadForm');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -644,12 +706,15 @@ function setupSessionTabs() {
 
 // ==================== 语音识别 ====================
 function setupVoiceRecognition() {
+  const voiceBtnElement = document.getElementById('voiceBtn');
+  if (!voiceBtnElement) {
+    console.warn('语音按钮未找到，跳过初始化');
+    return;
+  }
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
     console.warn('当前浏览器不支持语音识别');
-    if (voiceBtn) {
-      voiceBtn.disabled = true;
-      voiceBtn.title = '浏览器不支持语音识别';
-    }
+    voiceBtnElement.disabled = true;
+    voiceBtnElement.title = '浏览器不支持语音识别';
     return;
   }
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -657,57 +722,53 @@ function setupVoiceRecognition() {
   recognition.lang = 'zh-CN';
   recognition.interimResults = true;
   recognition.continuous = false;
-
   recognition.onresult = (event) => {
     const transcript = Array.from(event.results)
       .map(result => result[0].transcript)
       .join('');
+    const userInput = document.getElementById('userInput');
+    const simulateInput = document.getElementById('simulateInput');
     if (userInput) userInput.value = transcript;
     if (simulateInput) simulateInput.value = transcript;
   };
-
   recognition.onerror = (event) => {
     console.error('语音识别错误', event.error);
     isRecording = false;
-    if (voiceBtn) {
-      voiceBtn.style.background = '#4a90e2';
-      voiceBtn.textContent = '🎤';
+    if (voiceBtnElement) {
+      voiceBtnElement.style.background = '#4a90e2';
+      voiceBtnElement.textContent = '🎤';
     }
   };
-
   recognition.onend = () => {
     isRecording = false;
-    if (voiceBtn) {
-      voiceBtn.style.background = '#4a90e2';
-      voiceBtn.textContent = '🎤';
+    if (voiceBtnElement) {
+      voiceBtnElement.style.background = '#4a90e2';
+      voiceBtnElement.textContent = '🎤';
     }
   };
-
-  if (voiceBtn) {
-    voiceBtn.addEventListener('mousedown', () => {
-      if (isRecording) return;
-      try {
-        recognition.start();
-        isRecording = true;
-        voiceBtn.style.background = '#d32f2f';
-        voiceBtn.textContent = '🔴';
-      } catch (e) {
-        console.error('启动语音识别失败', e);
-      }
-    });
-
-    voiceBtn.addEventListener('mouseup', () => {
-      if (isRecording) {
-        recognition.stop();
-      }
-    });
-
-    voiceBtn.addEventListener('mouseleave', () => {
-      if (isRecording) {
-        recognition.stop();
-      }
-    });
+  voiceBtnElement.removeEventListener('mousedown', voiceMouseDown);
+  voiceBtnElement.removeEventListener('mouseup', voiceMouseUp);
+  voiceBtnElement.removeEventListener('mouseleave', voiceMouseLeave);
+  function voiceMouseDown() {
+    if (isRecording) return;
+    try {
+      recognition.start();
+      isRecording = true;
+      voiceBtnElement.style.background = '#d32f2f';
+      voiceBtnElement.textContent = '🔴';
+    } catch (e) {
+      console.error('启动语音识别失败', e);
+    }
   }
+  function voiceMouseUp() {
+    if (isRecording) recognition.stop();
+  }
+  function voiceMouseLeave() {
+    if (isRecording) recognition.stop();
+  }
+  voiceBtnElement.addEventListener('mousedown', voiceMouseDown);
+  voiceBtnElement.addEventListener('mouseup', voiceMouseUp);
+  voiceBtnElement.addEventListener('mouseleave', voiceMouseLeave);
 }
 
 // ==================== 导航切换 ====================
@@ -729,9 +790,7 @@ function setupNavigation() {
 async function ensureChatSession() {
   if (currentSessionId) {
     const session = sessions.find(s => s.id === currentSessionId);
-    if (session && session.type === 'chat') {
-      return;
-    }
+    if (session && session.type === 'chat') return;
   }
   const chatSession = sessions.find(s => s.type === 'chat');
   if (chatSession) {
@@ -744,7 +803,6 @@ async function ensureChatSession() {
 async function switchView(view) {
   currentView = view;
   [navChat, navSimulate, navKnowledge, navProfile].forEach(btn => btn.classList.remove('active'));
-
   if (view === 'chat') {
     navChat.classList.add('active');
     await ensureChatSession();
@@ -772,6 +830,7 @@ function renderChatView(existingSession = null) {
           </div>
           <div>
             <button id="exportBtn" class="summary-btn">📥 导出对话</button>
+            <button id="policyQuickSearch" class="summary-btn" style="margin-left: 8px;">📜 政策速查</button>
           </div>
         </div>
         <div id="chatContainer" class="chat-container">
@@ -779,7 +838,7 @@ function renderChatView(existingSession = null) {
           <div id="typingIndicator" class="hidden">AI正在思考...</div>
         </div>
         <footer class="chat-footer">
-          <div class="input-tip">💡 提示：输入“联网搜索”可获取最新政策信息。按住麦克风可语音输入。</div>
+          <div class="input-tip">💡 提示：输入"联网搜索"可获取最新政策信息。按住麦克风可语音输入。</div>
           <div class="preset-questions">
             <button class="preset-btn" data-question="村里闲置小学可以改造成什么？">🏫 闲置小学改造</button>
             <button class="preset-btn" data-question="土地流转合同要注意哪些条款？">📄 土地流转合同</button>
@@ -801,14 +860,11 @@ function renderChatView(existingSession = null) {
     </div>
   `;
 
-  messagesDiv = document.getElementById('messages');
-  userInput = document.getElementById('userInput');
-  sendBtn = document.getElementById('sendBtn');
-  voiceBtn = document.getElementById('voiceBtn');
-  chatContainer = document.getElementById('chatContainer');
-  typingIndicator = document.getElementById('typingIndicator');
-  infoContent = document.getElementById('infoContent');
-  currentSessionTitle = document.getElementById('currentSessionTitle');
+  const messagesDiv = document.getElementById('messages');
+  const userInput = document.getElementById('userInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const typingIndicator = document.getElementById('typingIndicator');
+  const currentSessionTitle = document.getElementById('currentSessionTitle');
   const exportBtn = document.getElementById('exportBtn');
 
   document.querySelectorAll('.preset-btn').forEach(btn => {
@@ -830,14 +886,16 @@ function renderChatView(existingSession = null) {
 
   if (currentSessionId && !existingSession) {
     fetchWithAuth(`/api/session/${currentSessionId}`).then(res => res.json()).then(session => {
+      if (!session.messages) session.messages = [];
       currentSessionTitle.textContent = session.title || '村官AI伙伴';
       displayMessages(session.messages);
-      loadExtractedInfo(currentSessionId);
+      updateInfoPanelFromMessages(session.messages);
     });
   } else if (existingSession) {
+    if (!existingSession.messages) existingSession.messages = [];
     currentSessionTitle.textContent = existingSession.title || '村官AI伙伴';
     displayMessages(existingSession.messages);
-    loadExtractedInfo(existingSession.id);
+    updateInfoPanelFromMessages(existingSession.messages);
   }
 }
 
@@ -845,7 +903,7 @@ async function exportCurrentChat() {
   if (!currentSessionId) return;
   const res = await fetchWithAuth(`/api/session/${currentSessionId}`);
   const session = await res.json();
-  if (!session.messages.length) {
+  if (!session.messages || !session.messages.length) {
     alert('暂无对话内容');
     return;
   }
@@ -863,14 +921,8 @@ async function exportCurrentChat() {
 }
 
 // ==================== 模拟对练视图 ====================
-function renderSimulateView() {
-  if (currentSessionId && sessions.find(s => s.id === currentSessionId)?.type === 'simulate') {
-    fetchWithAuth(`/api/session/${currentSessionId}`).then(res => res.json()).then(session => {
-      renderSimulateChat(session);
-    }).catch(err => {
-      dynamicContent.innerHTML = '<p>加载会话失败：' + err.message + '</p>';
-    });
-  } else {
+function renderSimulateView(forceList = false) {
+  if (forceList || !currentSessionId || sessions.find(s => s.id === currentSessionId)?.type !== 'simulate') {
     fetchWithAuth('/api/simulate/scenarios')
       .then(res => res.json())
       .then(scenarios => {
@@ -882,10 +934,10 @@ function renderSimulateView() {
         scenarios.forEach(s => {
           html += `
             <div class="scenario-card" data-id="${s.id}">
-              <h3>${s.title}</h3>
-              <p>${s.description}</p>
-              <p><strong>目标：</strong>${s.goal}</p>
-              <p><strong>角色：</strong>${s.role}</p>
+              <h3>${escapeHtml(s.title)}</h3>
+              <p>${escapeHtml(s.description)}</p>
+              <p><strong>目标：</strong>${escapeHtml(s.goal)}</p>
+              <p><strong>角色：</strong>${escapeHtml(s.role)}</p>
               <button class="start-simulate">开始对练</button>
             </div>
           `;
@@ -896,7 +948,18 @@ function renderSimulateView() {
       .catch(err => {
         dynamicContent.innerHTML = '<p>加载场景失败：' + err.message + '</p>';
       });
+    return;
   }
+
+  fetchWithAuth(`/api/session/${currentSessionId}`)
+    .then(res => res.json())
+    .then(session => {
+      if (!session.messages) session.messages = [];
+      renderSimulateChat(session);
+    })
+    .catch(err => {
+      dynamicContent.innerHTML = '<p>加载会话失败：' + err.message + '</p>';
+    });
 }
 
 async function startSimulate(scenarioId) {
@@ -908,13 +971,11 @@ async function startSimulate(scenarioId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '创建会话失败');
-
     const sessionRes = await fetchWithAuth(`/api/session/${data.sessionId}`);
     const session = await sessionRes.json();
-
+    if (!session.messages) session.messages = [];
     sessions.push(session);
     renderSessionList();
-
     currentSessionId = data.sessionId;
     currentView = 'simulate';
     [navChat, navSimulate, navKnowledge, navProfile].forEach(btn => btn.classList.remove('active'));
@@ -938,12 +999,23 @@ function renderSimulateChat(session) {
             <button id="backToScenarios" class="summary-btn">返回场景列表</button>
           </div>
         `;
+        const backBtn = document.getElementById('backToScenarios');
+        if (backBtn) backBtn.onclick = () => renderSimulateView(true);
         return;
       }
 
+      let report = null;
+      for (const msg of session.messages) {
+        if (msg.role === 'system' && msg.content.startsWith('report:')) {
+          try {
+            report = JSON.parse(msg.content.substring(7));
+          } catch (e) {}
+          break;
+        }
+      }
+
       let reportHtml = '';
-      if (session.report) {
-        const report = session.report;
+      if (report) {
         const scoresHtml = Object.entries(report.scores || {}).map(([dim, score]) =>
           `<div class="score-item">${dim}: ${'⭐'.repeat(score)} (${score}/5)</div>`
         ).join('');
@@ -951,7 +1023,7 @@ function renderSimulateChat(session) {
           <div class="report-section">
             <h4>评估报告</h4>
             <div class="scores">${scoresHtml}</div>
-            <p><strong>建议：</strong>${report.suggestions || ''}</p>
+            <p><strong>建议：</strong>${escapeHtml(report.suggestions || '')}</p>
             <button id="backToScenariosFromReport" class="summary-btn" style="margin-top:10px;">返回场景列表</button>
           </div>
         `;
@@ -960,17 +1032,20 @@ function renderSimulateChat(session) {
       dynamicContent.innerHTML = `
         <div class="simulate-view">
           <div class="simulate-header">
-            <h2>${scenario.title}</h2>
-            <p><strong>目标：</strong>${scenario.goal}</p>
-            <p><strong>当前角色：</strong>${scenario.role}</p>
-            <button id="finishSimulateBtn" class="summary-btn" ${session.report ? 'disabled' : ''}>结束对练并查看报告</button>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h2>${escapeHtml(scenario.title)}</h2>
+              <button id="backToListBtn" class="summary-btn">← 返回场景列表</button>
+            </div>
+            <p><strong>目标：</strong>${escapeHtml(scenario.goal)}</p>
+            <p><strong>当前角色：</strong>${escapeHtml(scenario.role)}</p>
+            <button id="finishSimulateBtn" class="summary-btn" ${report ? 'disabled' : ''}>结束对练并查看报告</button>
           </div>
           <div class="chat-container" id="simulateMessagesContainer">
             <div id="simulateMessages"></div>
             <div id="simulateTyping" class="hidden">对方正在思考...</div>
           </div>
           ${reportHtml}
-          <footer class="chat-footer" ${session.report ? 'style="display:none;"' : ''}>
+          <footer class="chat-footer" ${report ? 'style="display:none;"' : ''}>
             <div class="input-area">
               <textarea id="simulateInput" placeholder="输入你的回应..." rows="2"></textarea>
               <button id="simulateSendBtn">发送</button>
@@ -979,70 +1054,83 @@ function renderSimulateChat(session) {
         </div>
       `;
 
-      simulateMessagesDiv = document.getElementById('simulateMessages');
-      simulateInput = document.getElementById('simulateInput');
-      simulateSendBtn = document.getElementById('simulateSendBtn');
-      finishBtn = document.getElementById('finishSimulateBtn');
+      const backToListBtn = document.getElementById('backToListBtn');
+      if (backToListBtn) backToListBtn.onclick = () => renderSimulateView(true);
+      const backFromReport = document.getElementById('backToScenariosFromReport');
+      if (backFromReport) backFromReport.onclick = () => renderSimulateView(true);
+
+      const simulateMessagesDiv = document.getElementById('simulateMessages');
+      const simulateInput = document.getElementById('simulateInput');
+      const simulateSendBtn = document.getElementById('simulateSendBtn');
+      const finishBtn = document.getElementById('finishSimulateBtn');
       const simulateTyping = document.getElementById('simulateTyping');
 
       session.messages.forEach(msg => {
+        if (msg.role === 'system') return;
         const role = msg.role === 'user' ? 'user' : 'assistant';
         const msgDiv = createMessageElement(role, msg.content, msg.messageId);
         simulateMessagesDiv.appendChild(msgDiv);
       });
       scrollSimulateToBottom();
 
-      simulateSendBtn.addEventListener('click', async () => {
-        const text = simulateInput.value.trim();
-        if (!text || isTyping) return;
-        simulateInput.value = '';
-
-        const userMsgDiv = createMessageElement('user', text, null);
-        simulateMessagesDiv.appendChild(userMsgDiv);
-        scrollSimulateToBottom();
-
-        isTyping = true;
-        simulateTyping.classList.remove('hidden');
-        setInputEnabled(false);
-
-        try {
-          const res = await fetchWithAuth('/api/simulate/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: session.id, message: text })
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || '发送失败');
-          simulateTyping.classList.add('hidden');
-          const assistantMsgDiv = createMessageElement('assistant', data.reply, data.messageId);
-          simulateMessagesDiv.appendChild(assistantMsgDiv);
+      if (simulateSendBtn) {
+        const newSendBtn = simulateSendBtn.cloneNode(true);
+        simulateSendBtn.parentNode.replaceChild(newSendBtn, simulateSendBtn);
+        newSendBtn.addEventListener('click', async () => {
+          const text = simulateInput.value.trim();
+          if (!text || isTyping) return;
+          simulateInput.value = '';
+          const userMsgDiv = createMessageElement('user', text, null);
+          simulateMessagesDiv.appendChild(userMsgDiv);
           scrollSimulateToBottom();
-        } catch (err) {
-          alert('发送失败：' + err.message);
-        } finally {
-          isTyping = false;
-          setInputEnabled(true);
-        }
-      });
+          isTyping = true;
+          simulateTyping.classList.remove('hidden');
+          setInputEnabled(false);
+          try {
+            const res = await fetchWithAuth('/api/simulate/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId: session.id, message: text })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '发送失败');
+            simulateTyping.classList.add('hidden');
+            const assistantMsgDiv = createMessageElement('assistant', data.reply, data.messageId);
+            simulateMessagesDiv.appendChild(assistantMsgDiv);
+            scrollSimulateToBottom();
+          } catch (err) {
+            alert('发送失败：' + err.message);
+          } finally {
+            isTyping = false;
+            setInputEnabled(true);
+          }
+        });
+      }
 
-      if (finishBtn && !session.report) {
-        finishBtn.addEventListener('click', async () => {
+      if (finishBtn && !report) {
+        const newFinishBtn = finishBtn.cloneNode(true);
+        finishBtn.parentNode.replaceChild(newFinishBtn, finishBtn);
+        newFinishBtn.addEventListener('click', async () => {
           if (isTyping) return;
-          finishBtn.disabled = true;
+          newFinishBtn.disabled = true;
           try {
             const res = await fetchWithAuth('/api/simulate/finish', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ sessionId: session.id })
             });
-            const report = await res.json();
-            if (!res.ok) throw new Error(report.error || '生成报告失败');
+            const reportData = await res.json();
+            if (!res.ok) throw new Error(reportData.error || '生成报告失败');
             const sessionRes = await fetchWithAuth(`/api/session/${session.id}`);
             const updatedSession = await sessionRes.json();
+            if (!updatedSession.messages) updatedSession.messages = [];
+            const index = sessions.findIndex(s => s.id === session.id);
+            if (index !== -1) sessions[index] = updatedSession;
+            renderSessionList();
             renderSimulateChat(updatedSession);
           } catch (err) {
             alert('生成报告失败：' + err.message);
-            finishBtn.disabled = false;
+            newFinishBtn.disabled = false;
           }
         });
       }
@@ -1082,6 +1170,7 @@ function renderKnowledgeView() {
       </div>
       <div style="text-align: right; margin: 8px 0;">
         <button id="uploadKnowledgeBtn" class="new-session" style="background: #2e5d34; color: white;">+ 上传知识</button>
+        <button id="policyQuickSearchBtn" class="new-session" style="background: #2e5d34; color: white; margin-left: 8px;">📜 政策速查</button>
       </div>
       <div id="knowledgeList" class="knowledge-list"></div>
     </div>
@@ -1108,8 +1197,169 @@ function renderKnowledgeView() {
     });
   });
   document.getElementById('uploadKnowledgeBtn').addEventListener('click', showUploadModal);
-
+  document.getElementById('policyQuickSearchBtn').addEventListener('click', showPolicyQuickSearch);
   loadKnowledge(currentFilter, currentCategoryFilter);
+}
+
+// ==================== 政策速查功能 ====================
+// ==================== 政策速查（增强版） ====================
+// 从当前对话中提取关键词作为“猜你想搜”
+function getSuggestKeywordsFromChat() {
+  if (currentView !== 'chat' || !currentSessionId) return [];
+
+  // 从 sessions 中找到当前会话
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session || !session.messages) return [];
+
+  // 获取最近5条用户消息
+  const userMessages = session.messages.filter(m => m.role === 'user').slice(-5);
+  if (userMessages.length === 0) return [];
+
+  // 简单提取关键词（去停用词）
+  const stopwords = ['的', '了', '是', '在', '我', '你', '什么', '怎么', '如何', '为什么', '哪', '这', '那', '吗', '呢', '吧', '啊', '哦', '嗯', '呀', '有', '没有', '不', '也', '都', '和', '与', '或', '但', '而', '却', '就', '才', '只', '还', '要', '会', '能', '可以', '应该', '可能', '一定', '非常', '很', '太', '更', '最', '的', '地', '得'];
+  const extractKeywords = (text) => {
+    const words = text.split(/[，,。？?！!、\s]+/).filter(w => w.length > 1 && !stopwords.includes(w));
+    return [...new Set(words.slice(0, 5))];
+  };
+
+  let allKeywords = [];
+  userMessages.forEach(msg => {
+    const kw = extractKeywords(msg.content);
+    allKeywords.push(...kw);
+  });
+
+  // 去重，并限制数量
+  const uniqueKeywords = [...new Set(allKeywords)].slice(0, 6);
+  return uniqueKeywords;
+}
+
+// 政策速查主函数（自定义模态框）
+async function showPolicyQuickSearch() {
+  // 判断当前视图
+  const isChatView = (currentView === 'chat');
+
+  // 生成建议词（仅在问答视图）
+  let suggestKeywords = [];
+  if (isChatView) {
+    suggestKeywords = getSuggestKeywordsFromChat();
+  }
+
+  // 创建模态框
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+
+  // 构建内部 HTML
+  let suggestHtml = '';
+  if (suggestKeywords.length > 0) {
+    suggestHtml = `
+      <div style="margin-top: 12px;">
+        <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">🔍 猜你想搜：</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          ${suggestKeywords.map(k => `<button class="suggest-tag" data-keyword="${escapeHtml(k)}" style="background: #f0f0f0; border: none; padding: 4px 12px; border-radius: 20px; cursor: pointer; font-size: 0.85rem;">${escapeHtml(k)}</button>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  modal.innerHTML = `
+    <div class="modal-content" style="width: 400px;">
+      <button class="modal-close" style="position: absolute; right: 12px; top: 12px;">&times;</button>
+      <h3 style="margin-top: 0;">📜 政策速查</h3>
+      <p style="margin-bottom: 12px; color: #666;">输入关键词查询相关政策、案例</p>
+      <input type="text" id="policySearchInput" placeholder="请输入关键词..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem;">
+      ${suggestHtml}
+      <div style="margin-top: 16px; text-align: right;">
+        <button id="policySearchCancel" style="background: #ccc; color: #333; padding: 6px 16px; border: none; border-radius: 4px; margin-right: 8px; cursor: pointer;">取消</button>
+        <button id="policySearchConfirm" style="background: #2e5d34; color: white; padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer;">搜索</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 获取元素
+  const input = modal.querySelector('#policySearchInput');
+  const confirmBtn = modal.querySelector('#policySearchConfirm');
+  const cancelBtn = modal.querySelector('#policySearchCancel');
+  const closeBtn = modal.querySelector('.modal-close');
+
+  // 绑定建议标签点击事件
+  const suggestTags = modal.querySelectorAll('.suggest-tag');
+  suggestTags.forEach(tag => {
+    tag.addEventListener('click', () => {
+      const keyword = tag.dataset.keyword;
+      input.value = keyword;
+      // 自动搜索
+      doSearch(keyword);
+      document.body.removeChild(modal);
+    });
+  });
+
+  // 确认搜索
+  const doSearch = async (keyword) => {
+    if (!keyword) {
+      alert('请输入关键词');
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`/api/knowledge/search?q=${encodeURIComponent(keyword)}`);
+      const results = await res.json();
+      if (results.length === 0) {
+        alert('未找到相关政策，请尝试其他关键词。');
+        return;
+      }
+      // 显示结果模态框（复用原有展示逻辑）
+      const resultModal = document.createElement('div');
+      resultModal.className = 'modal';
+      resultModal.style.display = 'flex';
+      resultModal.innerHTML = `
+        <div class="modal-content" style="width: 80%; max-width: 800px;">
+          <button class="modal-close">&times;</button>
+          <h3>政策速查结果：${escapeHtml(keyword)}</h3>
+          <div style="max-height: 60vh; overflow-y: auto;">
+            ${results.map(r => `
+              <div style="margin-bottom: 16px; border-bottom: 1px solid #eee; padding-bottom: 12px;">
+                <div style="font-weight: bold; color: #2e5d34;">${escapeHtml(r.title)}</div>
+                <div style="font-size: 0.9rem; margin-top: 4px;">${escapeHtml(r.content.substring(0, 200))}...</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 4px;">${r.type} · ${r.category}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+      resultModal.querySelector('.modal-close').addEventListener('click', () => {
+        document.body.removeChild(resultModal);
+      });
+      resultModal.addEventListener('click', (e) => {
+        if (e.target === resultModal) document.body.removeChild(resultModal);
+      });
+      document.body.appendChild(resultModal);
+    } catch (err) {
+      alert('搜索失败：' + err.message);
+    }
+  };
+
+  confirmBtn.addEventListener('click', () => {
+    const keyword = input.value.trim();
+    doSearch(keyword);
+    document.body.removeChild(modal);
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
+  closeBtn.addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) document.body.removeChild(modal);
+  });
+
+  // 聚焦输入框
+  input.focus();
 }
 
 // ==================== 渲染个人中心视图 ====================
@@ -1119,7 +1369,7 @@ function renderProfileView() {
       <div class="profile-header">
         <div class="profile-avatar">👤</div>
         <div class="profile-info">
-          <h2>${username}</h2>
+          <h2>${escapeHtml(username)}</h2>
           <p>村官 · 加入时间 ${new Date().toLocaleDateString()}</p>
         </div>
       </div>
@@ -1159,7 +1409,6 @@ function renderProfileView() {
       document.getElementById('level').textContent = `Lv.${data.level}`;
       const need = data.nextLevelPoints - data.points;
       document.getElementById('nextLevel').textContent = need > 0 ? need : 0;
-
       const badgesDiv = document.getElementById('badges');
       if (data.badges.length === 0) {
         badgesDiv.innerHTML = '<p>暂无勋章，继续努力！</p>';
@@ -1171,7 +1420,6 @@ function renderProfileView() {
           </div>
         `).join('');
       }
-
       document.getElementById('stats').innerHTML = `
         <div class="stat-item">对话次数：${data.stats.sessionCount}</div>
         <div class="stat-item">收藏消息：${data.stats.favoriteCount}</div>
@@ -1179,8 +1427,6 @@ function renderProfileView() {
         <div class="stat-item">已采纳上传：${data.stats.approvedUploads}</div>
         <div class="stat-item">待审核上传：${data.stats.pendingUploads}</div>
       `;
-
-      // 模拟成长曲线
       const ctx = document.getElementById('growthChart').getContext('2d');
       const base = Math.max(10, Math.floor(data.points / 7));
       const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -1213,12 +1459,16 @@ async function sendUserMessage(text) {
   if (isTyping) return;
   if (!text || !currentSessionId) return;
 
+  const messagesDiv = document.getElementById('messages');
+  if (!messagesDiv) return;
+
   const tempMsgDiv = createMessageElement('user', text, null);
   messagesDiv.appendChild(tempMsgDiv);
   addActionIcons(tempMsgDiv, null, null);
   scrollToBottom();
 
-  typingIndicator.classList.remove('hidden');
+  const typingIndicator = document.getElementById('typingIndicator');
+  if (typingIndicator) typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
 
   try {
@@ -1227,22 +1477,29 @@ async function sendUserMessage(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: currentSessionId, message: text })
     });
-
     if (!res.ok) {
       const errorData = await res.json();
       throw new Error(errorData.error || `请求失败，状态码：${res.status}`);
     }
-
     const data = await res.json();
-    typingIndicator.classList.add('hidden');
+    if (typingIndicator) typingIndicator.classList.add('hidden');
 
     await addMessageWithTyping('assistant', '', data.reply, data.knowledgeRefs, data.assistantMessageId);
 
     await loadSessions();
-    loadExtractedInfo(currentSessionId);
+    const currentSession = sessions.find(s => s.id === currentSessionId);
+    if (currentSession) {
+      const titleElem = document.getElementById('currentSessionTitle');
+      if (titleElem) titleElem.textContent = currentSession.title || '村官AI伙伴';
+    }
+    const sessionRes = await fetchWithAuth(`/api/session/${currentSessionId}`);
+    const updatedSession = await sessionRes.json();
+    if (updatedSession.messages) {
+      updateInfoPanelFromMessages(updatedSession.messages);
+    }
     await loadMessageFavorites();
   } catch (err) {
-    typingIndicator.classList.add('hidden');
+    if (typingIndicator) typingIndicator.classList.add('hidden');
     console.error('发送消息出错:', err);
     alert('发送失败：' + err.message);
     setInputEnabled(true);
@@ -1250,13 +1507,33 @@ async function sendUserMessage(text) {
   }
 }
 
+function updateInfoPanel(knowledgeRefs) {
+  const infoContent = document.getElementById('infoContent');
+  if (!infoContent) return;
+  if (!knowledgeRefs || knowledgeRefs.length === 0) {
+    infoContent.innerHTML = '<div style="color:#888;">暂无参考来源</div>';
+    return;
+  }
+  let html = '<div style="font-size: 0.85rem;">📚 参考来源：</div><ul style="margin-top: 6px;">';
+  knowledgeRefs.forEach(ref => {
+    if (ref.type === 'web') {
+      html += `<li><a href="${escapeHtml(ref.link)}" target="_blank" style="color: #2e5d34;">🌐 ${escapeHtml(ref.title)}</a></li>`;
+    } else {
+      html += `<li>📘 ${escapeHtml(ref.title)}</li>`;
+    }
+  });
+  html += '</ul>';
+  infoContent.innerHTML = html;
+}
+
 async function sendMessage() {
+  const userInput = document.getElementById('userInput');
+  if (!userInput) return;
   const text = userInput.value.trim();
   if (!text) return;
 
   if (!currentSessionId) {
     await createSession();
-    userInput = document.getElementById('userInput');
     userInput.value = text;
     await sendUserMessage(text);
     return;
@@ -1266,7 +1543,6 @@ async function sendMessage() {
   if (session && session.type !== 'chat') {
     alert('当前会话不是问答模式，已自动创建新问答会话。');
     await createSession();
-    userInput = document.getElementById('userInput');
     userInput.value = text;
     await sendUserMessage(text);
     return;
@@ -1278,10 +1554,11 @@ async function sendMessage() {
 
 async function regenerateAnswer(messageDiv) {
   if (isTyping) return;
+  const messagesDiv = document.getElementById('messages');
+  if (!messagesDiv) return;
   const allMessages = Array.from(messagesDiv.children);
   const index = allMessages.indexOf(messageDiv);
   if (index <= 0) return;
-
   let userMessageDiv = null;
   for (let i = index - 1; i >= 0; i--) {
     if (allMessages[i].classList.contains('user')) {
@@ -1290,13 +1567,10 @@ async function regenerateAnswer(messageDiv) {
     }
   }
   if (!userMessageDiv) return;
-
   const userMessageContent = userMessageDiv.querySelector('.message-content').textContent;
-
   for (let i = allMessages.length - 1; i >= index; i--) {
     allMessages[i].remove();
   }
-
   await sendUserMessage(userMessageContent);
 }
 
@@ -1305,6 +1579,9 @@ async function addMessageWithTyping(role, thought, content, knowledgeRefs = [], 
   setInputEnabled(false);
   stopTypingFlag = false;
   addStopButton();
+
+  const messagesDiv = document.getElementById('messages');
+  if (!messagesDiv) return;
 
   const msgDiv = document.createElement('div');
   msgDiv.className = `message ${role}`;
@@ -1316,7 +1593,6 @@ async function addMessageWithTyping(role, thought, content, knowledgeRefs = [], 
     thoughtDiv.style.whiteSpace = 'pre-wrap';
     thoughtDiv.textContent = '';
     msgDiv.appendChild(thoughtDiv);
-
     const separator = document.createElement('hr');
     separator.className = 'thought-separator';
     msgDiv.appendChild(separator);
@@ -1327,7 +1603,6 @@ async function addMessageWithTyping(role, thought, content, knowledgeRefs = [], 
   contentDiv.style.whiteSpace = 'pre-wrap';
   contentDiv.textContent = '';
   msgDiv.appendChild(contentDiv);
-
   messagesDiv.appendChild(msgDiv);
   scrollToBottom();
 
@@ -1346,9 +1621,9 @@ async function addMessageWithTyping(role, thought, content, knowledgeRefs = [], 
       let refHtml = '📚 参考信息：';
       knowledgeRefs.forEach(ref => {
         if (ref.type === 'web') {
-          refHtml += `<span class="ref-tag" title="${ref.snippet}">🌐 ${ref.title}</span> `;
+          refHtml += `<span class="ref-tag" title="${escapeHtml(ref.snippet)}">🌐 ${escapeHtml(ref.title)}</span> `;
         } else {
-          refHtml += `<span class="ref-tag" title="${ref.id}">📘 ${ref.title}</span> `;
+          refHtml += `<span class="ref-tag" title="${escapeHtml(ref.id)}">📘 ${escapeHtml(ref.title)}</span> `;
         }
       });
       refDiv.innerHTML = refHtml;
@@ -1358,6 +1633,7 @@ async function addMessageWithTyping(role, thought, content, knowledgeRefs = [], 
 
     addActionIcons(msgDiv, null, messageId);
     scrollToBottom();
+    updateInfoPanel(knowledgeRefs);
   } catch (e) {
     console.error('打字过程出错', e);
   } finally {
@@ -1395,6 +1671,9 @@ function typeText(element, text, speed) {
 }
 
 function addStopButton() {
+  if (document.getElementById('stopTypingBtn')) return;
+  const typingIndicator = document.getElementById('typingIndicator');
+  if (!typingIndicator) return;
   const stopBtn = document.createElement('button');
   stopBtn.id = 'stopTypingBtn';
   stopBtn.textContent = '⏹️ 停止';
@@ -1446,7 +1725,6 @@ function addActionIcons(messageDiv, messageIndex, messageId) {
   favoriteBtn.innerHTML = '☆';
   favoriteBtn.title = '收藏';
   favoriteBtn.className = 'favorite-btn';
-
   if (messageId) {
     const isFavorited = messageFavorites.some(f => f.messageId === messageId);
     if (isFavorited) {
@@ -1484,6 +1762,11 @@ async function createSession(title = '新会话') {
     body: JSON.stringify({ title })
   });
   const data = await res.json();
+  if (!data.session) {
+    console.error('创建会话失败，响应数据:', data);
+    alert('创建会话失败，请重试');
+    return;
+  }
   sessions.push(data.session);
   sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderSessionList();
@@ -1512,15 +1795,8 @@ async function deleteSession(sessionId) {
 }
 
 function scrollToBottom() {
-  requestAnimationFrame(() => {
-    if (chatContainer) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-  });
-}
-
-setTimeout(() => {
-  if (app.style.display !== 'none') {
-    switchView('chat');
+  const chatContainer = document.getElementById('chatContainer');
+  if (chatContainer) {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
   }
-}, 0);
+}

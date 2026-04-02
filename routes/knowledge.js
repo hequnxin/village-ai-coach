@@ -21,6 +21,16 @@ router.get('/', (req, res) => {
   res.json(results);
 });
 
+// 新增搜索接口
+router.get('/search', (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: '请输入关键词' });
+  const stmt = db.prepare('SELECT * FROM knowledge WHERE status = ? AND (title LIKE ? OR content LIKE ?)');
+  const keyword = `%${q}%`;
+  const results = stmt.all('approved', keyword, keyword);
+  res.json(results);
+});
+
 router.post('/upload', (req, res) => {
   const { title, content, type, category, tags } = req.body;
   if (!title || !content || !type || !category) {
@@ -36,7 +46,6 @@ router.post('/upload', (req, res) => {
     tags ? tags.split(',').map(t => t.trim()).join(',') : '',
     type, category, req.user.username, new Date().toISOString()
   );
-  // 重新初始化向量索引（可选）
   initVectorIndex();
   res.json({ success: true, id });
 });

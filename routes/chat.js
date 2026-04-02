@@ -6,19 +6,18 @@ const { getSession, updateSession, addMessage } = require('../services/sessionSe
 
 const router = express.Router();
 
-const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也是基层干部的“AI伙伴”。你的任务是用中文回答村官提出的各种实际问题，你的回答必须遵循以下原则：
+const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也是基层干部的"AI伙伴"。你的任务是用中文回答村官提出的各种实际问题，你的回答必须遵循以下原则：
 
 1. **有条理**：使用小标题、列表、分段等方式组织内容，使回答清晰易读。
 2. **循因导果**：帮助用户分析问题的原因、影响、后果，理清逻辑。
 3. **梳理问题**：将复杂问题拆解成几个方面，逐一说明。
 4. **结尾引导**：在回答的最后，根据用户当前问题和历史对话，提出2-3个有针对性、递进式的引导问题，帮助用户深入思考或明确下一步行动。你可以使用类似这样的句式：
-   - “您是否已经……？”
-   - “接下来您打算如何处理……？”
-   - “您觉得最大的难点在哪里？”
-   - “关于……，您有什么具体的想法吗？”
+   - "您是否已经......？"
+   - "接下来您打算如何处理......？"
+   - "您觉得最大的难点在哪里？"
+   - "关于......，您有什么具体的想法吗？"
    问题要贴合对话内容，避免空泛。
 5. **必要时苏格拉底式引导**：如果用户的问题含糊不清，你可以先反问几个问题，引导用户澄清需求，再给出建议。
-
 如果用户提供的信息不足，可以适当追问。`;
 
 async function offlineReply(message, knowledgeContext) {
@@ -29,10 +28,10 @@ async function offlineReply(message, knowledgeContext) {
   }
 }
 
+// 原有聊天路由
 router.post('/', async (req, res) => {
   const { sessionId, message } = req.body;
   const userId = req.user.userId;
-
   if (!sessionId || !message) {
     return res.status(400).json({ error: '缺少 sessionId 或 message' });
   }
@@ -47,17 +46,18 @@ router.post('/', async (req, res) => {
 
   addMessage(sessionId, 'user', message, Date.now());
 
-  // 自动设置标题
-  if (session.messages.filter(m => m.role === 'user').length === 1) {
+  // 自动设置标题（第一条用户消息）
+  const updatedSession = getSession(userId, sessionId);
+  const userMessageCount = updatedSession.messages.filter(m => m.role === 'user').length;
+  if (userMessageCount === 1) {
     const newTitle = message.length > 20 ? message.substring(0, 20) + '...' : message;
     updateSession(userId, sessionId, { title: newTitle });
   }
 
-  // 知识检索（向量检索）
+  // 知识检索
   const knowledgeResults = searchKnowledge(message, 3);
   let knowledgeContext = '';
   const knowledgeRefs = [];
-
   if (knowledgeResults.length > 0) {
     knowledgeContext = '\n\n【相关知识库内容】\n' + knowledgeResults.map(k =>
       `- ${k.title}：${k.content.substring(0, 200)}${k.content.length > 200 ? '...' : ''}`
@@ -83,11 +83,10 @@ router.post('/', async (req, res) => {
   }
 
   // 构建历史
-  const history = session.messages.slice(-10).map(m => ({
+  const history = updatedSession.messages.slice(-10).map(m => ({
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content
   }));
-
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history,
@@ -105,14 +104,89 @@ router.post('/', async (req, res) => {
   }
 
   const assistantMsgId = addMessage(sessionId, 'assistant', reply, Date.now()).messageId;
-  updateSession(userId, sessionId, { updated_at: new Date().toISOString() });
+
+  const finalSession = getSession(userId, sessionId);
+  const finalTitle = finalSession.title;
 
   res.json({
     reply,
     assistantMessageId: assistantMsgId,
     knowledgeRefs,
-    offlineMode: errorOccurred
+    offlineMode: errorOccurred,
+    sessionTitle: finalTitle
   });
+});
+
+// 新增：对话摘要接口
+// 新增：对话摘要接口（增强版）
+router.post('/summarize', async (req, res) => {
+  const { sessionId, messages: providedMessages } = req.body;
+  const userId = req.user.userId;
+
+  let conversationMessages = [];
+  if (sessionId) {
+    const session = getSession(userId, sessionId);
+    if (!session) {
+      return res.status(404).json({ error: '会话不存在' });
+    }
+    conversationMessages = session.messages.slice(-20); // 取最近20条
+  } else if (providedMessages && Array.isArray(providedMessages)) {
+    conversationMessages = providedMessages;
+  } else {
+    return res.status(400).json({ error: '请提供 sessionId 或 messages 数组' });
+  }
+
+  if (conversationMessages.length === 0) {
+    return res.json({ summary: { points: [], status: '', reasons: [], suggestions: [], references: [] } });
+  }
+
+  // 构建对话文本
+  const dialogueText = conversationMessages.map(msg => {
+    const role = msg.role === 'user' ? '村官' : 'AI伙伴';
+    return `${role}：${msg.content}`;
+  }).join('\n\n');
+
+  const summaryPrompt = `你是一名乡村治理专家，请根据以下村官与AI的对话，提取关键信息，按照以下格式输出一个 JSON 对象（不要包含其他文字）：
+
+{
+  "points": ["问题要点1", "问题要点2"],
+  "status": "现状描述",
+  "reasons": ["原因分析1", "原因分析2"],
+  "suggestions": ["建议1", "建议2"],
+  "references": ["参考案例/政策1", "参考案例/政策2"]
+}
+
+对话内容：
+${dialogueText}`;
+
+  try {
+    const summaryText = await chat([{ role: 'user', content: summaryPrompt }], { temperature: 0.3, max_tokens: 800 });
+
+    // 更健壮的 JSON 提取：尝试找到第一个 { 和最后一个 }
+    let jsonStr = '';
+    const firstBrace = summaryText.indexOf('{');
+    const lastBrace = summaryText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      jsonStr = summaryText.substring(firstBrace, lastBrace + 1);
+    } else {
+      throw new Error('未找到有效的JSON对象');
+    }
+
+    let summary = JSON.parse(jsonStr);
+    // 确保所有字段都存在
+    summary = {
+      points: summary.points || [],
+      status: summary.status || '',
+      reasons: summary.reasons || [],
+      suggestions: summary.suggestions || [],
+      references: summary.references || []
+    };
+    res.json({ summary });
+  } catch (err) {
+    console.error('生成摘要失败:', err);
+    // 降级返回空结构
+    res.json({ summary: { points: [], status: '', reasons: [], suggestions: [], references: [] } });
+  }
 });
 
 module.exports = router;

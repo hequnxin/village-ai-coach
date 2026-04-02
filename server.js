@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const errorHandler = require('./middlewares/errorHandler');
 const { initVectorIndex } = require('./services/vectorSearch');
+const db = require('./services/db'); // 引入数据库，确保目录存在
 
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
@@ -24,6 +25,10 @@ app.use(express.static('public'));
 // 确保数据目录存在
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+
+// 初始化数据库表（如果不存在）
+const initDb = require('./scripts/initDb');
+initDb(); // 调用初始化脚本
 
 // 初始化向量索引
 initVectorIndex();
