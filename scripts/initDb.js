@@ -266,5 +266,5 @@ async function initDb() {
   // 注意：不要关闭连接池，让 server 继续使用
 }
 
-// 执行初始化
-initDb().catch(console.error);
+// 导出 initDb 函数供外部调用
+module.exports = initDb;
