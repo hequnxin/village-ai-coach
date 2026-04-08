@@ -23,12 +23,12 @@ const app = express();
 // 中间件
 app.use(cors());
 app.use(express.json());
-// 静态文件服务：指向前端构建产物（Vite 输出到 public/dist）
+
+// 静态文件：优先使用构建产物，再使用 public 根目录（音效等）
 app.use(express.static('public/dist'));
-// 音效等静态资源仍然从 public 根目录提供（如有需要）
 app.use(express.static('public'));
 
-// 确保数据目录存在（用于可能的上传文件等）
+// 确保数据目录存在
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 
@@ -46,7 +46,7 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// 挂载路由（公开路由）
+// 公开路由
 app.use('/api', authRoutes);
 
 // 需要认证的路由
@@ -58,20 +58,33 @@ app.use('/api/user', authenticate, userRoutes);
 app.use('/api/quiz', authenticate, quizRoutes);
 app.use('/api/meeting', authenticate, meetingRoutes);
 
-// 错误处理中间件（必须放在所有路由之后）
+// 错误处理中间件
 app.use(errorHandler);
+
+// ★★★ SPA fallback：所有非 API 请求返回 index.html ★★★
+app.get('*', (req, res) => {
+  // 如果是 API 路径（理论上前面已匹配，但以防万一）
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API not found' });
+  }
+  const indexPath = path.join(__dirname, 'public/dist/index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('Frontend not built. Please run `npm run build` in frontend directory.');
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 
-// 启动服务器前初始化数据库（建表、默认数据、全文索引）
+// 启动服务器前初始化数据库
 async function startServer() {
   try {
-    // 导入初始化脚本（注意：initDb 需要导出为函数）
     const initDb = require('./scripts/initDb');
     await initDb();
     console.log('数据库初始化完成');
 
-    // 注意：知识库数据导入（knowledge.json）需要单独执行一次脚本
+    // 检查知识库是否有数据（可选提示）
     const countResult = await db.get('SELECT COUNT(*) as count FROM knowledge');
     if (countResult.count === 0) {
       console.warn('⚠️ 知识库表为空，请运行 node scripts/importKnowledge.js 导入初始数据');

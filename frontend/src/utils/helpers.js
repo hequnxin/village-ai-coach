@@ -82,8 +82,62 @@ export function initParticles() {
   animateParticles();
 }
 
-// 任务系统（简化版，实际应存储后端）
+// 连击特效
+let comboCount = 0;
+let comboTimeout = null;
+
+export function showComboEffect() {
+  comboCount++;
+  if (comboTimeout) clearTimeout(comboTimeout);
+  comboTimeout = setTimeout(() => { comboCount = 0; }, 5000);
+  const effectDiv = document.createElement('div');
+  effectDiv.className = 'combo-effect';
+  effectDiv.textContent = `${comboCount} 连击！ +${comboCount * 5} 经验`;
+  effectDiv.style.position = 'fixed';
+  effectDiv.style.bottom = '20%';
+  effectDiv.style.right = '20px';
+  effectDiv.style.backgroundColor = '#ff9800';
+  effectDiv.style.color = 'white';
+  effectDiv.style.padding = '8px 16px';
+  effectDiv.style.borderRadius = '30px';
+  effectDiv.style.fontWeight = 'bold';
+  effectDiv.style.zIndex = '999';
+  effectDiv.style.animation = 'floatUp 1s ease-out forwards';
+  document.body.appendChild(effectDiv);
+  setTimeout(() => effectDiv.remove(), 1000);
+  playSound('reward');
+  addPoints(comboCount * 5);
+}
+
+// 积分添加（调用后端接口 + 前端飘字）
+export async function addPoints(points, reason = '游戏奖励') {
+  const pointDiv = document.createElement('div');
+  pointDiv.textContent = `+${points}`;
+  pointDiv.style.position = 'fixed';
+  pointDiv.style.bottom = '30%';
+  pointDiv.style.right = '30px';
+  pointDiv.style.color = '#ffd700';
+  pointDiv.style.fontSize = '1.5rem';
+  pointDiv.style.fontWeight = 'bold';
+  pointDiv.style.textShadow = '0 0 2px black';
+  pointDiv.style.animation = 'floatUp 1s ease-out';
+  pointDiv.style.zIndex = '999';
+  document.body.appendChild(pointDiv);
+  setTimeout(() => pointDiv.remove(), 1000);
+
+  try {
+    const { fetchWithAuth } = await import('./api');
+    await fetchWithAuth('/api/quiz/add-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ points, reason })
+    });
+  } catch(e) { console.error('积分记录失败', e); }
+}
+
+// 任务系统（简化版）
 let taskList = [];
+
 export function initDailyTasks() {
   const today = new Date().toLocaleDateString();
   const saved = localStorage.getItem('dailyTasks');
@@ -183,38 +237,11 @@ function showTaskCompleteToast(task) {
   playSound('complete');
 }
 
-export async function addPoints(points, reason = '游戏奖励') {
-  // 显示飘字特效
-  const pointDiv = document.createElement('div');
-  pointDiv.textContent = `+${points}`;
-  pointDiv.style.position = 'fixed';
-  pointDiv.style.bottom = '30%';
-  pointDiv.style.right = '30px';
-  pointDiv.style.color = '#ffd700';
-  pointDiv.style.fontSize = '1.5rem';
-  pointDiv.style.fontWeight = 'bold';
-  pointDiv.style.textShadow = '0 0 2px black';
-  pointDiv.style.animation = 'floatUp 1s ease-out';
-  pointDiv.style.zIndex = '999';
-  document.body.appendChild(pointDiv);
-  setTimeout(() => pointDiv.remove(), 1000);
-
-  // 调用后端接口持久化
-  try {
-    const { fetchWithAuth } = await import('./api');
-    await fetchWithAuth('/api/quiz/add-points', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points, reason })
-    });
-  } catch(e) { console.error('积分记录失败', e); }
-}
-
+// 全局事件监听（导航栏等）
 export function setupGlobalEventListeners() {
   document.getElementById('newSessionBtn').onclick = () => {
     import('../modules/state').then(({ createNewSession }) => createNewSession('新会话'));
   };
-  // 导航栏切换
   const navChat = document.getElementById('navChat');
   const navSimulate = document.getElementById('navSimulate');
   const navMeeting = document.getElementById('navMeeting');
