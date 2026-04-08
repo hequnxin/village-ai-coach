@@ -2,3 +2,11 @@ node_modules/
 .env
 data/*.db
 .DS_Store
+.idea/
+*.log
+Thumbs.db
+*.tmp
+*.swp
+*.swo
+.env.local
+.env.*.local
