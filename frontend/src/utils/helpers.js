@@ -1,3 +1,5 @@
+// frontend/src/utils/helpers.js
+
 export function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>]/g, function(m) {
@@ -82,60 +84,7 @@ export function initParticles() {
   animateParticles();
 }
 
-// 连击特效
-let comboCount = 0;
-let comboTimeout = null;
-
-export function showComboEffect() {
-  comboCount++;
-  if (comboTimeout) clearTimeout(comboTimeout);
-  comboTimeout = setTimeout(() => { comboCount = 0; }, 5000);
-  const effectDiv = document.createElement('div');
-  effectDiv.className = 'combo-effect';
-  effectDiv.textContent = `${comboCount} 连击！ +${comboCount * 5} 经验`;
-  effectDiv.style.position = 'fixed';
-  effectDiv.style.bottom = '20%';
-  effectDiv.style.right = '20px';
-  effectDiv.style.backgroundColor = '#ff9800';
-  effectDiv.style.color = 'white';
-  effectDiv.style.padding = '8px 16px';
-  effectDiv.style.borderRadius = '30px';
-  effectDiv.style.fontWeight = 'bold';
-  effectDiv.style.zIndex = '999';
-  effectDiv.style.animation = 'floatUp 1s ease-out forwards';
-  document.body.appendChild(effectDiv);
-  setTimeout(() => effectDiv.remove(), 1000);
-  playSound('reward');
-  addPoints(comboCount * 5);
-}
-
-// 积分添加（调用后端接口 + 前端飘字）
-export async function addPoints(points, reason = '游戏奖励') {
-  const pointDiv = document.createElement('div');
-  pointDiv.textContent = `+${points}`;
-  pointDiv.style.position = 'fixed';
-  pointDiv.style.bottom = '30%';
-  pointDiv.style.right = '30px';
-  pointDiv.style.color = '#ffd700';
-  pointDiv.style.fontSize = '1.5rem';
-  pointDiv.style.fontWeight = 'bold';
-  pointDiv.style.textShadow = '0 0 2px black';
-  pointDiv.style.animation = 'floatUp 1s ease-out';
-  pointDiv.style.zIndex = '999';
-  document.body.appendChild(pointDiv);
-  setTimeout(() => pointDiv.remove(), 1000);
-
-  try {
-    const { fetchWithAuth } = await import('./api');
-    await fetchWithAuth('/api/quiz/add-points', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points, reason })
-    });
-  } catch(e) { console.error('积分记录失败', e); }
-}
-
-// 任务系统（简化版）
+// 任务系统
 let taskList = [];
 
 export function initDailyTasks() {
@@ -237,7 +186,54 @@ function showTaskCompleteToast(task) {
   playSound('complete');
 }
 
-// 全局事件监听（导航栏等）
+export async function addPoints(points, reason = '游戏奖励') {
+  // 显示飘字特效
+  const pointDiv = document.createElement('div');
+  pointDiv.textContent = `+${points}`;
+  pointDiv.style.position = 'fixed';
+  pointDiv.style.bottom = '30%';
+  pointDiv.style.right = '30px';
+  pointDiv.style.color = '#ffd700';
+  pointDiv.style.fontSize = '1.5rem';
+  pointDiv.style.fontWeight = 'bold';
+  pointDiv.style.textShadow = '0 0 2px black';
+  pointDiv.style.animation = 'floatUp 1s ease-out';
+  pointDiv.style.zIndex = '999';
+  document.body.appendChild(pointDiv);
+  setTimeout(() => pointDiv.remove(), 1000);
+  // 调用后端接口持久化
+  try {
+    const { fetchWithAuth } = await import('./api');
+    await fetchWithAuth('/api/quiz/add-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ points, reason })
+    });
+  } catch(e) { console.error('积分记录失败', e); }
+}
+
+// 连击特效（用于聊天中连续提问）
+export function showComboEffect() {
+  // 简单实现：在右下角显示一个“连击+1”飘字
+  const comboDiv = document.createElement('div');
+  comboDiv.textContent = '⚡ 连击 +1';
+  comboDiv.style.position = 'fixed';
+  comboDiv.style.bottom = '20%';
+  comboDiv.style.right = '20px';
+  comboDiv.style.backgroundColor = '#ff9800';
+  comboDiv.style.color = 'white';
+  comboDiv.style.padding = '4px 12px';
+  comboDiv.style.borderRadius = '20px';
+  comboDiv.style.fontSize = '0.9rem';
+  comboDiv.style.fontWeight = 'bold';
+  comboDiv.style.animation = 'floatUp 0.8s ease-out';
+  comboDiv.style.zIndex = '999';
+  document.body.appendChild(comboDiv);
+  setTimeout(() => comboDiv.remove(), 800);
+  // 可选：播放音效
+  playSound('reward');
+}
+
 export function setupGlobalEventListeners() {
   document.getElementById('newSessionBtn').onclick = () => {
     import('../modules/state').then(({ createNewSession }) => createNewSession('新会话'));
@@ -248,11 +244,78 @@ export function setupGlobalEventListeners() {
   const navKnowledge = document.getElementById('navKnowledge');
   const navQuiz = document.getElementById('navQuiz');
   const navProfile = document.getElementById('navProfile');
-
   navChat.onclick = () => import('../modules/chat').then(m => m.switchToChat());
   navSimulate.onclick = () => import('../modules/simulate').then(m => m.renderSimulateView(true));
   navMeeting.onclick = () => import('../modules/meeting').then(m => m.renderMeetingSetupView());
   navKnowledge.onclick = () => import('../modules/knowledge').then(m => m.renderKnowledgeView());
   navQuiz.onclick = () => import('../modules/quiz').then(m => m.renderQuizView());
   navProfile.onclick = () => import('../modules/profile').then(m => m.renderProfileView());
+}
+
+// 通用语音输入函数
+export function setupVoiceInput(inputElement, buttonElement, onResultCallback) {
+  if (!inputElement || !buttonElement) return;
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    buttonElement.disabled = true;
+    buttonElement.title = '浏览器不支持语音识别';
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  let isRecording = false;
+  const startRecording = () => {
+    if (isRecording) return;
+    try {
+      recognition.start();
+      isRecording = true;
+      buttonElement.style.background = '#d32f2f';
+      buttonElement.textContent = '🔴';
+    } catch(e) { console.warn('语音启动失败', e); }
+  };
+  const stopRecording = () => {
+    if (isRecording) recognition.stop();
+  };
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
+    inputElement.value = transcript;
+    if (onResultCallback) onResultCallback(transcript);
+  };
+  recognition.onerror = () => {
+    isRecording = false;
+    buttonElement.style.background = '';
+    buttonElement.textContent = '🎤';
+  };
+  recognition.onend = () => {
+    isRecording = false;
+    buttonElement.style.background = '';
+    buttonElement.textContent = '🎤';
+  };
+  buttonElement.addEventListener('mousedown', startRecording);
+  buttonElement.addEventListener('mouseup', stopRecording);
+  buttonElement.addEventListener('mouseleave', stopRecording);
+}
+
+// 更新侧边栏等级（供 state.js 调用）
+export function updateSidebarLevel(level, points, nextLevelPoints) {
+  let levelContainer = document.getElementById('sidebarLevelContainer');
+  if (!levelContainer) {
+    const container = document.createElement('div');
+    container.id = 'sidebarLevelContainer';
+    container.className = 'level-progress-container';
+    const userInfo = document.querySelector('.user-info');
+    const taskPanel = document.getElementById('taskPanel');
+    if (userInfo && taskPanel) {
+      taskPanel.parentNode.insertBefore(container, userInfo);
+    }
+    levelContainer = container;
+  }
+  levelContainer.style.display = 'block';
+  const percent = (points / nextLevelPoints) * 100;
+  levelContainer.innerHTML = `
+    <div class="level-info"><span>Lv.${level}</span><span>${points}/${nextLevelPoints}</span></div>
+    <div class="level-progress-bar"><div class="level-progress-fill" style="width: ${percent}%"></div></div>
+  `;
 }

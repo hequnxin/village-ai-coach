@@ -10,3 +10,6 @@ Thumbs.db
 *.swo
 .env.local
 .env.*.local
+public/dist/
+frontend/dist/
+

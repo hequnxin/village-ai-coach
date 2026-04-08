@@ -4,9 +4,7 @@ const db = require('../services/db');
 async function initDb() {
   console.log('开始初始化 PostgreSQL 数据库...');
 
-  // 创建表（按依赖顺序），使用 IF NOT EXISTS 避免重复
   const tables = [
-    // 用户表
     `CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -14,7 +12,6 @@ async function initDb() {
       role TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL
     )`,
-    // 会话表
     `CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -26,7 +23,6 @@ async function initDb() {
       created_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ
     )`,
-    // 消息表
     `CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -34,7 +30,6 @@ async function initDb() {
       content TEXT,
       timestamp BIGINT
     )`,
-    // 收藏表
     `CREATE TABLE IF NOT EXISTS favorites (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -45,7 +40,6 @@ async function initDb() {
       role TEXT,
       favorited_at TIMESTAMPTZ
     )`,
-    // 知识库表
     `CREATE TABLE IF NOT EXISTS knowledge (
       id TEXT PRIMARY KEY,
       title TEXT,
@@ -59,7 +53,6 @@ async function initDb() {
       submitted_at TIMESTAMPTZ,
       vector_data TEXT
     )`,
-    // 场景表
     `CREATE TABLE IF NOT EXISTS scenarios (
       id TEXT PRIMARY KEY,
       title TEXT,
@@ -68,9 +61,9 @@ async function initDb() {
       role TEXT,
       initial_message TEXT,
       eval_dimensions TEXT,
-      created_at TIMESTAMPTZ
+      created_at TIMESTAMPTZ,
+      stages TEXT
     )`,
-    // 每日一练表
     `CREATE TABLE IF NOT EXISTS daily_quiz (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -79,7 +72,6 @@ async function initDb() {
       completed INTEGER,
       created_at TIMESTAMPTZ
     )`,
-       // 题目表
     `CREATE TABLE IF NOT EXISTS quiz_questions (
       id TEXT PRIMARY KEY,
       type TEXT,
@@ -96,8 +88,6 @@ async function initDb() {
       quiz_id TEXT REFERENCES daily_quiz(id) ON DELETE CASCADE,
       question_id TEXT REFERENCES quiz_questions(id)
     )`,
-
-    // 错题本
     `CREATE TABLE IF NOT EXISTS wrong_questions (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
@@ -105,7 +95,6 @@ async function initDb() {
       wrong_count INTEGER,
       last_wrong_date DATE
     )`,
-    // 积分记录
     `CREATE TABLE IF NOT EXISTS user_points (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
@@ -113,7 +102,6 @@ async function initDb() {
       reason TEXT,
       created_at TIMESTAMPTZ
     )`,
-    // 商城物品
     `CREATE TABLE IF NOT EXISTS shop_items (
       id TEXT PRIMARY KEY,
       name TEXT,
@@ -129,7 +117,6 @@ async function initDb() {
       purchased_at TIMESTAMPTZ,
       equipped INTEGER
     )`,
-    // 政策闯关
     `CREATE TABLE IF NOT EXISTS policy_levels (
       id TEXT PRIMARY KEY,
       name TEXT,
@@ -145,7 +132,6 @@ async function initDb() {
       score INTEGER DEFAULT 0,
       passed_at TIMESTAMPTZ
     )`,
-    // PK 房间
     `CREATE TABLE IF NOT EXISTS pk_rooms (
       id TEXT PRIMARY KEY,
       room_code TEXT UNIQUE,
@@ -161,7 +147,6 @@ async function initDb() {
       created_at TIMESTAMPTZ,
       finished_at TIMESTAMPTZ
     )`,
-    // 每周竞赛
     `CREATE TABLE IF NOT EXISTS weekly_contest (
       id TEXT PRIMARY KEY,
       week_start DATE,
@@ -177,7 +162,6 @@ async function initDb() {
       time_used INTEGER,
       submitted_at TIMESTAMPTZ
     )`,
-    // 刮刮乐
     `CREATE TABLE IF NOT EXISTS scratch_cards (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id),
@@ -188,7 +172,6 @@ async function initDb() {
       created_at TIMESTAMPTZ,
       used_at TIMESTAMPTZ
     )`,
-    // 填空题目
     `CREATE TABLE IF NOT EXISTS fill_questions (
       id TEXT PRIMARY KEY,
       sentence TEXT,
@@ -196,7 +179,6 @@ async function initDb() {
       hint TEXT,
       category TEXT
     )`,
-    // 填空每日练
     `CREATE TABLE IF NOT EXISTS fill_daily (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
@@ -231,7 +213,7 @@ async function initDb() {
   await insertScenario('scenario_004', '产业发展项目申报动员会', '村里想申请乡村振兴衔接资金发展特色农产品加工，但部分村民担心失败不愿配合。', '说服至少5户村民参与项目，并收集他们的意见建议。', '村民李大叔', '搞什么加工厂？我们祖祖辈辈种地，投资那么多钱要是亏了谁负责？', JSON.stringify(['政策解读能力', '动员说服力', '风险沟通', '组织协调力']));
   await insertScenario('scenario_005', '邻里噪音纠纷调解', '村民小陈家晚上经常聚会打牌，邻居老刘多次投诉，双方产生口角。你前往调解。', '促成双方相互理解，并约定合理的活动时间。', '村民老刘', '天天晚上吵到一两点，我高血压都犯了！你们村干部管不管？', JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
 
-  // 插入默认题目（如果不存在）
+  // 插入默认题目
   const existingQuestions = await db.get('SELECT COUNT(*) as count FROM quiz_questions');
   if (existingQuestions.count === 0) {
     const defaultQuestions = [
@@ -244,7 +226,7 @@ async function initDb() {
     for (const q of defaultQuestions) {
       await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, difficulty, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [q.id, q.type, q.question, q.options, q.answer, q.explanation, q.category, q.difficulty, q.created_at]);
+                    [q.id, q.type, q.question, q.options, q.answer, q.explanation, q.category, q.difficulty, q.created_at]);
     }
   }
 
@@ -259,13 +241,37 @@ async function initDb() {
     for (const f of fills) {
       await db.run(`INSERT INTO fill_questions (id, sentence, correct_word, hint, category)
                     VALUES ($1, $2, $3, $4, $5)`,
-        [f.id, f.sentence, f.correct_word, f.hint, f.category]);
+                    [f.id, f.sentence, f.correct_word, f.hint, f.category]);
     }
   }
 
+  // ========== 添加全文搜索支持 ==========
+  console.log('添加全文搜索支持...');
+  try {
+    await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_knowledge_tsv ON knowledge USING GIN(tsv)`);
+    await db.run(`
+      CREATE OR REPLACE FUNCTION knowledge_tsv_trigger() RETURNS trigger AS $$
+      BEGIN
+        NEW.tsv := setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
+                   setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.run(`DROP TRIGGER IF EXISTS tsvector_update ON knowledge`);
+    await db.run(`
+      CREATE TRIGGER tsvector_update
+      BEFORE INSERT OR UPDATE ON knowledge
+      FOR EACH ROW EXECUTE FUNCTION knowledge_tsv_trigger()
+    `);
+    await db.run(`UPDATE knowledge SET tsv = NULL`);
+    console.log('全文搜索支持已就绪');
+  } catch (err) {
+    console.error('添加全文搜索失败:', err.message);
+  }
+
   console.log('数据库初始化完成');
-  // 注意：不要关闭连接池，让 server 继续使用
 }
 
-// 导出 initDb 函数供外部调用
 module.exports = initDb;

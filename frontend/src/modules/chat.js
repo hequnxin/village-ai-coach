@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession } from './state';
-import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect } from '../utils/helpers';
+import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput } from '../utils/helpers';
 import { renderSessionList } from './ui';
 
 let isTyping = false;
@@ -116,7 +116,7 @@ async function toggleMessageFavorite(messageId, action) {
     if (!res.ok) throw new Error('操作失败');
     await loadMessageFavorites();
     if (action === 'add') updateTaskProgress('favorite', 1);
-  } catch(err) { alert('消息收藏失败：'+err.message); }
+  } catch(err) { alert('消息收藏失败：' + err.message); }
 }
 
 async function regenerateAnswer(msgDiv) {
@@ -270,7 +270,6 @@ export async function renderChatView(existingSession = null) {
       </div>
     </div>
   `;
-
   const messagesDiv = document.getElementById('messages');
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -278,15 +277,12 @@ export async function renderChatView(existingSession = null) {
   const currentTitle = document.getElementById('currentSessionTitle');
   const exportBtn = document.getElementById('exportBtn');
   const summaryBtn = document.getElementById('summaryBtn');
-
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.onclick = () => { userInput.value = btn.dataset.question; sendMessage(); };
   });
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
   exportBtn.onclick = exportCurrentChat;
-
-  // 摘要主动触发
   summaryBtn.onclick = async () => {
     const sessionId = appState.currentSessionId;
     if (!sessionId) return;
@@ -305,7 +301,7 @@ export async function renderChatView(existingSession = null) {
       if (summary.reasons.length) html += `<div><strong>🔍 原因</strong><ul>${summary.reasons.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
       if (summary.suggestions.length) html += `<div><strong>💡 建议</strong><ul>${summary.suggestions.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
       if (summary.references.length) html += `<div><strong>📚 参考</strong><ul>${summary.references.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
-      html += '</div>';
+      html += `</div>`;
       document.getElementById('infoContent').innerHTML = html;
     } catch(e) {
       alert('生成摘要失败');
@@ -314,9 +310,7 @@ export async function renderChatView(existingSession = null) {
       summaryBtn.textContent = '📋 生成摘要';
     }
   };
-
-  setupVoiceRecognition();
-
+  setupVoiceInput(userInput, document.getElementById('voiceBtn'));
   if (appState.currentSessionId && !existingSession) {
     const res = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
     const session = await res.json();
@@ -347,35 +341,7 @@ async function exportCurrentChat() {
   URL.revokeObjectURL(url);
 }
 
-function setupVoiceRecognition() {
-  const voiceBtn = document.getElementById('voiceBtn');
-  if (!voiceBtn) return;
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    voiceBtn.disabled = true; voiceBtn.title = '不支持语音'; return;
-  }
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'zh-CN';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-  let isRecording = false;
-  recognition.onresult = (e) => {
-    const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
-    const input = document.getElementById('userInput');
-    if (input) input.value = transcript;
-  };
-  recognition.onerror = () => { isRecording = false; voiceBtn.style.background = '#4a90e2'; voiceBtn.textContent = '🎤'; };
-  recognition.onend = () => { isRecording = false; voiceBtn.style.background = '#4a90e2'; voiceBtn.textContent = '🎤'; };
-  voiceBtn.onmousedown = () => {
-    if (isRecording) return;
-    try { recognition.start(); isRecording = true; voiceBtn.style.background = '#d32f2f'; voiceBtn.textContent = '🔴'; } catch(e) {}
-  };
-  voiceBtn.onmouseup = () => { if (isRecording) recognition.stop(); };
-  voiceBtn.onmouseleave = () => { if (isRecording) recognition.stop(); };
-}
-
 async function showPolicyQuickSearch() {
-  // 快速实现，调用知识库搜索
   const modal = document.createElement('div');
   modal.className = 'modal';
   modal.style.display = 'flex';
@@ -433,5 +399,12 @@ function showKnowledgeDetail(item) {
   document.body.appendChild(modal);
 }
 
-// 重新导出需要被其他模块使用的函数
-export { switchSession as switchToChat };
+// 辅助函数（需要从 state 导入，但这里简单实现避免循环）
+async function loadSessions() {
+  const res = await fetchWithAuth('/api/sessions');
+  if (res.ok) appState.sessions = await res.json();
+}
+async function loadMessageFavorites() {
+  const res = await fetchWithAuth('/api/user/favorites');
+  if (res.ok) appState.messageFavorites = await res.json();
+}

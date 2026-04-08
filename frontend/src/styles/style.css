@@ -1716,3 +1716,101 @@ body {
         margin-bottom: 8px;
     }
 }
+
+/* 模拟对练新增样式 */
+.satisfaction-bar {
+  margin-top: 6px;
+  background: #eee;
+  border-radius: 4px;
+  height: 4px;
+  overflow: hidden;
+}
+.satisfaction-bar > div {
+  background: #4caf50;
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.simulate-status-panel {
+  background: rgba(0,0,0,0.7);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.simulate-status-panel progress {
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+}
+.simulate-status-panel .stages span {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #555;
+  border-radius: 12px;
+  margin: 0 2px;
+}
+.simulate-status-panel .stages span.completed {
+  background: #4caf50;
+}
+
+#strategyTip {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  background: #ff9800;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  animation: fadeInUp 0.3s ease;
+}
+
+/* 会议模式新增样式 */
+.meeting-status-panel {
+  background: #2e5d34;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.meeting-agenda {
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 12px;
+  border-left: 4px solid #ff9800;
+}
+.meeting-agenda h4 {
+  margin: 0 0 8px;
+  color: #2e5d34;
+}
+.meeting-agenda-item {
+  padding: 4px 0;
+  font-size: 0.9rem;
+}
+.meeting-agenda-item.current {
+  font-weight: bold;
+  color: #ff9800;
+}
+.meeting-agenda-item.completed {
+  text-decoration: line-through;
+  color: #888;
+}
+.villager-stance {
+  font-size: 0.7rem;
+  margin-left: 4px;
+}
+.stance-support { color: #4caf50; }
+.stance-oppose { color: #f44336; }
+.stance-neutral { color: #ff9800; }

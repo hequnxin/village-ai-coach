@@ -1,4 +1,4 @@
-// 登录、注册、token 管理
+// frontend/src/modules/auth.js
 import { appState, setAppState } from './state';
 import { initApp } from '../main';
 
@@ -11,7 +11,7 @@ export function initAuth() {
       document.getElementById('usernameDisplay').textContent = payload.username;
       document.getElementById('authContainer').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
-      initApp();  // 在 main.js 中定义的全局初始化函数
+      initApp();
     } catch {
       localStorage.removeItem('token');
       showAuth();
@@ -26,7 +26,6 @@ function showAuth() {
   document.getElementById('app').style.display = 'none';
 }
 
-// 绑定登录注册事件（在 main.js 中调用）
 export function bindAuthEvents() {
   const loginForm = document.getElementById('loginForm');
   const registerForm = document.getElementById('registerForm');
@@ -68,7 +67,7 @@ export function bindAuthEvents() {
       document.getElementById('usernameDisplay').textContent = data.username;
       document.getElementById('authContainer').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
-      initApp();  // 重新初始化应用
+      initApp();
     } catch (err) {
       loginError.textContent = err.message;
     }
@@ -96,6 +95,19 @@ export function bindAuthEvents() {
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     localStorage.removeItem('token');
+    // 重置全局状态
+    appState.currentSessionId = null;
+    appState.sessions = [];
+    appState.messageFavorites = [];
+    appState.currentFilter = 'all';
+    appState.currentCategoryFilter = 'all';
+    appState.currentView = 'chat';
+    appState.username = '';
+    appState.userLevel = 1;
+    appState.userPoints = 0;
+    appState.userNextLevelPoints = 100;
+    appState.knowledgeData = [];
+    appState.isTyping = false;
     showAuth();
   });
 }

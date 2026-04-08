@@ -1,4 +1,3 @@
-// 渲染会话列表、消息收藏列表等 UI 组件
 import { appState, toggleSessionFavorite, deleteSession, switchSession, switchToMessage } from './state';
 import { escapeHtml } from '../utils/helpers';
 
@@ -7,10 +6,6 @@ export function renderSessionList() {
   if (!sessionListDiv) return;
   const filtered = appState.currentFilter === 'all' ? appState.sessions : appState.sessions.filter(s => s.favorite);
   sessionListDiv.innerHTML = '';
-  if (filtered.length === 0) {
-    sessionListDiv.innerHTML = '<div class="empty">暂无会话</div>';
-    return;
-  }
   filtered.forEach(session => {
     const item = document.createElement('div');
     item.className = `session-item ${session.id === appState.currentSessionId ? 'active' : ''}`;
@@ -62,33 +57,41 @@ export function setupSessionTabs() {
   const allSessionsTab = document.getElementById('allSessionsTab');
   const favoritesTab = document.getElementById('favoritesTab');
   const messageFavoritesTab = document.getElementById('messageFavoritesTab');
-  const sessionListDiv = document.getElementById('sessionList');
+  const sessionList = document.getElementById('sessionList');
   const messageFavoriteList = document.getElementById('messageFavoriteList');
 
-  allSessionsTab.onclick = () => {
-    allSessionsTab.classList.add('active');
-    favoritesTab.classList.remove('active');
-    messageFavoritesTab.classList.remove('active');
-    appState.currentFilter = 'all';
-    sessionListDiv.style.display = 'block';
-    messageFavoriteList.style.display = 'none';
+  const setActiveTab = (active) => {
+    [allSessionsTab, favoritesTab, messageFavoritesTab].forEach(tab => tab.classList.remove('active'));
+    active.classList.add('active');
+  };
+
+  const showSessionList = () => {
+    if (sessionList) sessionList.style.display = 'block';
+    if (messageFavoriteList) messageFavoriteList.style.display = 'none';
     renderSessionList();
   };
-  favoritesTab.onclick = () => {
-    favoritesTab.classList.add('active');
-    allSessionsTab.classList.remove('active');
-    messageFavoritesTab.classList.remove('active');
-    appState.currentFilter = 'favorites';
-    sessionListDiv.style.display = 'block';
-    messageFavoriteList.style.display = 'none';
-    renderSessionList();
-  };
-  messageFavoritesTab.onclick = () => {
-    messageFavoritesTab.classList.add('active');
-    allSessionsTab.classList.remove('active');
-    favoritesTab.classList.remove('active');
-    sessionListDiv.style.display = 'none';
-    messageFavoriteList.style.display = 'block';
+
+  const showMessageFavorites = () => {
+    if (sessionList) sessionList.style.display = 'none';
+    if (messageFavoriteList) messageFavoriteList.style.display = 'block';
     renderMessageFavoriteList();
   };
+
+  allSessionsTab.addEventListener('click', () => {
+    appState.currentFilter = 'all';
+    setActiveTab(allSessionsTab);
+    showSessionList();
+  });
+  favoritesTab.addEventListener('click', () => {
+    appState.currentFilter = 'favorites';
+    setActiveTab(favoritesTab);
+    showSessionList();
+  });
+  messageFavoritesTab.addEventListener('click', () => {
+    setActiveTab(messageFavoritesTab);
+    showMessageFavorites();
+  });
+
+  // 初始显示会话列表
+  showSessionList();
 }
