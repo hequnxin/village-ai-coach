@@ -79,12 +79,7 @@ async function initDb() {
       completed INTEGER,
       created_at TIMESTAMPTZ
     )`,
-    `CREATE TABLE IF NOT EXISTS daily_quiz_questions (
-      id TEXT PRIMARY KEY,
-      quiz_id TEXT REFERENCES daily_quiz(id) ON DELETE CASCADE,
-      question_id TEXT REFERENCES quiz_questions(id)
-    )`,
-    // 题目表
+       // 题目表
     `CREATE TABLE IF NOT EXISTS quiz_questions (
       id TEXT PRIMARY KEY,
       type TEXT,
@@ -96,6 +91,12 @@ async function initDb() {
       difficulty INTEGER,
       created_at TIMESTAMPTZ
     )`,
+    `CREATE TABLE IF NOT EXISTS daily_quiz_questions (
+      id TEXT PRIMARY KEY,
+      quiz_id TEXT REFERENCES daily_quiz(id) ON DELETE CASCADE,
+      question_id TEXT REFERENCES quiz_questions(id)
+    )`,
+
     // 错题本
     `CREATE TABLE IF NOT EXISTS wrong_questions (
       id TEXT PRIMARY KEY,

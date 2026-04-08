@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>村官AI伙伴 · 赋能基层</title>
+  <link rel="stylesheet" href="/src/styles/style.css">
+</head>
+<body>
+  <div id="authContainer" class="auth-container">
+    <div class="auth-box">
+      <h2>🌾 村官AI伙伴</h2>
+      <div class="tab">
+        <button id="loginTab" class="active">登录</button>
+        <button id="registerTab">注册</button>
+      </div>
+      <form id="loginForm">
+        <input type="text" id="loginUsername" placeholder="用户名" required>
+        <input type="password" id="loginPassword" placeholder="密码" required>
+        <button type="submit">登录</button>
+        <p class="error" id="loginError"></p>
+      </form>
+      <form id="registerForm" style="display:none;">
+        <input type="text" id="registerUsername" placeholder="用户名" required>
+        <input type="password" id="registerPassword" placeholder="密码" required>
+        <button type="submit">注册</button>
+        <p class="error" id="registerError"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" class="app" style="display:none;">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>🌾 村官AI伙伴</h2>
+        <button id="newSessionBtn" class="new-session">➕ 新建</button>
+      </div>
+      <div class="session-tabs">
+        <button id="allSessionsTab" class="session-tab active">全部会话</button>
+        <button id="favoritesTab" class="session-tab">⭐ 会话收藏</button>
+        <button id="messageFavoritesTab" class="session-tab">💬 消息收藏</button>
+      </div>
+      <div id="sessionList" class="session-list"></div>
+      <div id="messageFavoriteList" class="message-favorite-list" style="display: none;"></div>
+      <div id="taskPanel" class="task-panel">
+        <h4>📋 今日任务</h4>
+        <div id="taskList"></div>
+      </div>
+      <div id="sidebarLevelContainer" class="level-progress-container" style="display: none;"></div>
+      <div class="user-info">
+        <span id="usernameDisplay"></span>
+        <button id="logoutBtn">退出</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <nav class="top-nav">
+        <button id="navChat" class="nav-btn active">💬 问答</button>
+        <button id="navSimulate" class="nav-btn">🎭 模拟对练</button>
+        <button id="navMeeting" class="nav-btn">🏛️ 会议模式</button>
+        <button id="navKnowledge" class="nav-btn">📚 案例库</button>
+        <button id="navQuiz" class="nav-btn">🎮 政策闯关</button>
+        <button id="navProfile" class="nav-btn">👤 我的</button>
+      </nav>
+      <div id="dynamicContent" class="dynamic-content"></div>
+    </main>
+  </div>
+
+  <!-- 音效资源（预加载） -->
+  <audio id="soundSend" preload="auto" src="/sounds/send.mp3" style="display:none;"></audio>
+  <audio id="soundComplete" preload="auto" src="/sounds/complete.mp3" style="display:none;"></audio>
+  <audio id="soundError" preload="auto" src="/sounds/error.mp3" style="display:none;"></audio>
+  <audio id="soundReward" preload="auto" src="/sounds/reward.mp3" style="display:none;"></audio>
+  <audio id="soundEmotion" preload="auto" src="/sounds/emotion.mp3" style="display:none;"></audio>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
