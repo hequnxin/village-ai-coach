@@ -148,6 +148,11 @@ router.post('/daily/submit', async (req, res) => {
 // ==================== 每周竞赛（支持多次参赛） ====================
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
+  // 检查表是否存在
+  const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
+  if (!tableExists.exists) {
+    return res.json({ participated: false, attemptsLeft: 3 });
+  }
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);

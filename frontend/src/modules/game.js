@@ -22,7 +22,7 @@ let currentContestId = null;
 let currentContestQuestions = [];
 let currentContestAnswers = [];
 let contestStartTime = null;
-let contestTotalTime = 180; // 3分钟 = 180秒
+let contestTotalTime = 180; // 3分钟
 let contestTimerInterval = null;
 let currentAttemptNumber = 1;
 
@@ -47,7 +47,7 @@ export async function renderGameView() {
           <div class="module-icon">🏆</div>
           <div class="module-title">政策闯关</div>
           <div class="module-desc">逐级解锁，赢取积分</div>
-          <div class="module-preview" id="themesPreview">加载中...</div>
+          <div class="module-preview" id="themesPreview">点击进入</div>
           <button class="module-btn" id="openLevelsBtn">进入闯关 →</button>
         </div>
         <div class="game-module module-daily">
@@ -573,7 +573,7 @@ function showContestQuestion(index) {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  // 更新倒计时（总时间）
+  // 更新倒计时
   if (contestTimerInterval) clearInterval(contestTimerInterval);
   contestTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -589,7 +589,6 @@ function showContestQuestion(index) {
     }
   }, 1000);
 
-  // 选项选择（已提交的题目不可再选）
   const opts = modal.querySelectorAll('.option-item');
   let selected = null;
   if (currentContestAnswers[index] !== undefined && currentContestAnswers[index] !== null) {
@@ -623,17 +622,13 @@ function showContestQuestion(index) {
       alert('请选择答案');
       return;
     }
-    // 记录当前题答案
     if (selected !== null) currentContestAnswers[index] = selected;
-    // 显示反馈
     await submitContestSingle(index, currentContestAnswers[index], modal);
-    // 如果是最后一题，提交整个竞赛
     if (index === currentContestQuestions.length-1) {
       clearInterval(contestTimerInterval);
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
       await finalizeContest(modal, timeUsed);
     } else {
-      // 自动跳转到下一题（延迟1.5秒让用户看到反馈）
       setTimeout(() => {
         closeModal();
         showContestQuestion(index+1);
@@ -647,7 +642,6 @@ async function submitContestSingle(index, selected, modal) {
   const isCorrect = (q.answer == selected);
   const feedbackDiv = modal.querySelector('#feedbackArea');
   const opts = modal.querySelectorAll('.option-item');
-  // 高亮正确和错误选项
   opts.forEach(opt => {
     const optVal = parseInt(opt.dataset.opt);
     if (optVal === q.answer) opt.classList.add('correct');
@@ -659,16 +653,12 @@ async function submitContestSingle(index, selected, modal) {
   } else {
     feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(q.answer)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
     playSound('error');
-    // 记录错题
     await fetchWithAuth('/api/game/wrong-questions/record', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ questionId: q.id, userAnswer: selected })
     });
   }
-  // 禁用选项点击
-  opts.forEach(opt => opt.style.pointerEvents = 'none');
-  // 禁用提交按钮防止重复提交
   const submitBtn = modal.querySelector('#submitBtn');
   if (submitBtn) submitBtn.disabled = true;
 }
@@ -687,7 +677,7 @@ async function finalizeContest(modal, timeUsed) {
   modal.querySelector('.modal-close').click();
 }
 
-// ==================== 错题本 ====================
+// ==================== 错题本（改进版：每题显示正确答案和解析，答错不结束） ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   wrongQuestionsList = await res.json();
@@ -721,7 +711,11 @@ function showWrongQuestion() {
           </div>
         `).join('')}
       </div>
-      <div style="margin-top:20px;"><button id="submitWrongBtn" class="submit-btn">提交答案</button></div>
+      <div id="feedbackArea" style="margin-top:12px;"></div>
+      <div style="margin-top:20px;">
+        <button id="submitWrongBtn" class="submit-btn">提交答案</button>
+        <button id="skipWrongBtn" class="summary-btn" style="margin-left:10px;">跳过本题</button>
+      </div>
     </div>
   `;
   document.body.appendChild(modal);
@@ -730,56 +724,102 @@ function showWrongQuestion() {
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
   let selected = null;
-  modal.querySelectorAll('.option-item').forEach(opt => {
+  const opts = modal.querySelectorAll('.option-item');
+  opts.forEach(opt => {
     opt.onclick = () => {
-      modal.querySelectorAll('.option-item').forEach(o => o.classList.remove('selected'));
+      if (selected !== null && modal.querySelector('#submitWrongBtn').disabled) return;
+      opts.forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
       selected = parseInt(opt.dataset.opt);
     };
   });
 
   const submitBtn = modal.querySelector('#submitWrongBtn');
+  const skipBtn = modal.querySelector('#skipWrongBtn');
+  const feedbackDiv = modal.querySelector('#feedbackArea');
+
   submitBtn.onclick = async () => {
     if (selected === null) { alert('请选择答案'); return; }
-    const res = await fetchWithAuth('/api/game/wrong-questions/clear', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers: [{ questionId: w.question_id, selected }] })
+    const isCorrect = (w.answer == selected);
+    // 高亮正确和错误选项
+    opts.forEach(opt => {
+      const optVal = parseInt(opt.dataset.opt);
+      if (optVal === w.answer) opt.classList.add('correct');
+      if (optVal === selected && !isCorrect) opt.classList.add('wrong');
     });
-    const result = await res.json();
-    closeModal();
-    if (result.clearedCount > 0) {
-      alert(`答对了！获得 ${result.rewardPoints} 积分`);
-      addPoints(result.rewardPoints, '错题闯关');
-      currentWrongIndex++;
-      showWrongQuestion();
+    if (isCorrect) {
+      feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${w.explanation ? '<br>解析：'+escapeHtml(w.explanation) : ''}</div>`;
+      playSound('complete');
+      const res = await fetchWithAuth('/api/game/wrong-questions/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: [{ questionId: w.question_id, selected }] })
+      });
+      const result = await res.json();
+      if (result.clearedCount > 0) {
+        addPoints(result.rewardPoints, '错题闯关');
+      }
+      setTimeout(() => {
+        closeModal();
+        currentWrongIndex++;
+        showWrongQuestion();
+      }, 1500);
     } else {
-      alert('答错了，闯关结束！');
+      feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(w.answer)}<br>${w.explanation ? '解析：'+escapeHtml(w.explanation) : ''}</div>`;
+      playSound('error');
+      submitBtn.disabled = true;
+      const nextBtn = document.createElement('button');
+      nextBtn.textContent = '下一题';
+      nextBtn.className = 'submit-btn';
+      nextBtn.style.marginLeft = '10px';
+      nextBtn.onclick = () => {
+        closeModal();
+        currentWrongIndex++;
+        showWrongQuestion();
+      };
+      submitBtn.parentNode.appendChild(nextBtn);
     }
+  };
+
+  skipBtn.onclick = () => {
+    closeModal();
+    currentWrongIndex++;
+    showWrongQuestion();
   };
 }
 
 // ==================== 刮刮乐 ====================
 async function updateScratchRemaining() {
-  const today = new Date().toISOString().slice(0, 10);
-  // 检查 localStorage 中的日期，如果不是今天则重置计数
-  const storedDate = localStorage.getItem('scratch_date');
-  if (storedDate !== today) {
-    localStorage.setItem('scratch_date', today);
-    localStorage.setItem('scratch_count', '0');
-  }
-  let count = parseInt(localStorage.getItem('scratch_count')) || 0;
-  // 同时从后端获取今日已刮次数（更准确）
   try {
     const res = await fetchWithAuth('/api/game/scratch/today-count');
     if (res.ok) {
       const data = await res.json();
-      count = data.count;
-      localStorage.setItem('scratch_count', count);
+      scratchRemaining = Math.max(0, 5 - data.count);
+      localStorage.setItem('scratch_count', data.count);
+      localStorage.setItem('scratch_date', new Date().toISOString().slice(0,10));
+    } else {
+      const today = new Date().toISOString().slice(0,10);
+      const storedDate = localStorage.getItem('scratch_date');
+      let count = parseInt(localStorage.getItem('scratch_count')) || 0;
+      if (storedDate !== today) {
+        count = 0;
+        localStorage.setItem('scratch_date', today);
+        localStorage.setItem('scratch_count', '0');
+      }
+      scratchRemaining = Math.max(0, 5 - count);
     }
-  } catch(e) { console.warn('获取后端刮刮乐次数失败', e); }
-
-  scratchRemaining = Math.max(0, 5 - count);
+  } catch(e) {
+    console.warn('获取刮刮乐次数失败', e);
+    const today = new Date().toISOString().slice(0,10);
+    const storedDate = localStorage.getItem('scratch_date');
+    let count = parseInt(localStorage.getItem('scratch_count')) || 0;
+    if (storedDate !== today) {
+      count = 0;
+      localStorage.setItem('scratch_date', today);
+      localStorage.setItem('scratch_count', '0');
+    }
+    scratchRemaining = Math.max(0, 5 - count);
+  }
   const statsSpan = document.getElementById('scratchStats');
   if (statsSpan) statsSpan.innerHTML = `剩余次数: ${scratchRemaining}`;
   const btn = document.getElementById('getScratchBtn');
