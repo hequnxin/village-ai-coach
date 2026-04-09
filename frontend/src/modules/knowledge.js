@@ -1,13 +1,13 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
-import { escapeHtml } from '../utils/helpers';
+import { escapeHtml, setActiveNavByView } from '../utils/helpers';
 
 export async function renderKnowledgeView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="knowledge-view">
       <div class="knowledge-filters">
-        ${['全部','土地管理','产业发展','民生保障','矛盾纠纷','基层治理','项目申报','生态环保','乡村建设','创业就业','政策法规'].map(t => 
+        ${['全部','土地管理','产业发展','民生保障','矛盾纠纷','基层治理','项目申报','生态环保','乡村建设','创业就业','政策法规'].map(t =>
           `<button class="filter-btn ${t==='全部'?'active':''}" data-type="${t==='全部'?'all':t}">${t}</button>`
         ).join('')}
       </div>
@@ -24,8 +24,6 @@ export async function renderKnowledgeView() {
       <div id="knowledgeList" class="knowledge-list">加载中...</div>
     </div>
   `;
-
-  // 绑定筛选事件
   document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.onclick = () => {
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -42,10 +40,10 @@ export async function renderKnowledgeView() {
       loadKnowledge(appState.currentFilter, appState.currentCategoryFilter);
     };
   });
-
   document.getElementById('uploadKnowledgeBtn').onclick = showUploadModal;
   document.getElementById('policyQuickSearchBtn').onclick = showPolicyQuickSearch;
   await loadKnowledge('all', 'all');
+  setActiveNavByView('knowledge');
 }
 
 async function loadKnowledge(type, category) {

@@ -225,27 +225,73 @@ export function showComboEffect() {
   playSound('reward');
 }
 
-export function setupGlobalEventListeners() {
-  document.getElementById('newSessionBtn').onclick = () => {
-    import('../modules/state').then(({ createNewSession }) => createNewSession('新会话'));
+// ========== 导航栏 active 控制 ==========
+export function setActiveNavByView(viewName) {
+  const map = {
+    chat: 'navChat',
+    simulate: 'navSimulate',
+    meeting: 'navMeeting',
+    knowledge: 'navKnowledge',
+    quiz: 'navQuiz',
+    profile: 'navProfile'
   };
+  const id = map[viewName];
+  if (id) {
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.add('active');
+  }
+}
+
+export function setupGlobalEventListeners() {
+  const newSessionBtn = document.getElementById('newSessionBtn');
+  if (newSessionBtn) {
+    newSessionBtn.onclick = () => {
+      import('../modules/state').then(({ createNewSession }) => createNewSession('新会话'));
+    };
+  }
+
   const navChat = document.getElementById('navChat');
   const navSimulate = document.getElementById('navSimulate');
   const navMeeting = document.getElementById('navMeeting');
   const navKnowledge = document.getElementById('navKnowledge');
   const navQuiz = document.getElementById('navQuiz');
   const navProfile = document.getElementById('navProfile');
+
+  function setActiveNav(activeBtn) {
+    [navChat, navSimulate, navMeeting, navKnowledge, navQuiz, navProfile].forEach(btn => {
+      if (btn) btn.classList.remove('active');
+    });
+    if (activeBtn) activeBtn.classList.add('active');
+  }
+
   navChat.onclick = () => {
+    setActiveNav(navChat);
     import('../modules/chat').then(m => {
       if (typeof m.switchToChat === 'function') m.switchToChat();
       else console.error('switchToChat not found');
     });
   };
-  navSimulate.onclick = () => import('../modules/simulate').then(m => m.renderSimulateView(true));
-  navMeeting.onclick = () => import('../modules/meeting').then(m => m.renderMeetingSetupView());
-  navKnowledge.onclick = () => import('../modules/knowledge').then(m => m.renderKnowledgeView());
-  navQuiz.onclick = () => import('../modules/quiz').then(m => m.renderQuizView());
-  navProfile.onclick = () => import('../modules/profile').then(m => m.renderProfileView());
+  navSimulate.onclick = () => {
+    setActiveNav(navSimulate);
+    import('../modules/simulate').then(m => m.renderSimulateView(true));
+  };
+  navMeeting.onclick = () => {
+    setActiveNav(navMeeting);
+    import('../modules/meeting').then(m => m.renderMeetingSetupView());
+  };
+  navKnowledge.onclick = () => {
+    setActiveNav(navKnowledge);
+    import('../modules/knowledge').then(m => m.renderKnowledgeView());
+  };
+  navQuiz.onclick = () => {
+    setActiveNav(navQuiz);
+    import('../modules/quiz').then(m => m.renderQuizView());
+  };
+  navProfile.onclick = () => {
+    setActiveNav(navProfile);
+    import('../modules/profile').then(m => m.renderProfileView());
+  };
 }
 
 export function setupVoiceInput(inputElement, buttonElement, onResultCallback) {

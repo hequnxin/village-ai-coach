@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
-import { escapeHtml } from '../utils/helpers';
+import { escapeHtml, setActiveNavByView } from '../utils/helpers';
 
 export async function renderProfileView() {
   const dynamicContent = document.getElementById('dynamicContent');
@@ -24,18 +24,15 @@ export async function renderProfileView() {
       </div>
     </div>
   `;
-
   const growthRes = await fetchWithAuth('/api/user/growth');
   const data = await growthRes.json();
   document.getElementById('points').textContent = data.points;
   document.getElementById('level').textContent = `Lv.${data.level}`;
   const need = data.nextLevelPoints - data.points;
   document.getElementById('nextLevel').textContent = need > 0 ? need : 0;
-
   const badgesDiv = document.getElementById('badges');
   if (data.badges.length === 0) badgesDiv.innerHTML = '<p>暂无勋章</p>';
   else badgesDiv.innerHTML = data.badges.map(b => `<div class="badge-item"><span class="badge-icon">${b.icon}</span><span class="badge-name">${b.name}</span></div>`).join('');
-
   document.getElementById('stats').innerHTML = `
     <div class="stat-item">对话次数：${data.stats.sessionCount}</div>
     <div class="stat-item">收藏消息：${data.stats.favoriteCount}</div>
@@ -43,8 +40,6 @@ export async function renderProfileView() {
     <div class="stat-item">已采纳上传：${data.stats.approvedUploads}</div>
     <div class="stat-item">待审核上传：${data.stats.pendingUploads}</div>
   `;
-
-  // 简单成长曲线（模拟数据）
   const ctx = document.getElementById('growthChart').getContext('2d');
   const base = Math.max(10, Math.floor(data.points / 7));
   const days = ['周一','周二','周三','周四','周五','周六','周日'];
@@ -64,7 +59,6 @@ export async function renderProfileView() {
     ctx.fillText(d, x, h - 10);
     ctx.fillStyle = '#2e5d34';
   });
-
   const audioToggle = document.getElementById('audioToggle');
   const particleToggle = document.getElementById('particleToggle');
   audioToggle.addEventListener('change', e => {
@@ -76,4 +70,5 @@ export async function renderProfileView() {
       import('../utils/helpers').then(({ initParticles }) => initParticles());
     }
   });
+  setActiveNavByView('profile');
 }

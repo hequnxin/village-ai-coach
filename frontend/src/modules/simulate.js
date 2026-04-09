@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
-import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput } from '../utils/helpers';
+import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
 
 let currentScenario = null;
 let currentMultiVillagers = [];
@@ -61,9 +61,7 @@ async function sendSimulateMessage(sessionId, text, container, typingIndicator, 
     const avatar = roleName.includes('村民') ? '👵' : '🤖';
     const assistantMsg = createSimulateMessageElement('assistant', data.reply, avatar, data.emotion || 'neutral', data.satisfaction, data.messageId);
     container.appendChild(assistantMsg);
-    if (data.strategyTip) {
-      showTip(data.strategyTip);
-    }
+    if (data.strategyTip) showTip(data.strategyTip);
     updateSidebarStatus(data);
     scrollSimulate();
     if (data.timeExpired) {
@@ -171,6 +169,7 @@ export async function renderSimulateView(forceList = false) {
     const scenarios = await res.json();
     if (scenarios.length === 0) {
       document.getElementById('dynamicContent').innerHTML = '<div class="scenarios-list"><p>暂无场景</p></div>';
+      setActiveNavByView('simulate');
       return;
     }
     let html = `<div class="scenarios-list"><h2>选择场景</h2>`;
@@ -216,6 +215,7 @@ export async function renderSimulateView(forceList = false) {
         startSimulate(scenarioId, diff, mode, timeLimit);
       };
     });
+    setActiveNavByView('simulate');
     return;
   }
   const sessionRes = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
@@ -273,6 +273,7 @@ export async function renderSimulateChat(session) {
   if (!scenario) {
     document.getElementById('dynamicContent').innerHTML = `<div><p>场景不存在</p><button id="backBtn">返回</button></div>`;
     document.getElementById('backBtn').onclick = () => renderSimulateView(true);
+    setActiveNavByView('simulate');
     return;
   }
   currentScenario = scenario;
@@ -412,6 +413,7 @@ export async function renderSimulateChat(session) {
       finally { hintBtn.disabled = false; scrollSimulate(); }
     };
   }
+  setActiveNavByView('simulate');
 }
 
 function analyzeEmotion(text) {

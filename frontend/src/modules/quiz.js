@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
-import { escapeHtml, playSound, addPoints, updateTaskProgress } from '../utils/helpers';
+import { escapeHtml, playSound, addPoints, updateTaskProgress, setActiveNavByView } from '../utils/helpers';
 
 let currentFillQuestions = [];
 let fillAnswers = [];
@@ -63,6 +63,7 @@ export async function renderQuizView() {
   document.getElementById('startContestBtn').onclick = startWeeklyContest;
   document.getElementById('getScratchBtn').onclick = getScratchCard;
   document.getElementById('startPolicyQuizBtn').onclick = startPolicyQuiz;
+  setActiveNavByView('quiz');
 }
 
 // ==================== 政策闯关 ====================

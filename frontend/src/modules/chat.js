@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
-import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput } from '../utils/helpers';
+import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
 import { renderSessionList } from './ui';
 
 let isTyping = false;
@@ -327,6 +327,7 @@ export async function renderChatView(existingSession = null) {
   }
 
   document.getElementById('policyQuickSearch')?.addEventListener('click', showPolicyQuickSearch);
+  setActiveNavByView('chat');
 }
 
 async function exportCurrentChat() {
@@ -403,7 +404,6 @@ function showKnowledgeDetail(item) {
   document.body.appendChild(modal);
 }
 
-// 导出切换函数，供导航使用
 export function switchToChat() {
   if (appState.currentSessionId && appState.sessions.find(s => s.id === appState.currentSessionId)?.type === 'chat') {
     renderChatView();

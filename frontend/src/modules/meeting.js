@@ -1,6 +1,6 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState, createNewSession, switchSession } from './state';
-import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput } from '../utils/helpers';
+import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
 
 let currentMeeting = null;
 let meetingTyping = false;
@@ -55,7 +55,6 @@ export async function renderMeetingSetupView() {
       <button id="startMeetingBtn" class="submit-btn" style="width:100%;">开始会议</button>
     </div>
   `;
-
   const typeSelect = document.getElementById('meetingTypeSelect');
   const topicSelect = document.getElementById('meetingTopicSelect');
   const customInput = document.getElementById('customTopicInput');
@@ -102,6 +101,7 @@ export async function renderMeetingSetupView() {
     }
     await startMeeting(roles, topic, agenda);
   };
+  setActiveNavByView('meeting');
 }
 
 async function startMeeting(roles, topic, agenda) {
@@ -230,6 +230,7 @@ function renderMeetingChatArea() {
   };
   voteBtn.onclick = () => showVoteModal();
   if (voiceBtn) setupVoiceInput(meetingInput, voiceBtn);
+  setActiveNavByView('meeting');
 }
 
 function renderMeetingVillagers() {

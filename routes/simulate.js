@@ -19,7 +19,7 @@ router.get('/scenarios', async (req, res) => {
   res.json(scenarios);
 });
 
-// 创建模拟会话（支持分阶段目标、时间限制）
+// 创建模拟会话
 router.post('/session', async (req, res) => {
   const { scenarioId, difficulty = 'medium', timeLimit = null } = req.body;
   const userId = req.user.userId;
@@ -30,12 +30,10 @@ router.post('/session', async (req, res) => {
   } else {
     scenario.evalDimensions = [];
   }
-  // 扩展场景，添加分阶段目标（如果原场景没有，则默认生成）
   let stages = [];
   if (scenario.stages) {
     stages = JSON.parse(scenario.stages);
   } else {
-    // 默认简单分阶段：安抚情绪 -> 讲道理 -> 达成协议
     stages = [
       { name: '安抚情绪', description: '让村民情绪稳定下来', completed: false },
       { name: '讲清政策', description: '解释相关政策和法规', completed: false },
@@ -43,7 +41,6 @@ router.post('/session', async (req, res) => {
     ];
   }
   const session = await createSession(userId, { title: scenario.title, type: 'simulate', scenarioId, difficulty });
-  // 存储额外信息到会话的 scenario_id 字段（JSON格式）
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [
     JSON.stringify({ scenarioId, stages, timeLimit, startTime: Date.now() }),
     session.id
@@ -52,90 +49,63 @@ router.post('/session', async (req, res) => {
   res.json({ sessionId: session.id, initialMessage: scenario.initial_message });
 });
 
-// 模拟对话（支持多人模式、满意度、情绪、策略分析、阶段推进）
+// 模拟对话
 router.post('/chat', async (req, res) => {
   const { sessionId, message, villager } = req.body;
   const userId = req.user.userId;
-
   const session = await getSession(userId, sessionId);
   if (!session || session.type !== 'simulate') {
     return res.status(404).json({ error: '对练会话不存在' });
   }
-
-  // 解析会话额外信息
   let extra = { stages: [], timeLimit: null, startTime: Date.now() };
   if (session.scenarioId) {
-    try {
-      extra = JSON.parse(session.scenarioId);
-    } catch(e) { extra = { scenarioId: session.scenarioId, stages: [], timeLimit: null }; }
+    try { extra = JSON.parse(session.scenarioId); } catch(e) { extra = { scenarioId: session.scenarioId, stages: [], timeLimit: null }; }
   }
   const scenarioId = extra.scenarioId || session.scenarioId;
   const stages = extra.stages || [];
   const timeLimit = extra.timeLimit;
   const startTime = extra.startTime || Date.now();
-
-  // 检查时间限制
   if (timeLimit && (Date.now() - startTime) > timeLimit * 1000) {
     return res.json({ reply: '⏰ 时间到！本次模拟结束。', timeExpired: true });
   }
-
   const scenario = await db.get('SELECT * FROM scenarios WHERE id = $1', [scenarioId]);
   if (!scenario) return res.status(500).json({ error: '场景数据丢失' });
-
   await addMessage(sessionId, 'user', message, Date.now());
-
   const updatedSession = await getSession(userId, sessionId);
   const dialogueHistory = updatedSession.messages.filter(m => m.role !== 'system').map(m =>
     `${m.role === 'user' ? '村官' : (villager ? villager.name : scenario.role)}: ${m.content}`
   ).join('\n');
-
-  // 确定角色名称、性格、满意度、情绪
   let roleName = scenario.role;
   let personality = '';
-  let satisfaction = 50; // 默认满意度 0-100
+  let satisfaction = 50;
   let currentEmotion = 'neutral';
   const difficulty = session.difficulty || 'medium';
-
   if (villager) {
     roleName = villager.name;
     personality = villager.personality || '性格普通';
-    // 从会话存储中获取该村民的满意度和情绪（如果有）
     const villagersState = extra.villagersState || {};
     const state = villagersState[roleName] || { satisfaction: 50, emotion: 'neutral' };
     satisfaction = state.satisfaction;
     currentEmotion = state.emotion;
   } else {
-    // 单人模式：满意度代表整体氛围
     satisfaction = extra.satisfaction || 50;
     currentEmotion = extra.emotion || 'neutral';
     switch (difficulty) {
-      case 'easy':
-        personality = '你的性格温和、有耐心，即使面对质疑也愿意耐心解释。你说话客气，容易沟通。';
-        break;
-      case 'medium':
-        personality = '你的性格普通，有时会表现出一些固执和不耐烦，但整体还能理性沟通。';
-        break;
-      case 'hard':
-        personality = '你的性格急躁、说话难听，容易发火，对村干部的提议非常抵触，喜欢用反问和指责的语气。你会故意刁难对方，说话夹枪带棒。';
-        break;
-      default:
-        personality = '你的性格普通，有时会表现出一些固执和不耐烦。';
+      case 'easy': personality = '你的性格温和、有耐心，即使面对质疑也愿意耐心解释。你说话客气，容易沟通。'; break;
+      case 'medium': personality = '你的性格普通，有时会表现出一些固执和不耐烦，但整体还能理性沟通。'; break;
+      case 'hard': personality = '你的性格急躁、说话难听，容易发火，对村干部的提议非常抵触，喜欢用反问和指责的语气。你会故意刁难对方，说话夹枪带棒。'; break;
+      default: personality = '你的性格普通，有时会表现出一些固执和不耐烦。';
     }
   }
-
-  // 构建 prompt，要求 AI 返回 JSON 格式：{ reply, satisfactionDelta, emotion, stageProgress, strategyTip }
   const strategyTipInstruction = `请分析用户刚才的发言，判断其使用的策略（安抚、强硬、讲道理、回避等），并给出一个简短的实时提示（不超过20字）帮助用户改进。同时判断对话是否推动了阶段目标。返回JSON格式：{"reply":"你的回复","satisfactionDelta":整数(-20到20),"emotion":"happy/sad/angry/neutral","stageProgress":0或1,"strategyTip":"提示内容"}`;
-
   const prompt = `你正在模拟乡村工作场景。你的角色是：${roleName}。当前对话目标：${scenario.goal}。
 ${personality}
 当前村民满意度：${satisfaction}（0-100），情绪：${currentEmotion}。
 请根据以下对话历史，以角色的身份自然回应。注意语气要符合角色设定。
 ${strategyTipInstruction}
-
 对话历史：
 ${dialogueHistory}
 ${roleName}：`;
-
   try {
     const response = await chat([{ role: 'user', content: prompt }], { temperature: 0.8, max_tokens: 350 });
     let parsed;
@@ -151,19 +121,13 @@ ${roleName}：`;
     const newEmotion = parsed.emotion || 'neutral';
     const stageProgress = parsed.stageProgress || 0;
     const strategyTip = parsed.strategyTip || '';
-
-    // 更新满意度
     let newSatisfaction = satisfaction + satisfactionDelta;
     newSatisfaction = Math.min(100, Math.max(0, newSatisfaction));
-
-    // 更新阶段进度
     let updatedStages = [...stages];
     if (stageProgress === 1 && updatedStages.length > 0) {
       const firstIncomplete = updatedStages.find(s => !s.completed);
       if (firstIncomplete) firstIncomplete.completed = true;
     }
-
-    // 保存村民状态（如果是多人）
     let newExtra = { ...extra };
     if (villager) {
       newExtra.villagersState = newExtra.villagersState || {};
@@ -174,7 +138,6 @@ ${roleName}：`;
     }
     newExtra.stages = updatedStages;
     await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(newExtra), sessionId]);
-
     const msgId = (await addMessage(sessionId, 'assistant', reply, Date.now())).messageId;
     res.json({
       reply,
@@ -191,14 +154,12 @@ ${roleName}：`;
   }
 });
 
-// 结束对练并生成详细报告（含逐句点评、标准话术、错题记录）
+// 结束对练并生成报告
 router.post('/finish', async (req, res) => {
   const { sessionId } = req.body;
   const userId = req.user.userId;
-
   const session = await getSession(userId, sessionId);
   if (!session || session.type !== 'simulate') return res.status(404).json({ error: '对练会话不存在' });
-
   let extra = { scenarioId: session.scenarioId, stages: [], satisfaction: 50 };
   if (session.scenarioId) {
     try { extra = JSON.parse(session.scenarioId); } catch(e) {}
@@ -206,34 +167,26 @@ router.post('/finish', async (req, res) => {
   const scenarioId = extra.scenarioId || session.scenarioId;
   const stages = extra.stages || [];
   const finalSatisfaction = extra.satisfaction || 50;
-
   const scenario = await db.get('SELECT * FROM scenarios WHERE id = $1', [scenarioId]);
   if (!scenario) return res.status(500).json({ error: '场景数据丢失' });
-
   let evalDimensions = [];
   if (scenario.eval_dimensions) {
     try { evalDimensions = JSON.parse(scenario.eval_dimensions); } catch(e) {}
   }
-
-  // 提取对话（仅用户和助手）
   const dialogue = session.messages.filter(m => m.role !== 'system').map(m => ({
     role: m.role,
     content: m.content,
     timestamp: m.timestamp
   }));
-
-  // 构建详细报告请求
   const reportPrompt = `你是一名乡村治理培训师。请根据以下村官与${scenario.role}的模拟对话，生成一份详细评估报告。
 评估维度：${evalDimensions.join('、')}。
 要求：
 1. 对每个维度打分（1-5分），并给出具体改进建议。
-2. 从对话中摘录村官的2-3句典型发言，分别标注“优点”或“需改进”。
+2. 从对话中摘录村官的2-3句典型发言，分别标注"优点"或"需改进"。
 3. 提供2-3条该场景下的优秀话术参考。
-4. 总结用户在本模拟中的关键失误点，并归类（如“情绪控制不足”“政策解释不清”），这些将存入错题本。
-
+4. 总结用户在本模拟中的关键失误点，并归类（如"情绪控制不足""政策解释不清"），这些将存入错题本。
 对话内容（JSON格式）：
 ${JSON.stringify(dialogue)}
-
 输出格式（纯JSON，不要有其他文字）：
 {
   "scores": { "沟通技巧": 4, ... },
@@ -242,7 +195,6 @@ ${JSON.stringify(dialogue)}
   "bestPractices": ["优秀话术1", "优秀话术2"],
   "mistakes": ["失误点1", "失误点2"]
 }`;
-
   try {
     const resultText = await chat([{ role: 'user', content: reportPrompt }], { temperature: 0.3, max_tokens: 1200 });
     let report;
@@ -252,26 +204,18 @@ ${JSON.stringify(dialogue)}
     } else {
       report = { scores: {}, suggestions: resultText, examples: [], bestPractices: [], mistakes: [] };
     }
-
-    // 存储报告到消息中
     await addMessage(sessionId, 'system', `report:${JSON.stringify(report)}`, Date.now());
-
-    // 将失误点存入错题本（使用 wrong_questions 表，类型为 simulate_mistake）
     for (let mistake of (report.mistakes || [])) {
       const mistakeId = `sim_mistake_${Date.now()}_${Math.random()}`;
       await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, wrong_count, last_wrong_date)
-                    VALUES ($1, $2, $3, $4, $5)`,
-                    [mistakeId, userId, `simulate:${scenarioId}:${mistake}`, 1, new Date().toISOString().slice(0,10)]);
+        VALUES ($1, $2, $3, $4, $5)`,
+        [mistakeId, userId, `simulate:${scenarioId}:${mistake}`, 1, new Date().toISOString().slice(0,10)]);
     }
-
-    // 计算总得分（平均分）
     let totalScore = 0;
     const dims = Object.values(report.scores);
     if (dims.length) totalScore = dims.reduce((a,b)=>a+b,0) / dims.length;
-    // 根据满意度加成
     const satisfactionBonus = Math.floor(finalSatisfaction / 10);
     const finalScore = Math.min(5, totalScore + satisfactionBonus/10);
-
     res.json({
       report,
       finalScore,
@@ -285,7 +229,7 @@ ${JSON.stringify(dialogue)}
   }
 });
 
-// 获取模拟会话的详细状态（供前端轮询）
+// 获取模拟会话状态
 router.get('/status/:sessionId', async (req, res) => {
   const userId = req.user.userId;
   const session = await getSession(userId, req.params.sessionId);
