@@ -352,12 +352,28 @@ router.get('/weekly/status', async (req, res) => {
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
-  const contest = await db.get(`SELECT id FROM weekly_contest WHERE week_start = $1`, [startStr]);
+  const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
   if (contest) {
-    const score = await db.get(`SELECT score FROM weekly_contest_scores WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
-    if (score) res.json({ participated: true, score: score.score });
-    else res.json({ participated: false });
-  } else res.json({ participated: false });
+    const userScore = await db.get(`SELECT score, time_used FROM weekly_contest_scores WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
+    if (userScore) {
+      // 获取总题数
+      let totalQuestions = 0;
+      try {
+        const questionIds = JSON.parse(contest.questions);
+        totalQuestions = questionIds.length;
+      } catch(e) { totalQuestions = 0; }
+      res.json({
+        participated: true,
+        score: userScore.score,
+        total: totalQuestions,
+        timeUsed: userScore.time_used
+      });
+    } else {
+      res.json({ participated: false });
+    }
+  } else {
+    res.json({ participated: false });
+  }
 });
 
 module.exports = router;

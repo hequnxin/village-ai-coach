@@ -10,10 +10,10 @@ let currentLevelAnswers = [];
 let currentLevelIndex = 0;
 let currentLevelId = null;
 
-// 每日一练（混合题型）
-let currentDailyQuestions = [];       // 每项包含 { id, type, question, options, answer, explanation, hint? }
-let currentDailyAnswers = [];         // 存储用户答案（选择题存索引，填空题存字符串）
-let currentDailyScores = [];          // 每道题是否答对（用于提交后禁止修改）
+// 每日一练
+let currentDailyQuestions = [];
+let currentDailyAnswers = [];
+let currentDailyScores = [];
 let currentDailyQuizId = null;
 let dailyScore = 0;
 
@@ -22,7 +22,8 @@ let currentContestId = null;
 let currentContestQuestions = [];
 let currentContestAnswers = [];
 let contestStartTime = null;
-let contestTimer = null;
+let contestTotalTime = 600; // 10分钟总时间
+let contestTimerInterval = null;
 
 // 错题本
 let wrongQuestionsList = [];
@@ -120,14 +121,20 @@ async function loadModuleStats() {
   } catch(e) {}
 
   try {
-    const contestRes = await fetchWithAuth('/api/game/weekly/status');
-    const contestData = await contestRes.json();
-    const contestStats = document.getElementById('contestStats');
-    if (contestStats) {
-      if (contestData.participated) contestStats.innerHTML = `已参加 (${contestData.score}分)`;
-      else contestStats.innerHTML = '本周未参加';
+  const contestRes = await fetchWithAuth('/api/game/weekly/status');
+  const contestData = await contestRes.json();
+  const contestStats = document.getElementById('contestStats');
+  if (contestStats) {
+    if (contestData.participated) {
+      const minutes = Math.floor(contestData.timeUsed / 60);
+      const seconds = contestData.timeUsed % 60;
+      const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+      contestStats.innerHTML = `已参加: ${contestData.score}/${contestData.total}题, 用时 ${timeStr}`;
+    } else {
+      contestStats.innerHTML = '本周未参加';
     }
-  } catch(e) {}
+  }
+} catch(e) {}
 }
 
 // ==================== 政策闯关 ====================
@@ -136,7 +143,6 @@ async function showLevelsModal() {
   const container = document.getElementById('themesDetailContainer');
   if (!container) return;
   modal.style.display = 'flex';
-  // 绑定关闭按钮（确保无论加载结果如何都能关闭）
   const closeBtn = modal.querySelector('.close-modal');
   if (closeBtn) closeBtn.onclick = () => { modal.style.display = 'none'; };
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
@@ -292,7 +298,7 @@ function showLevelQuestion() {
   };
 }
 
-// ==================== 每日一练（混合题型） ====================
+// ==================== 每日一练 ====================
 async function startDailyQuiz() {
   try {
     const res = await fetchWithAuth('/api/game/daily');
@@ -338,16 +344,14 @@ function showDailyQuestion(index) {
         `).join('')}
       </div>
     `;
-  } else { // fill
+  } else {
     contentHtml += `
       <div class="fill-hint" style="color:#666; margin-bottom:12px;">💡 ${escapeHtml(q.hint || '根据上下文填空')}</div>
       <input type="text" id="fillAnswer" class="fill-input" placeholder="填写答案" style="width:100%; padding:8px;">
     `;
   }
-  // 添加反馈区域
-  contentHtml += `<div id="feedbackArea" style="margin-top:12px; font-size:0.9rem;"></div>`;
+  contentHtml += `<div id="feedbackArea" style="margin-top:12px;"></div>`;
   if (currentDailyScores[index]) {
-    // 已答对，显示结果但禁用修改
     contentHtml += `<div style="margin-top:20px;"><button id="nextBtn" class="submit-btn">${index===currentDailyQuestions.length-1?'完成':'下一题'}</button></div>`;
   } else {
     contentHtml += `<div style="margin-top:20px;"><button id="submitAnswerBtn" class="submit-btn">提交答案</button></div>`;
@@ -373,7 +377,7 @@ function showDailyQuestion(index) {
     }
     opts.forEach(opt => {
       opt.onclick = () => {
-        if (currentDailyScores[index]) return; // 已答对不可改
+        if (currentDailyScores[index]) return;
         const val = parseInt(opt.dataset.opt);
         selected = val;
         opts.forEach(o => o.classList.remove('selected'));
@@ -387,7 +391,7 @@ function showDailyQuestion(index) {
         await submitDailyAnswer(index, selected, modal);
       };
     }
-  } else { // fill
+  } else {
     const input = modal.querySelector('#fillAnswer');
     if (currentDailyAnswers[index]) input.value = currentDailyAnswers[index];
     const submitBtn = modal.querySelector('#submitAnswerBtn');
@@ -428,10 +432,8 @@ async function submitDailyAnswer(index, userAnswer, modal) {
       currentDailyScores[index] = true;
       dailyScore++;
     }
-    // 显示正确反馈
     const feedback = modal.querySelector('#feedbackArea');
     feedback.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${q.explanation ? '<br>解析：'+escapeHtml(q.explanation) : ''}</div>`;
-    // 高亮选项或输入框
     if (q.type === 'choice') {
       const opts = modal.querySelectorAll('.option-item');
       opts.forEach(opt => {
@@ -442,7 +444,6 @@ async function submitDailyAnswer(index, userAnswer, modal) {
       const input = modal.querySelector('#fillAnswer');
       if (input) input.classList.add('correct');
     }
-    // 禁用提交按钮，显示下一题按钮
     const submitBtn = modal.querySelector('#submitAnswerBtn');
     if (submitBtn) submitBtn.disabled = true;
     const nextBtn = document.createElement('button');
@@ -456,7 +457,6 @@ async function submitDailyAnswer(index, userAnswer, modal) {
     };
     modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
   } else {
-    // 显示错误反馈
     const feedback = modal.querySelector('#feedbackArea');
     feedback.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(q.answer)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
     if (q.type === 'choice') {
@@ -469,13 +469,11 @@ async function submitDailyAnswer(index, userAnswer, modal) {
       const input = modal.querySelector('#fillAnswer');
       if (input) input.classList.add('wrong');
     }
-    // 记录错题
     await fetchWithAuth('/api/game/wrong-questions/record', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ questionId: q.id, userAnswer: userAnswer })
     });
-    // 禁用提交按钮，显示下一题按钮（但允许继续，此题不得分）
     const submitBtn = modal.querySelector('#submitAnswerBtn');
     if (submitBtn) submitBtn.disabled = true;
     const nextBtn = document.createElement('button');
@@ -495,7 +493,6 @@ async function submitDailyAnswer(index, userAnswer, modal) {
 async function finishDailyQuiz() {
   const total = currentDailyQuestions.length;
   const rewardPoints = dailyScore * 10 + (dailyScore === total ? 20 : 0);
-  // 提交到后端保存得分
   try {
     const res = await fetchWithAuth('/api/game/daily/submit', {
       method: 'POST',
@@ -512,7 +509,7 @@ async function finishDailyQuiz() {
   }
 }
 
-// ==================== 每周竞赛 ====================
+// ==================== 每周竞赛（改进版） ====================
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
@@ -526,6 +523,7 @@ async function startWeeklyContest() {
     currentContestQuestions = data.questions;
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
     contestStartTime = Date.now();
+    contestTotalTime = 600; // 10分钟，可根据需要调整
     showContestQuestion(0);
   } catch(e) {
     alert('加载竞赛失败');
@@ -541,9 +539,10 @@ function showContestQuestion(index) {
     <div class="modal-content" style="width:500px;">
       <button class="modal-close">&times;</button>
       <div class="contest-header" style="background:#ff9800;color:white; padding:8px; border-radius:8px; margin-bottom:16px;">
-        <span>每周竞赛</span>
-        <span id="contestTimer" style="font-family:monospace;">00:00</span>
+        <span>🏆 每周竞赛</span>
+        <span id="contestTimer" style="font-family:monospace;">--:--</span>
       </div>
+      <div class="contest-progress" style="margin-bottom:12px; text-align:center;">第 ${index+1} / ${currentContestQuestions.length} 题</div>
       <div class="question-text">${escapeHtml(q.question)}</div>
       <div class="options-list">
         ${q.options.map((opt, idx) => `
@@ -553,6 +552,7 @@ function showContestQuestion(index) {
           </div>
         `).join('')}
       </div>
+      <div id="feedbackArea" style="margin-top:12px;"></div>
       <div style="margin-top:20px; display:flex; justify-content:space-between;">
         <button id="prevBtn" class="summary-btn" ${index===0?'disabled':''}>上一题</button>
         <button id="nextBtn" class="submit-btn">${index===currentContestQuestions.length-1?'提交':'下一题'}</button>
@@ -561,29 +561,44 @@ function showContestQuestion(index) {
   `;
   document.body.appendChild(modal);
   const closeModal = () => {
-    if (contestTimer) clearInterval(contestTimer);
+    if (contestTimerInterval) clearInterval(contestTimerInterval);
     document.body.removeChild(modal);
   };
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  if (contestTimer) clearInterval(contestTimer);
-  contestTimer = setInterval(() => {
+  // 更新总倒计时
+  if (contestTimerInterval) clearInterval(contestTimerInterval);
+  contestTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
+    const remaining = Math.max(0, contestTotalTime - elapsed);
+    const minutes = Math.floor(remaining / 60);
+    const seconds = remaining % 60;
     const timerSpan = document.getElementById('contestTimer');
     if (timerSpan) timerSpan.textContent = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+    if (remaining <= 0) {
+      clearInterval(contestTimerInterval);
+      alert('时间到！自动提交竞赛');
+      finalizeContest(modal, contestTotalTime);
+    }
   }, 1000);
 
+  // 选项选择（未提交时可选）
   const opts = modal.querySelectorAll('.option-item');
-  if (currentContestAnswers[index] !== undefined) {
-    opts.forEach(opt => { if(parseInt(opt.dataset.opt) === currentContestAnswers[index]) opt.classList.add('selected'); });
+  let selected = null;
+  if (currentContestAnswers[index] !== undefined && currentContestAnswers[index] !== null) {
+    const saved = currentContestAnswers[index];
+    opts.forEach(opt => {
+      if (parseInt(opt.dataset.opt) === saved) {
+        opt.classList.add('selected');
+        selected = saved;
+      }
+    });
   }
   opts.forEach(opt => {
     opt.onclick = () => {
-      const selected = parseInt(opt.dataset.opt);
-      currentContestAnswers[index] = selected;
+      if (currentContestAnswers[index] !== undefined && currentContestAnswers[index] !== null) return;
+      selected = parseInt(opt.dataset.opt);
       opts.forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
     };
@@ -591,31 +606,79 @@ function showContestQuestion(index) {
 
   const prevBtn = modal.querySelector('#prevBtn');
   const nextBtn = modal.querySelector('#nextBtn');
-  if (prevBtn) prevBtn.onclick = () => { if(index>0) { closeModal(); showContestQuestion(index-1); } };
+  if (prevBtn) prevBtn.onclick = () => {
+    if (index > 0) {
+      closeModal();
+      showContestQuestion(index-1);
+    }
+  };
   nextBtn.onclick = async () => {
-    if (currentContestAnswers[index] === undefined) {
+    if (selected === null && currentContestAnswers[index] === null) {
       alert('请选择答案');
       return;
     }
+    // 记录答案
+    currentContestAnswers[index] = selected;
+    // 显示正确/错误反馈
+    await submitContestSingle(index, selected, modal);
+    // 如果是最后一题，提交整个竞赛
     if (index === currentContestQuestions.length-1) {
-      clearInterval(contestTimer);
+      clearInterval(contestTimerInterval);
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
-      const answers = currentContestQuestions.map((q, i) => ({ questionId: q.id, selected: currentContestAnswers[i] }));
-      const res = await fetchWithAuth('/api/game/weekly/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contestId: currentContestId, answers, timeUsed })
-      });
-      const result = await res.json();
-      closeModal();
-      alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
-      addPoints(result.rewardPoints, '每周竞赛');
-      loadModuleStats();
+      await finalizeContest(modal, timeUsed);
     } else {
-      closeModal();
-      showContestQuestion(index+1);
+      // 跳下一题前先关闭模态框（但保留反馈显示片刻）
+      setTimeout(() => {
+        closeModal();
+        showContestQuestion(index+1);
+      }, 1500);
     }
   };
+}
+
+async function submitContestSingle(index, selected, modal) {
+  const q = currentContestQuestions[index];
+  const isCorrect = (q.answer == selected);
+  const feedbackDiv = modal.querySelector('#feedbackArea');
+  const opts = modal.querySelectorAll('.option-item');
+  // 高亮正确和错误选项
+  opts.forEach(opt => {
+    const optVal = parseInt(opt.dataset.opt);
+    if (optVal === q.answer) opt.classList.add('correct');
+    if (optVal === selected && !isCorrect) opt.classList.add('wrong');
+  });
+  if (isCorrect) {
+    feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！</div>`;
+    playSound('complete');
+  } else {
+    feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(q.answer)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
+    playSound('error');
+    // 记录错题
+    await fetchWithAuth('/api/game/wrong-questions/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId: q.id, userAnswer: selected })
+    });
+  }
+  // 禁用选项点击
+  opts.forEach(opt => opt.style.pointerEvents = 'none');
+  // 禁用下一题按钮防止重复提交
+  const nextBtn = modal.querySelector('#nextBtn');
+  if (nextBtn) nextBtn.disabled = true;
+}
+
+async function finalizeContest(modal, timeUsed) {
+  const answers = currentContestQuestions.map((q, i) => ({ questionId: q.id, selected: currentContestAnswers[i] }));
+  const res = await fetchWithAuth('/api/game/weekly/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contestId: currentContestId, answers, timeUsed })
+  });
+  const result = await res.json();
+  alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
+  addPoints(result.rewardPoints, '每周竞赛');
+  loadModuleStats();
+  modal.querySelector('.modal-close').click();
 }
 
 // ==================== 错题本 ====================
