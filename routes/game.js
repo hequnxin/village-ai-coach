@@ -60,7 +60,7 @@ router.post('/level/submit', async (req, res) => {
   let correctCount = 0;
   for (const ans of answers) {
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
-    if (q && q.answer === ans.selected) correctCount++;
+    if (q && q.answer == ans.selected) correctCount++;
   }
   const totalScore = correctCount * 10;
   const maxScore = level.question_count * 10;
@@ -97,9 +97,7 @@ router.get('/daily', async (req, res) => {
     return res.json({ quizId: daily.id, questions: questions.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) : [] })), completed: true, score: daily.score });
   }
 
-  // 混合取题：3道选择题 + 2道填空题
   let questions = [];
-  // 选择题
   const choiceQuestions = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 3`);
   for (let q of choiceQuestions) {
     questions.push({
@@ -111,7 +109,6 @@ router.get('/daily', async (req, res) => {
       explanation: q.explanation
     });
   }
-  // 填空题
   const fillQuestions = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT 2`);
   for (let f of fillQuestions) {
     questions.push({
@@ -148,28 +145,69 @@ router.post('/daily/submit', async (req, res) => {
   res.json({ score, total, rewardPoints });
 });
 
-// ==================== 每周竞赛 ====================
-router.get('/weekly/current', async (req, res) => {
+// ==================== 每周竞赛（支持多次参赛） ====================
+router.get('/weekly/status', async (req, res) => {
+  const userId = req.user.userId;
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
-  weekStart.setHours(0, 0, 0, 0);
-  const startStr = weekStart.toISOString().slice(0, 10);
+  weekStart.setHours(0,0,0,0);
+  const startStr = weekStart.toISOString().slice(0,10);
+  const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
+  if (!contest) {
+    return res.json({ participated: false, attemptsLeft: 3 });
+  }
+  const attemptsCount = await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
+  const attemptsLeft = Math.max(0, 3 - (attemptsCount.count || 0));
+  const best = await db.get(`
+    SELECT score, total_questions, time_used 
+    FROM weekly_contest_attempts 
+    WHERE contest_id = $1 AND user_id = $2 
+    ORDER BY (score * 1.0 / total_questions) DESC, time_used ASC 
+    LIMIT 1
+  `, [contest.id, userId]);
+  if (best) {
+    res.json({
+      participated: true,
+      bestScore: best.score,
+      total: best.total_questions,
+      bestTime: best.time_used,
+      attemptsLeft
+    });
+  } else {
+    res.json({ participated: false, attemptsLeft });
+  }
+});
+
+router.get('/weekly/current', async (req, res) => {
+  const userId = req.user.userId;
+  const now = new Date();
+  const day = now.getDay();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
+  weekStart.setHours(0,0,0,0);
+  const startStr = weekStart.toISOString().slice(0,10);
   let contest = await db.get(`SELECT * FROM weekly_contest WHERE week_start = $1`, [startStr]);
+
+  if (contest) {
+    const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
+    if (attemptsCount >= 3) {
+      return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
+    }
+  }
+
   let questions = [];
   if (contest) {
     const questionIds = JSON.parse(contest.questions);
     if (questionIds.length) {
       const placeholders = questionIds.map((_,i) => `$${i+1}`).join(',');
-      questions = await db.all(`SELECT id, question, options, answer FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
+      questions = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
     }
   }
   if (questions.length === 0) {
-    // 从 quiz_questions 随机取10道选择题
-    const fallback = await db.all(`SELECT id, question, options, answer FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 10`);
+    const fallback = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 10`);
     if (fallback.length === 0) {
-      // 最后尝试动态生成
       const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT 10`);
       if (knowledge.length === 0) return res.status(500).json({ error: '无可用题目来源' });
       for (const k of knowledge) {
@@ -178,7 +216,7 @@ router.get('/weekly/current', async (req, res) => {
           const qid = `temp_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
           await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
             [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, new Date().toISOString()]);
-          fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer });
+          fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer, explanation: choice.explanation });
         }
       }
       questions = fallback;
@@ -194,38 +232,66 @@ router.get('/weekly/current', async (req, res) => {
       [contestId, startStr, endStr, JSON.stringify(questions.map(q => q.id))]);
     contest = { id: contestId };
   }
-  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })) });
+  const attemptsCount = contest ? (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count : 0;
+  const attemptNumber = attemptsCount + 1;
+  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })), attemptNumber });
 });
 
 router.post('/weekly/submit', async (req, res) => {
-  const { contestId, answers, timeUsed } = req.body;
+  const { contestId, answers, timeUsed, attemptNumber } = req.body;
   const userId = req.user.userId;
   const contest = await db.get(`SELECT * FROM weekly_contest WHERE id = $1 AND status = 'active'`, [contestId]);
   if (!contest) return res.status(400).json({ error: '竞赛已结束' });
+
+  const existingAttempts = await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contestId, userId]);
+  if (existingAttempts.count >= 3) {
+    return res.status(403).json({ error: '本周参赛次数已达上限' });
+  }
+
   let correct = 0;
+  const totalQuestions = answers.length;
   for (const ans of answers) {
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
     if (q && q.answer == ans.selected) correct++;
   }
-  const existing = await db.get(`SELECT * FROM weekly_contest_scores WHERE contest_id = $1 AND user_id = $2`, [contestId, userId]);
-  if (existing) {
-    await db.run(`UPDATE weekly_contest_scores SET score = $1, time_used = $2, submitted_at = $3 WHERE id = $4`,
-      [correct, timeUsed, new Date().toISOString(), existing.id]);
-  } else {
-    await db.run(`INSERT INTO weekly_contest_scores (id, contest_id, user_id, score, time_used, submitted_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [uuidv4(), contestId, userId, correct, timeUsed, new Date().toISOString()]);
-  }
+  const attemptId = uuidv4();
+  await db.run(`
+    INSERT INTO weekly_contest_attempts (id, contest_id, user_id, attempt_number, score, total_questions, time_used, submitted_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+  `, [attemptId, contestId, userId, attemptNumber, correct, totalQuestions, timeUsed]);
+
   const points = correct * 5;
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-    [uuidv4(), userId, points, `每周竞赛得分${correct}`, new Date().toISOString()]);
-  res.json({ score: correct, total: answers.length, rewardPoints: points });
+    [uuidv4(), userId, points, `每周竞赛得分${correct}/${totalQuestions}`, new Date().toISOString()]);
+
+  // 记录错题
+  for (let i = 0; i < answers.length; i++) {
+    const ans = answers[i];
+    const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
+    if (q && q.answer != ans.selected) {
+      const today = new Date().toISOString().slice(0,10);
+      const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2`, [userId, ans.questionId]);
+      if (existing) {
+        await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
+      } else {
+        await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, wrong_count, last_wrong_date) VALUES ($1, $2, $3, 1, $4)`,
+          [uuidv4(), userId, ans.questionId, today]);
+      }
+    }
+  }
+  res.json({ score: correct, total: totalQuestions, rewardPoints: points });
 });
 
 router.get('/weekly/rank/:contestId', async (req, res) => {
-  const ranks = await db.all(
-    `SELECT u.username, w.score, w.time_used FROM weekly_contest_scores w JOIN users u ON w.user_id = u.id WHERE w.contest_id = $1 ORDER BY w.score DESC, w.time_used ASC LIMIT 10`,
-    [req.params.contestId]
-  );
+  const ranks = await db.all(`
+    SELECT u.username, a.score, a.total_questions, a.time_used,
+           ROUND(CAST(a.score AS DECIMAL) / a.total_questions * 100, 1) as accuracy
+    FROM weekly_contest_attempts a
+    JOIN users u ON a.user_id = u.id
+    WHERE a.contest_id = $1
+    ORDER BY (a.score * 1.0 / a.total_questions) DESC, a.time_used ASC
+    LIMIT 10
+  `, [req.params.contestId]);
   res.json(ranks);
 });
 
@@ -264,10 +330,8 @@ router.post('/wrong-questions/clear', async (req, res) => {
 router.post('/wrong-questions/record', async (req, res) => {
   const { questionId, userAnswer } = req.body;
   const userId = req.user.userId;
-  // 先查 quiz_questions
   let q = await db.get(`SELECT type, answer FROM quiz_questions WHERE id = $1`, [questionId]);
   if (!q) {
-    // 可能是填空题表
     const fill = await db.get(`SELECT correct_word as answer FROM fill_questions WHERE id = $1`, [questionId]);
     if (!fill) return res.status(404).json({ error: '题目不存在' });
     const isCorrect = (fill.answer.trim().toLowerCase() === String(userAnswer).trim().toLowerCase());
@@ -283,7 +347,6 @@ router.post('/wrong-questions/record', async (req, res) => {
     }
     return res.json({ recorded: true });
   }
-
   let isCorrect = false;
   if (q.type === 'choice') {
     isCorrect = (parseInt(q.answer) === parseInt(userAnswer));
@@ -304,6 +367,13 @@ router.post('/wrong-questions/record', async (req, res) => {
 });
 
 // ==================== 刮刮乐 ====================
+router.get('/scratch/today-count', async (req, res) => {
+  const userId = req.user.userId;
+  const today = new Date().toISOString().slice(0,10);
+  const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
+  res.json({ count });
+});
+
 router.get('/scratch/generate', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
@@ -344,36 +414,12 @@ router.get('/daily/status', async (req, res) => {
   else res.json({ completed: false });
 });
 
-router.get('/weekly/status', async (req, res) => {
+router.post('/add-points', async (req, res) => {
+  const { points, reason } = req.body;
   const userId = req.user.userId;
-  const now = new Date();
-  const day = now.getDay();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
-  weekStart.setHours(0,0,0,0);
-  const startStr = weekStart.toISOString().slice(0,10);
-  const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
-  if (contest) {
-    const userScore = await db.get(`SELECT score, time_used FROM weekly_contest_scores WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
-    if (userScore) {
-      // 获取总题数
-      let totalQuestions = 0;
-      try {
-        const questionIds = JSON.parse(contest.questions);
-        totalQuestions = questionIds.length;
-      } catch(e) { totalQuestions = 0; }
-      res.json({
-        participated: true,
-        score: userScore.score,
-        total: totalQuestions,
-        timeUsed: userScore.time_used
-      });
-    } else {
-      res.json({ participated: false });
-    }
-  } else {
-    res.json({ participated: false });
-  }
+  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
+    [uuidv4(), userId, points, reason, new Date().toISOString()]);
+  res.json({ success: true });
 });
 
 module.exports = router;

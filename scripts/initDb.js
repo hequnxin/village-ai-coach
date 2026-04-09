@@ -104,6 +104,7 @@ async function initDb() {
       completed_at TIMESTAMPTZ,
       UNIQUE(user_id, level_id)
     )`,
+    // 重点修复：quiz_questions 表，answer 为 TEXT 类型
     `CREATE TABLE IF NOT EXISTS quiz_questions (
       id TEXT PRIMARY KEY,
       type TEXT DEFAULT 'choice',
@@ -135,7 +136,7 @@ async function initDb() {
     `CREATE TABLE IF NOT EXISTS daily_quiz_questions (
       id TEXT PRIMARY KEY,
       quiz_id TEXT REFERENCES daily_quiz(id) ON DELETE CASCADE,
-      question_id TEXT REFERENCES quiz_questions(id)
+      question_id TEXT REFERENCES quiz_questions(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS fill_daily (
       id TEXT PRIMARY KEY,
@@ -148,7 +149,7 @@ async function initDb() {
     `CREATE TABLE IF NOT EXISTS wrong_questions (
       id TEXT PRIMARY KEY,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-      question_id TEXT REFERENCES quiz_questions(id),
+      question_id TEXT REFERENCES quiz_questions(id) ON DELETE CASCADE,
       wrong_count INTEGER,
       last_wrong_date DATE
     )`,
@@ -225,18 +226,14 @@ async function initDb() {
     }
   }
 
-  // ========== 迁移：确保字段存在 ==========
+  // ========== 迁移：确保字段存在且类型正确 ==========
   try {
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'choice'`);
-  } catch(e) { console.warn('添加type字段失败:', e.message); }
-  try {
-    await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS answer TEXT`);
-  } catch(e) { console.warn('添加answer字段失败:', e.message); }
-  try {
     await db.run(`ALTER TABLE quiz_questions ALTER COLUMN answer TYPE TEXT`);
-  } catch(e) { console.warn('修改answer类型失败:', e.message); }
+    await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS explanation TEXT`);
+  } catch(e) { console.warn('迁移quiz_questions失败:', e.message); }
 
-  // 添加全文搜索支持
+  // 全文搜索支持
   try {
     await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_knowledge_tsv ON knowledge USING GIN(tsv)`);

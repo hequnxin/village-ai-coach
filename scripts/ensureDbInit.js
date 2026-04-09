@@ -1,19 +1,34 @@
 // scripts/ensureDbInit.js
 const db = require('../services/db');
 
+async function tableExists(tableName) {
+  const res = await db.get(
+    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)",
+    [tableName]
+  );
+  return res.exists;
+}
+
 (async () => {
   console.log('🔍 检查数据库初始化状态...');
   let retries = 5;
   let initialized = false;
+
   while (retries > 0 && !initialized) {
     try {
-      const tableCheck = await db.get("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')");
-      if (tableCheck.exists) {
-        console.log('✅ 数据库已初始化，跳过');
+      await db.get('SELECT 1');
+      console.log('✅ 数据库连接成功');
+
+      // 检查关键表是否存在（game_themes 是游戏功能的必需表）
+      const themesExist = await tableExists('game_themes');
+      const quizExist = await tableExists('quiz_questions');
+
+      if (themesExist && quizExist) {
+        console.log('✅ 所有关键表已存在，跳过初始化');
         initialized = true;
         break;
       } else {
-        console.log('⚠️ 数据库未初始化，开始初始化...');
+        console.log('⚠️ 检测到缺失表 (game_themes或quiz_questions)，开始完整初始化...');
         const initDb = require('./initDb');
         await initDb();
         const importKnowledge = require('./importKnowledge');

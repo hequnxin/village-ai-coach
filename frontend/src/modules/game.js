@@ -22,8 +22,9 @@ let currentContestId = null;
 let currentContestQuestions = [];
 let currentContestAnswers = [];
 let contestStartTime = null;
-let contestTotalTime = 600; // 10分钟总时间
+let contestTotalTime = 180; // 3分钟 = 180秒
 let contestTimerInterval = null;
+let currentAttemptNumber = 1;
 
 // 错题本
 let wrongQuestionsList = [];
@@ -59,7 +60,7 @@ export async function renderGameView() {
         <div class="game-module module-contest">
           <div class="module-icon">🏅</div>
           <div class="module-title">每周竞赛</div>
-          <div class="module-desc">限时挑战，冲击榜单</div>
+          <div class="module-desc">限时3分钟，每周3次</div>
           <div class="module-stats" id="contestStats">本周未参加</div>
           <button class="module-btn" id="startContestBtn">参加竞赛 →</button>
         </div>
@@ -121,20 +122,20 @@ async function loadModuleStats() {
   } catch(e) {}
 
   try {
-  const contestRes = await fetchWithAuth('/api/game/weekly/status');
-  const contestData = await contestRes.json();
-  const contestStats = document.getElementById('contestStats');
-  if (contestStats) {
-    if (contestData.participated) {
-      const minutes = Math.floor(contestData.timeUsed / 60);
-      const seconds = contestData.timeUsed % 60;
-      const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
-      contestStats.innerHTML = `已参加: ${contestData.score}/${contestData.total}题, 用时 ${timeStr}`;
-    } else {
-      contestStats.innerHTML = '本周未参加';
+    const contestRes = await fetchWithAuth('/api/game/weekly/status');
+    const contestData = await contestRes.json();
+    const contestStats = document.getElementById('contestStats');
+    if (contestStats) {
+      if (contestData.participated) {
+        const minutes = Math.floor(contestData.bestTime / 60);
+        const seconds = contestData.bestTime % 60;
+        const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+        contestStats.innerHTML = `最佳: ${contestData.bestScore}/${contestData.total}题, ${timeStr}<br>剩余次数: ${contestData.attemptsLeft}`;
+      } else {
+        contestStats.innerHTML = '本周未参加 (3次机会)';
+      }
     }
-  }
-} catch(e) {}
+  } catch(e) {}
 }
 
 // ==================== 政策闯关 ====================
@@ -514,6 +515,11 @@ async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
     if (!res.ok) {
+      if (res.status === 403) {
+        const err = await res.json();
+        alert(err.error || '本周参赛次数已达上限');
+        return;
+      }
       const err = await res.json();
       alert(err.error || '竞赛加载失败，请稍后重试');
       return;
@@ -523,7 +529,7 @@ async function startWeeklyContest() {
     currentContestQuestions = data.questions;
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
     contestStartTime = Date.now();
-    contestTotalTime = 600; // 10分钟，可根据需要调整
+    currentAttemptNumber = data.attemptNumber;
     showContestQuestion(0);
   } catch(e) {
     alert('加载竞赛失败');
@@ -539,8 +545,8 @@ function showContestQuestion(index) {
     <div class="modal-content" style="width:500px;">
       <button class="modal-close">&times;</button>
       <div class="contest-header" style="background:#ff9800;color:white; padding:8px; border-radius:8px; margin-bottom:16px;">
-        <span>🏆 每周竞赛</span>
-        <span id="contestTimer" style="font-family:monospace;">--:--</span>
+        <span>🏆 每周竞赛 (第${currentAttemptNumber}/3次)</span>
+        <span id="contestTimer" style="font-family:monospace;">03:00</span>
       </div>
       <div class="contest-progress" style="margin-bottom:12px; text-align:center;">第 ${index+1} / ${currentContestQuestions.length} 题</div>
       <div class="question-text">${escapeHtml(q.question)}</div>
@@ -555,7 +561,7 @@ function showContestQuestion(index) {
       <div id="feedbackArea" style="margin-top:12px;"></div>
       <div style="margin-top:20px; display:flex; justify-content:space-between;">
         <button id="prevBtn" class="summary-btn" ${index===0?'disabled':''}>上一题</button>
-        <button id="nextBtn" class="submit-btn">${index===currentContestQuestions.length-1?'提交':'下一题'}</button>
+        <button id="submitBtn" class="submit-btn">${index===currentContestQuestions.length-1?'提交竞赛':'提交本题'}</button>
       </div>
     </div>
   `;
@@ -567,7 +573,7 @@ function showContestQuestion(index) {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  // 更新总倒计时
+  // 更新倒计时（总时间）
   if (contestTimerInterval) clearInterval(contestTimerInterval);
   contestTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -583,7 +589,7 @@ function showContestQuestion(index) {
     }
   }, 1000);
 
-  // 选项选择（未提交时可选）
+  // 选项选择（已提交的题目不可再选）
   const opts = modal.querySelectorAll('.option-item');
   let selected = null;
   if (currentContestAnswers[index] !== undefined && currentContestAnswers[index] !== null) {
@@ -605,29 +611,29 @@ function showContestQuestion(index) {
   });
 
   const prevBtn = modal.querySelector('#prevBtn');
-  const nextBtn = modal.querySelector('#nextBtn');
+  const submitBtn = modal.querySelector('#submitBtn');
   if (prevBtn) prevBtn.onclick = () => {
     if (index > 0) {
       closeModal();
       showContestQuestion(index-1);
     }
   };
-  nextBtn.onclick = async () => {
+  submitBtn.onclick = async () => {
     if (selected === null && currentContestAnswers[index] === null) {
       alert('请选择答案');
       return;
     }
-    // 记录答案
-    currentContestAnswers[index] = selected;
-    // 显示正确/错误反馈
-    await submitContestSingle(index, selected, modal);
+    // 记录当前题答案
+    if (selected !== null) currentContestAnswers[index] = selected;
+    // 显示反馈
+    await submitContestSingle(index, currentContestAnswers[index], modal);
     // 如果是最后一题，提交整个竞赛
     if (index === currentContestQuestions.length-1) {
       clearInterval(contestTimerInterval);
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
       await finalizeContest(modal, timeUsed);
     } else {
-      // 跳下一题前先关闭模态框（但保留反馈显示片刻）
+      // 自动跳转到下一题（延迟1.5秒让用户看到反馈）
       setTimeout(() => {
         closeModal();
         showContestQuestion(index+1);
@@ -648,7 +654,7 @@ async function submitContestSingle(index, selected, modal) {
     if (optVal === selected && !isCorrect) opt.classList.add('wrong');
   });
   if (isCorrect) {
-    feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！</div>`;
+    feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
     playSound('complete');
   } else {
     feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(q.answer)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
@@ -662,9 +668,9 @@ async function submitContestSingle(index, selected, modal) {
   }
   // 禁用选项点击
   opts.forEach(opt => opt.style.pointerEvents = 'none');
-  // 禁用下一题按钮防止重复提交
-  const nextBtn = modal.querySelector('#nextBtn');
-  if (nextBtn) nextBtn.disabled = true;
+  // 禁用提交按钮防止重复提交
+  const submitBtn = modal.querySelector('#submitBtn');
+  if (submitBtn) submitBtn.disabled = true;
 }
 
 async function finalizeContest(modal, timeUsed) {
@@ -672,7 +678,7 @@ async function finalizeContest(modal, timeUsed) {
   const res = await fetchWithAuth('/api/game/weekly/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contestId: currentContestId, answers, timeUsed })
+    body: JSON.stringify({ contestId: currentContestId, answers, timeUsed, attemptNumber: currentAttemptNumber })
   });
   const result = await res.json();
   alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
@@ -755,8 +761,24 @@ function showWrongQuestion() {
 
 // ==================== 刮刮乐 ====================
 async function updateScratchRemaining() {
-  const today = new Date().toISOString().slice(0,10);
-  let count = parseInt(localStorage.getItem(`scratch_${today}`)) || 0;
+  const today = new Date().toISOString().slice(0, 10);
+  // 检查 localStorage 中的日期，如果不是今天则重置计数
+  const storedDate = localStorage.getItem('scratch_date');
+  if (storedDate !== today) {
+    localStorage.setItem('scratch_date', today);
+    localStorage.setItem('scratch_count', '0');
+  }
+  let count = parseInt(localStorage.getItem('scratch_count')) || 0;
+  // 同时从后端获取今日已刮次数（更准确）
+  try {
+    const res = await fetchWithAuth('/api/game/scratch/today-count');
+    if (res.ok) {
+      const data = await res.json();
+      count = data.count;
+      localStorage.setItem('scratch_count', count);
+    }
+  } catch(e) { console.warn('获取后端刮刮乐次数失败', e); }
+
   scratchRemaining = Math.max(0, 5 - count);
   const statsSpan = document.getElementById('scratchStats');
   if (statsSpan) statsSpan.innerHTML = `剩余次数: ${scratchRemaining}`;
@@ -831,10 +853,12 @@ function renderScratchCard(card) {
         } else {
           surface.innerHTML = `<div class="scratch-reward">😢 很遗憾，答案错误，下次再试试吧</div>`;
         }
+        // 更新本地次数
         const today = new Date().toISOString().slice(0,10);
-        let count = parseInt(localStorage.getItem(`scratch_${today}`)) || 0;
+        let count = parseInt(localStorage.getItem('scratch_count')) || 0;
         count++;
-        localStorage.setItem(`scratch_${today}`, count);
+        localStorage.setItem('scratch_count', count);
+        localStorage.setItem('scratch_date', today);
         await updateScratchRemaining();
         if (scratchRemaining > 0) againBtn.style.display = 'block';
         else againBtn.style.display = 'none';
