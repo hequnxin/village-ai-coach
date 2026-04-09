@@ -83,7 +83,7 @@ router.post('/level/submit', async (req, res) => {
   res.json({ passed, totalScore, maxScore, reward });
 });
 
-// ==================== 每日一练（混合题型，修复外键问题） ====================
+// ==================== 每日一练（从政策/常见问题类别取高质量题目） ====================
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -98,9 +98,39 @@ router.get('/daily', async (req, res) => {
   }
 
   let questions = [];
-  // 选择题
-  const choiceQuestions = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 3`);
-  for (let q of choiceQuestions) {
+
+  // 优先从政策类和常见问题类知识对应的题目中选取（通过 source_category 字段）
+  const choiceQuestions = await db.all(`
+    SELECT id, type, question, options, answer, explanation 
+    FROM quiz_questions 
+    WHERE type = 'choice' AND source_category IN ('政策', '常见问题')
+    ORDER BY RANDOM() 
+    LIMIT 3
+  `);
+
+  // 填空题：从 fill_questions 中随机取（不限类别，作为补充）
+  const fillQuestions = await db.all(`
+    SELECT id, sentence as question, correct_word as answer, hint 
+    FROM fill_questions 
+    ORDER BY RANDOM() 
+    LIMIT 2
+  `);
+
+  // 如果选择题数量不足3，再从所有选择题中补充（保证总是有3道选择题）
+  let finalChoice = [...choiceQuestions];
+  if (finalChoice.length < 3) {
+    const extra = await db.all(`
+      SELECT id, type, question, options, answer, explanation 
+      FROM quiz_questions 
+      WHERE type = 'choice' 
+      ORDER BY RANDOM() 
+      LIMIT ${3 - finalChoice.length}
+    `);
+    finalChoice.push(...extra);
+  }
+
+  // 组装题目
+  for (let q of finalChoice) {
     questions.push({
       id: q.id,
       type: 'choice',
@@ -110,17 +140,7 @@ router.get('/daily', async (req, res) => {
       explanation: q.explanation
     });
   }
-  // 填空题：从 fill_questions 取，确保在 quiz_questions 中有对应记录
-  const fillQuestions = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT 2`);
   for (let f of fillQuestions) {
-    // 检查 quiz_questions 中是否已有该 ID
-    let existing = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [f.id]);
-    if (!existing) {
-      await db.run(`
-        INSERT INTO quiz_questions (id, type, question, options, answer, explanation, created_at)
-        VALUES ($1, 'fill', $2, NULL, $3, $4, NOW())
-      `, [f.id, f.question, f.answer, `正确答案是“${f.answer}”`]);
-    }
     questions.push({
       id: f.id,
       type: 'fill',
@@ -138,6 +158,17 @@ router.get('/daily', async (req, res) => {
   const quizId = uuidv4();
   await db.run(`INSERT INTO daily_quiz (id, user_id, quiz_date, score, completed, created_at) VALUES ($1, $2, $3, 0, 0, $4)`, [quizId, userId, today, new Date().toISOString()]);
   for (const q of questions) {
+    // 确保题目在 quiz_questions 中存在（填空题的 id 可能不在 quiz_questions 中，需要插入）
+    if (q.type === 'fill') {
+      // 检查是否已存在
+      let existing = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [q.id]);
+      if (!existing) {
+        await db.run(`
+          INSERT INTO quiz_questions (id, type, question, options, answer, explanation, created_at)
+          VALUES ($1, 'fill', $2, NULL, $3, $4, NOW())
+        `, [q.id, q.question, q.answer, q.explanation]);
+      }
+    }
     await db.run(`INSERT INTO daily_quiz_questions (id, quiz_id, question_id) VALUES ($1, $2, $3)`, [uuidv4(), quizId, q.id]);
   }
   res.json({ quizId, questions, completed: false });
@@ -153,6 +184,23 @@ router.post('/daily/submit', async (req, res) => {
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, rewardPoints, `每日一练得分${score}/${total}`, new Date().toISOString()]);
   res.json({ score, total, rewardPoints });
+});
+
+// ==================== 每日一练状态接口（修复） ====================
+router.get('/daily/status', async (req, res) => {
+  const userId = req.user.userId;
+  const today = new Date().toISOString().slice(0,10);
+  const daily = await db.get(`SELECT score, completed FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2`, [userId, today]);
+  if (daily && daily.completed) {
+    const countRes = await db.get(`
+      SELECT COUNT(*) as total FROM daily_quiz_questions 
+      WHERE quiz_id IN (SELECT id FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2)
+    `, [userId, today]);
+    const total = countRes ? countRes.total : 5;
+    res.json({ completed: true, score: daily.score, total });
+  } else {
+    res.json({ completed: false });
+  }
 });
 
 // ==================== 每周竞赛（支持多次参赛，时间2分钟） ====================
@@ -190,7 +238,7 @@ router.get('/weekly/status', async (req, res) => {
       attemptsLeft
     });
   } else {
-    res.json({ participated: false, attemptsLeft });
+    res.json({ participated: false, attemptsLeft: 3 });
   }
 });
 
@@ -278,7 +326,6 @@ router.post('/weekly/submit', async (req, res) => {
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, `每周竞赛得分${correct}/${totalQuestions}`, new Date().toISOString()]);
 
-  // 记录错题
   for (let i = 0; i < answers.length; i++) {
     const ans = answers[i];
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
@@ -419,21 +466,21 @@ router.post('/scratch/submit', async (req, res) => {
   res.json({ correct: isCorrect, rewardPoints: reward });
 });
 
-// ==================== 状态接口 ====================
-router.get('/daily/status', async (req, res) => {
-  const userId = req.user.userId;
-  const today = new Date().toISOString().slice(0,10);
-  const daily = await db.get(`SELECT score, completed FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2`, [userId, today]);
-  if (daily && daily.completed) res.json({ completed: true, score: daily.score, total: 5 });
-  else res.json({ completed: false });
-});
-
+// ==================== 其他接口 ====================
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, reason, new Date().toISOString()]);
   res.json({ success: true });
+});
+
+// ==================== 调试接口（可选，部署后可删除） ====================
+router.post('/debug/clear-scratch-today', async (req, res) => {
+  const userId = req.user.userId;
+  const today = new Date().toISOString().slice(0,10);
+  await db.run(`DELETE FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today]);
+  res.json({ success: true, message: '已清除今日刮刮乐记录' });
 });
 
 module.exports = router;

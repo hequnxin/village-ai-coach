@@ -122,15 +122,14 @@ async function generateAndStoreQuestions(limit = 50) {
   let choiceCount = 0, fillCount = 0;
   for (const k of knowledge) {
     // 生成选择题
-    const choice = await generateChoice(k, false);
+    const choice = await generateChoice(k, true); // 使用AI生成高质量题目
     if (choice) {
-      // 使用知识库的 type 作为 theme，固定难度 1
-      await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [`auto_${k.id}_choice`, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, new Date().toISOString()]);
+      await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [`auto_${k.id}_choice`, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
       choiceCount++;
     }
     // 生成填空题
-    const fill = await generateFill(k, false);
+    const fill = await generateFill(k, true);
     if (fill) {
       await db.run(`INSERT INTO fill_questions (id, sentence, correct_word, hint, category) VALUES ($1, $2, $3, $4, $5)`,
         [`auto_${k.id}_fill`, fill.sentence, fill.correct_word, fill.hint, k.type]);

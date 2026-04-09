@@ -104,7 +104,6 @@ async function initDb() {
       completed_at TIMESTAMPTZ,
       UNIQUE(user_id, level_id)
     )`,
-    // quiz_questions 表，type 字段默认 'choice'，answer 为 TEXT 类型
     `CREATE TABLE IF NOT EXISTS quiz_questions (
       id TEXT PRIMARY KEY,
       type TEXT DEFAULT 'choice',
@@ -115,6 +114,7 @@ async function initDb() {
       category TEXT,
       theme TEXT,
       difficulty INTEGER,
+      source_category TEXT,
       score INTEGER DEFAULT 10,
       created_at TIMESTAMPTZ
     )`,
@@ -215,7 +215,6 @@ async function initDb() {
       created_at TIMESTAMPTZ,
       used_at TIMESTAMPTZ
     )`,
-    // 新增：weekly_contest_attempts 表（支持多次参赛）
     `CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
       contest_id TEXT REFERENCES weekly_contest(id) ON DELETE CASCADE,
@@ -243,6 +242,8 @@ async function initDb() {
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'choice'`);
     await db.run(`ALTER TABLE quiz_questions ALTER COLUMN answer TYPE TEXT`);
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS explanation TEXT`);
+    await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS source_category TEXT`);
+    console.log('✅ quiz_questions 字段迁移完成');
   } catch(e) { console.warn('迁移quiz_questions失败:', e.message); }
 
   // 全文搜索支持

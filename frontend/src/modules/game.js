@@ -765,7 +765,6 @@ async function finalizeContest(modal, timeUsed) {
   await loadModuleStats(); // 刷新卡片状态
   modal.querySelector('.modal-close').click();
 }
-
 async function showContestRanking() {
   try {
     // 获取当前周竞赛ID
@@ -956,16 +955,15 @@ async function updateScratchRemaining() {
       const data = await res.json();
       const count = data.count;
       scratchRemaining = Math.max(0, 5 - count);
-      // 同步本地存储
       const today = new Date().toISOString().slice(0,10);
-      localStorage.setItem('scratch_date', today);
-      localStorage.setItem('scratch_count', count);
-      // 如果后端count为0但本地存储有值，强制覆盖
       if (count === 0) {
-        localStorage.setItem('scratch_count', '0');
+        localStorage.removeItem('scratch_count');
+        localStorage.removeItem('scratch_date');
+      } else {
+        localStorage.setItem('scratch_date', today);
+        localStorage.setItem('scratch_count', count);
       }
     } else {
-      // 降级使用本地存储
       const today = new Date().toISOString().slice(0,10);
       const storedDate = localStorage.getItem('scratch_date');
       let count = parseInt(localStorage.getItem('scratch_count')) || 0;

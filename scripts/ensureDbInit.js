@@ -52,6 +52,8 @@ async function fixLevelQuestions() {
   const linkCount = await db.get(`SELECT COUNT(*) as c FROM game_level_questions`);
   if (linkCount.c === 0) {
     console.log('⚠️ 游戏关卡无题目，重新关联...');
+    // 确保 quiz_questions 有 theme 和 difficulty
+    await db.run(`UPDATE quiz_questions SET theme = category, difficulty = 1 WHERE theme IS NULL`);
     const initGameData = require('./initGameData');
     await initGameData();
   } else {
