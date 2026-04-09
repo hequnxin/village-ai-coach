@@ -13,7 +13,6 @@ async function tableExists(tableName) {
 async function ensureMissingTables() {
   console.log('🔧 检查并创建缺失的表...');
 
-  // 确保 weekly_contest_attempts 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
@@ -29,7 +28,6 @@ async function ensureMissingTables() {
   `);
   console.log('✅ weekly_contest_attempts 表已确保存在');
 
-  // 确保 user_theme_progress 表存在（用于趣味闯关）
   await db.run(`
     CREATE TABLE IF NOT EXISTS user_theme_progress (
       id TEXT PRIMARY KEY,
@@ -42,7 +40,6 @@ async function ensureMissingTables() {
   `);
   console.log('✅ user_theme_progress 表已确保存在');
 
-  // 清理 daily_quiz_questions 中无效的外键
   await db.run(`
     DELETE FROM daily_quiz_questions 
     WHERE question_id NOT IN (SELECT id FROM quiz_questions)
@@ -80,13 +77,9 @@ async function addSourceCategoryColumn() {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
 
-      // 添加缺失字段
       await addSourceCategoryColumn();
-
-      // 确保缺失的表存在
       await ensureMissingTables();
 
-      // 检查关键表
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
 
@@ -98,6 +91,8 @@ async function addSourceCategoryColumn() {
         await importKnowledge();
       } else {
         await fixQuizQuestions();
+        // 趣味闯关已改用主题模式，无需关卡关联
+        console.log('✅ 趣味闯关已启用主题模式');
       }
 
       console.log('✅ 数据库准备就绪');

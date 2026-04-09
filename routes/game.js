@@ -33,7 +33,6 @@ router.get('/policy-themes', async (req, res) => {
 router.get('/fun-level-questions', async (req, res) => {
   const { theme, difficulty, count = 5 } = req.query;
   if (!theme) return res.status(400).json({ error: '缺少主题参数' });
-  // 只从政策/常见问题类别中选题
   let questions = await db.all(`
     SELECT id, question, options, answer, explanation, type 
     FROM quiz_questions 
@@ -76,7 +75,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 每日一练（只从政策/常见问题类别选题） ====================
+// ==================== 每日一练 ====================
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -91,7 +90,6 @@ router.get('/daily', async (req, res) => {
   }
 
   let questions = [];
-  // 只从政策/常见问题类别中取选择题
   const choiceQuestions = await db.all(`
     SELECT id, type, question, options, answer, explanation 
     FROM quiz_questions 
@@ -99,7 +97,6 @@ router.get('/daily', async (req, res) => {
     ORDER BY RANDOM() 
     LIMIT 3
   `);
-  // 填空题暂不限类别（但尽量从政策/常见问题中取，如果不足则补充）
   let fillQuestions = await db.all(`
     SELECT f.id, f.sentence as question, f.correct_word as answer, f.hint 
     FROM fill_questions f
@@ -189,7 +186,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛（支持多次参赛，题目限制类别） ====================
+// ==================== 每周竞赛 ====================
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
@@ -254,7 +251,6 @@ router.get('/weekly/current', async (req, res) => {
     }
   }
   if (questions.length === 0) {
-    // 从政策/常见问题类别中选题
     let fallback = await db.all(`
       SELECT id, question, options, answer, explanation 
       FROM quiz_questions 
@@ -269,8 +265,9 @@ router.get('/weekly/current', async (req, res) => {
         const choice = await generateChoice(k, true);
         if (choice) {
           const qid = `temp_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
-          await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
+          // 移除 theme 字段
+          await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, 1, k.category, new Date().toISOString()]);
           fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer, explanation: choice.explanation });
         }
       }
@@ -433,7 +430,6 @@ router.get('/scratch/generate', async (req, res) => {
   const today = new Date().toISOString().slice(0,10);
   const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
   if (count >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
-  // 只从政策/常见问题类别中选题
   const question = await db.all(`
     SELECT id, question, options, answer 
     FROM quiz_questions 
@@ -474,14 +470,6 @@ router.post('/add-points', async (req, res) => {
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, reason, new Date().toISOString()]);
   res.json({ success: true });
-});
-
-// 调试接口：清除今日刮刮乐记录
-router.post('/debug/clear-scratch-today', async (req, res) => {
-  const userId = req.user.userId;
-  const today = new Date().toISOString().slice(0,10);
-  await db.run(`DELETE FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today]);
-  res.json({ success: true, message: '已清除今日刮刮乐记录' });
 });
 
 module.exports = router;
