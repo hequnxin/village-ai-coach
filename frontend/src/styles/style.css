@@ -1,3 +1,4 @@
+/* ========== 全局重置 ========== */
 * {
     margin: 0;
     padding: 0;
@@ -38,6 +39,7 @@ body {
     z-index: 0;
 }
 
+/* ========== 侧边栏 ========== */
 .sidebar {
     width: 280px;
     background: #2e5d34;
@@ -301,6 +303,7 @@ body {
     cursor: pointer;
 }
 
+/* ========== 主内容区 ========== */
 .main-content {
     flex: 1;
     display: flex;
@@ -340,7 +343,7 @@ body {
     overflow: hidden;
 }
 
-/* 问答界面 */
+/* ========== 问答界面 ========== */
 .chat-view {
     display: flex;
     height: 100%;
@@ -590,7 +593,7 @@ body {
     word-wrap: break-word;
 }
 
-/* 知识库界面 */
+/* ========== 知识库界面 ========== */
 .knowledge-view {
     height: 100%;
     overflow-y: auto;
@@ -682,7 +685,7 @@ body {
     color: #666;
 }
 
-/* 个人中心界面 */
+/* ========== 个人中心界面 ========== */
 .profile-view {
     padding: 20px;
     background: #f9fafc;
@@ -796,7 +799,7 @@ body {
     color: #333;
 }
 
-/* 模拟对练界面 */
+/* ========== 模拟对练界面 ========== */
 .simulate-view {
     height: 100%;
     display: flex;
@@ -899,7 +902,177 @@ body {
     font-size: 1rem;
 }
 
-/* ========== 新增：村民大会样式 ========== */
+/* 模拟对练头像样式 */
+#simulateMessages .message {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 16px;
+    animation: fadeInUp 0.3s ease-out;
+    padding: 0;
+    background: transparent;
+    border: none;
+}
+
+#simulateMessages .message-avatar {
+    width: 48px;
+    height: 48px;
+    background: #e9e9e9;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+#simulateMessages .message-avatar .emotion-icon {
+    font-size: 0.9rem;
+    position: absolute;
+    bottom: -8px;
+    right: -8px;
+    background: white;
+    border-radius: 50%;
+    padding: 2px;
+}
+
+#simulateMessages .message.user .message-avatar {
+    background: #2e5d34;
+    color: white;
+}
+
+#simulateMessages .message.assistant .message-avatar {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#simulateMessages .message-bubble {
+    max-width: 70%;
+    background: white;
+    border-radius: 18px;
+    padding: 10px 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    border: 1px solid #e0e0e0;
+}
+
+#simulateMessages .message.user .message-bubble {
+    background: #2e5d34;
+    color: white;
+    border: none;
+}
+
+#simulateMessages .message.user .message-bubble .message-content {
+    color: white;
+}
+
+#simulateMessages .message.assistant .message-bubble {
+    background: white;
+    border: 1px solid #e0e0e0;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.difficulty-selector {
+    margin: 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.difficulty-select {
+    padding: 4px 8px;
+    border-radius: 20px;
+    border: 1px solid #ccc;
+    background: white;
+    font-size: 0.85rem;
+}
+
+.difficulty-badge {
+    font-size: 0.7rem;
+    background: #f0f0f0;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-left: 8px;
+    color: #333;
+}
+
+.summary-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.satisfaction-bar {
+    margin-top: 6px;
+    background: #eee;
+    border-radius: 4px;
+    height: 4px;
+    overflow: hidden;
+}
+
+.satisfaction-bar > div {
+    background: #4caf50;
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.simulate-status-panel {
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+}
+
+.simulate-status-panel progress {
+    width: 80px;
+    height: 6px;
+    border-radius: 3px;
+}
+
+.simulate-status-panel .stages span {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #555;
+    border-radius: 12px;
+    margin: 0 2px;
+}
+
+.simulate-status-panel .stages span.completed {
+    background: #4caf50;
+}
+
+#strategyTip {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background: #ff9800;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    animation: fadeInUp 0.3s ease;
+}
+
+/* ========== 村民大会样式 ========== */
 .meeting-view {
     height: 100%;
     display: flex;
@@ -1040,362 +1213,286 @@ body {
     cursor: pointer;
 }
 
-/* 情绪表情动画 */
-@keyframes emotionPulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.2); }
-    100% { transform: scale(1); }
-}
-
-.emotion-animate {
-    animation: emotionPulse 0.3s ease;
-}
-
-/* 通用游戏卡片样式 */
-.game-card {
-    background: white;
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-    transition: transform 0.2s;
-}
-
-.game-card:hover {
-    transform: translateY(-2px);
-}
-
-.game-header {
+.meeting-status-panel {
+    background: #2e5d34;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 8px;
 }
 
-.game-title {
-    font-size: 1.2rem;
-    font-weight: bold;
+.meeting-agenda {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    margin: 12px;
+    border-left: 4px solid #ff9800;
+}
+
+.meeting-agenda h4 {
+    margin: 0 0 8px;
     color: #2e5d34;
 }
 
-.game-badge {
-    background: #ff9800;
-    color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 0.75rem;
+.meeting-agenda-item {
+    padding: 4px 0;
+    font-size: 0.9rem;
 }
 
-/* 闯关关卡列表 */
-.level-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 16px;
-    margin-top: 16px;
-}
-
-.level-card {
-    background: #f9fafc;
-    border-radius: 12px;
-    padding: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 1px solid #e0e0e0;
-}
-
-.level-card:hover {
-    border-color: #2e5d34;
-    background: #f0f7f0;
-}
-
-.level-card.locked {
-    opacity: 0.6;
-    filter: grayscale(0.2);
-    cursor: not-allowed;
-}
-
-.level-card.completed {
-    background: #e8f5e9;
-    border-color: #4caf50;
-}
-
-.level-name {
+.meeting-agenda-item.current {
     font-weight: bold;
-    font-size: 1.1rem;
+    color: #ff9800;
+}
+
+.meeting-agenda-item.completed {
+    text-decoration: line-through;
+    color: #888;
+}
+
+.villager-stance {
+    font-size: 0.7rem;
+    margin-left: 4px;
+}
+
+.stance-support { color: #4caf50; }
+.stance-oppose { color: #f44336; }
+.stance-neutral { color: #ff9800; }
+
+/* ========== 游戏大厅样式 ========== */
+.game-lobby {
+    padding: 20px 24px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+    min-height: 100%;
+    overflow-y: auto;
+}
+
+.game-lobby-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.game-lobby-header h1 {
+    font-size: 2rem;
+    color: #2e5d34;
     margin-bottom: 8px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.05);
 }
 
-.level-status {
-    font-size: 0.8rem;
-    color: #666;
-    margin-top: 8px;
+.game-lobby-header p {
+    color: #6c757d;
+    font-size: 1rem;
 }
 
-/* 答题界面 */
-.question-container {
+.game-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.game-module {
     background: white;
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 20px;
-}
-
-.question-text {
-    font-size: 1.1rem;
-    font-weight: 500;
-    margin-bottom: 20px;
-    line-height: 1.5;
-}
-
-.options-list {
+    border-radius: 24px;
+    padding: 20px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-}
-
-.option-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    background: #f5f5f5;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: 0.2s;
-    border: 1px solid transparent;
-}
-
-.option-item:hover {
-    background: #e8e8e8;
-}
-
-.option-item.selected {
-    background: #c8e6c9;
-    border-color: #2e5d34;
-}
-
-.option-prefix {
-    font-weight: bold;
-    width: 30px;
-}
-
-.submit-answer {
-    margin-top: 20px;
-    text-align: right;
-}
-
-.submit-btn {
-    background: #2e5d34;
-    color: white;
-    border: none;
-    padding: 10px 24px;
-    border-radius: 30px;
-    cursor: pointer;
-    font-size: 1rem;
-}
-
-.submit-btn:disabled {
-    background: #ccc;
-    cursor: not-allowed;
-}
-
-/* PK房间 */
-.pk-room-create {
-    text-align: center;
-    margin-bottom: 20px;
-}
-
-.room-code-input {
-    display: flex;
-    gap: 8px;
-    justify-content: center;
-    margin-top: 12px;
-}
-
-.room-code-input input {
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    border-radius: 24px;
-    width: 200px;
-}
-
-.pk-status {
-    background: #fff3e0;
-    padding: 12px;
-    border-radius: 12px;
-    text-align: center;
-    margin-top: 16px;
-}
-
-.pk-scores {
-    display: flex;
-    justify-content: space-around;
-    margin-top: 16px;
-    font-weight: bold;
-}
-
-.pk-winner {
-    color: #ff9800;
-    font-size: 1.2rem;
-}
-
-/* 填空游戏 */
-.fill-blank {
-    background: #fef9e6;
-    padding: 20px;
-    border-radius: 16px;
-    text-align: center;
-}
-
-.fill-sentence {
-    font-size: 1.2rem;
-    margin-bottom: 20px;
-    line-height: 1.6;
-}
-
-.fill-input {
-    padding: 10px 16px;
-    width: 200px;
-    border: 1px solid #ccc;
-    border-radius: 30px;
-    font-size: 1rem;
-    text-align: center;
-}
-
-.fill-hint {
-    margin-top: 12px;
-    color: #888;
-    font-size: 0.8rem;
-}
-
-/* 刮刮乐 */
-.scratch-card {
-    background: linear-gradient(135deg, #f5f0e6 0%, #e8dccc 100%);
-    border-radius: 20px;
-    padding: 30px;
-    text-align: center;
-    cursor: pointer;
-    transition: 0.2s;
     position: relative;
     overflow: hidden;
 }
 
-.scratch-card.scratched {
-    background: #fff8e7;
+.game-module:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.12);
 }
 
-.scratch-cover {
-    background: repeating-linear-gradient(45deg, #aaa, #aaa 10px, #ccc 10px, #ccc 20px);
-    color: #333;
-    padding: 20px;
-    border-radius: 12px;
-    font-weight: bold;
+.module-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
 }
 
-.scratch-question {
-    margin-top: 16px;
+.module-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #2e5d34;
+    margin-bottom: 8px;
 }
 
-.scratch-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-    margin-top: 16px;
+.module-desc {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 16px;
 }
 
-.scratch-option {
+.module-stats {
+    background: #f8f9fa;
+    border-radius: 20px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: #495057;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.module-btn {
     background: #2e5d34;
     color: white;
-    padding: 6px 16px;
-    border-radius: 30px;
-    cursor: pointer;
-}
-
-.scratch-reward {
-    margin-top: 16px;
-    color: #ff9800;
-    font-weight: bold;
-}
-
-/* 错题闯关 */
-.wrong-question-item {
-    background: #fff0f0;
-    border-left: 4px solid #f44336;
-    margin-bottom: 16px;
-    padding: 12px;
-    border-radius: 8px;
-}
-
-.clear-wrong-btn {
-    background: #f44336;
-    color: white;
     border: none;
-    padding: 10px 20px;
-    border-radius: 30px;
+    border-radius: 40px;
+    padding: 10px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
     cursor: pointer;
-    margin-top: 20px;
+    transition: background 0.2s;
+    width: 100%;
 }
 
-/* 每周竞赛 */
-.contest-header {
+.module-btn:hover {
+    background: #1f4423;
+}
+
+.game-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.game-modal-content {
+    background: white;
+    border-radius: 32px;
+    width: 90%;
+    max-width: 900px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+.game-modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #2e5d34;
-    color: white;
-    padding: 12px 20px;
-    border-radius: 12px;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #2e5d34;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #e9ecef;
     margin-bottom: 20px;
 }
 
-.contest-timer {
-    font-size: 1.5rem;
-    font-weight: bold;
-    font-family: monospace;
+.close-modal {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    cursor: pointer;
+    color: #adb5bd;
 }
 
-.contest-rank {
-    background: white;
-    border-radius: 12px;
-    padding: 16px;
-    margin-top: 20px;
+.close-modal:hover {
+    color: #dc3545;
 }
 
-.rank-item {
+.theme-group {
+    margin-bottom: 32px;
+}
+
+.theme-group-header {
     display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid #eee;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #dee2e6;
 }
 
-.rank-number {
+.theme-icon {
+    font-size: 1.8rem;
+}
+
+.theme-name {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #2e5d34;
+}
+
+.theme-desc {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.level-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.level-card {
+    background: #f8f9fa;
+    border-radius: 20px;
+    padding: 16px;
+    width: 180px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #e9ecef;
+    position: relative;
+}
+
+.level-card:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+}
+
+.level-card.completed {
+    background: #d4edda;
+    border-color: #28a745;
+}
+
+.level-card.locked {
+    opacity: 0.6;
+    cursor: not-allowed;
+    filter: grayscale(0.1);
+}
+
+.level-name {
     font-weight: bold;
-    width: 40px;
+    font-size: 1rem;
+    margin-bottom: 6px;
 }
 
-/* 动画特效 */
-.combo-effect, .point-effect {
-    position: fixed;
-    pointer-events: none;
-    z-index: 1000;
-    font-weight: bold;
-    text-shadow: 0 0 2px rgba(0,0,0,0.5);
+.level-desc {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-bottom: 8px;
 }
 
-@keyframes floatUp {
-    0% { opacity: 1; transform: translateY(0) scale(1); }
-    100% { opacity: 0; transform: translateY(-60px) scale(1.2); }
+.level-difficulty, .level-reward {
+    font-size: 0.7rem;
+    margin-bottom: 4px;
 }
 
-@keyframes bounceIn {
-    0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
-    80% { transform: translateX(-50%) scale(1.1); }
-    100% { opacity: 1; transform: translateX(-50%) scale(1); }
+.level-badge {
+    font-size: 0.7rem;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-block;
+    background: #e9ecef;
 }
 
-/* 模态框 */
+/* ========== 通用弹窗和按钮样式 ========== */
 .modal {
     display: none;
     position: fixed;
@@ -1457,6 +1554,44 @@ body {
     flex-wrap: wrap;
 }
 
+.submit-btn {
+    background: #2e5d34;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.submit-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+/* 通用动画 */
+@keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.2); }
+}
+
+@keyframes bounceIn {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
+    80% { transform: translateX(-50%) scale(1.1); }
+    100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes emotionPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+.emotion-animate {
+    animation: emotionPulse 0.3s ease;
+}
+
+/* 登录界面 */
 .auth-container {
     display: flex;
     justify-content: center;
@@ -1532,117 +1667,6 @@ body {
     color: #666;
 }
 
-/* 模拟对练头像样式（包含情绪表情） */
-#simulateMessages .message {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 16px;
-    animation: fadeInUp 0.3s ease-out;
-    padding: 0;
-    background: transparent;
-    border: none;
-}
-
-#simulateMessages .message-avatar {
-    width: 48px;
-    height: 48px;
-    background: #e9e9e9;
-    border-radius: 50%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    flex-shrink: 0;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    position: relative;
-}
-
-#simulateMessages .message-avatar .emotion-icon {
-    font-size: 0.9rem;
-    position: absolute;
-    bottom: -8px;
-    right: -8px;
-    background: white;
-    border-radius: 50%;
-    padding: 2px;
-}
-
-#simulateMessages .message.user .message-avatar {
-    background: #2e5d34;
-    color: white;
-}
-
-#simulateMessages .message.assistant .message-avatar {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#simulateMessages .message-bubble {
-    max-width: 70%;
-    background: white;
-    border-radius: 18px;
-    padding: 10px 16px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    border: 1px solid #e0e0e0;
-}
-
-#simulateMessages .message.user .message-bubble {
-    background: #2e5d34;
-    color: white;
-    border: none;
-}
-
-#simulateMessages .message.user .message-bubble .message-content {
-    color: white;
-}
-
-#simulateMessages .message.assistant .message-bubble {
-    background: white;
-    border: 1px solid #e0e0e0;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.difficulty-selector {
-    margin: 12px 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.difficulty-select {
-    padding: 4px 8px;
-    border-radius: 20px;
-    border: 1px solid #ccc;
-    background: white;
-    font-size: 0.85rem;
-}
-
-.difficulty-badge {
-    font-size: 0.7rem;
-    background: #f0f0f0;
-    padding: 2px 8px;
-    border-radius: 20px;
-    margin-left: 8px;
-    color: #333;
-}
-
-.summary-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
 /* 响应式 */
 @media (max-width: 768px) {
     .app {
@@ -1696,8 +1720,18 @@ body {
     .villager-card {
         width: 100px;
     }
-    .level-list {
+    .game-grid {
         grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    .game-module {
+        padding: 16px;
+    }
+    .level-cards {
+        justify-content: center;
+    }
+    .level-card {
+        width: 140px;
     }
 }
 
@@ -1715,116 +1749,4 @@ body {
         width: 100%;
         margin-bottom: 8px;
     }
-}
-
-/* 模拟对练新增样式 */
-.satisfaction-bar {
-  margin-top: 6px;
-  background: #eee;
-  border-radius: 4px;
-  height: 4px;
-  overflow: hidden;
-}
-.satisfaction-bar > div {
-  background: #4caf50;
-  height: 100%;
-  transition: width 0.3s ease;
-}
-
-.simulate-status-panel {
-  background: rgba(0,0,0,0.7);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-.simulate-status-panel progress {
-  width: 80px;
-  height: 6px;
-  border-radius: 3px;
-}
-.simulate-status-panel .stages span {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #555;
-  border-radius: 12px;
-  margin: 0 2px;
-}
-.simulate-status-panel .stages span.completed {
-  background: #4caf50;
-}
-
-#strategyTip {
-  position: fixed;
-  bottom: 80px;
-  right: 20px;
-  background: #ff9800;
-  color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  animation: fadeInUp 0.3s ease;
-}
-
-/* 会议模式新增样式 */
-.meeting-status-panel {
-  background: #2e5d34;
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.meeting-agenda {
-  background: white;
-  border-radius: 12px;
-  padding: 12px;
-  margin: 12px;
-  border-left: 4px solid #ff9800;
-}
-.meeting-agenda h4 {
-  margin: 0 0 8px;
-  color: #2e5d34;
-}
-.meeting-agenda-item {
-  padding: 4px 0;
-  font-size: 0.9rem;
-}
-.meeting-agenda-item.current {
-  font-weight: bold;
-  color: #ff9800;
-}
-.meeting-agenda-item.completed {
-  text-decoration: line-through;
-  color: #888;
-}
-.villager-stance {
-  font-size: 0.7rem;
-  margin-left: 4px;
-}
-.stance-support { color: #4caf50; }
-.stance-oppose { color: #f44336; }
-.stance-neutral { color: #ff9800; }
-
-/* 答题选项高亮样式 */
-.option-item.correct {
-  background-color: #d4edda !important;
-  border-color: #28a745 !important;
-}
-.option-item.wrong {
-  background-color: #f8d7da !important;
-  border-color: #dc3545 !important;
-}
-.option-item.correct-answer {
-  background-color: #c3e6cb !important;
-  border: 2px solid #28a745 !important;
 }

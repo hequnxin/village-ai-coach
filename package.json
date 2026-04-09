@@ -2,8 +2,9 @@
   "name": "village-ai-coach",
   "version": "2.1.0",
   "scripts": {
-    "build": "node scripts/initDb.js && node scripts/importKnowledge.js && cd frontend && npm install && npm run build",
-    "start": "node server.js"
+    "build": "cd frontend && npm install && npm run build",
+    "start": "node scripts/ensureDbInit.js && node server.js",
+    "db:init": "node scripts/initDb.js && node scripts/importKnowledge.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
