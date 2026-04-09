@@ -14,6 +14,10 @@ let contestQuestions = [];
 let contestAnswers = [];
 let contestStartTime = null;
 
+// ==================== 刮刮乐相关变量 ====================
+let currentScratchRemaining = 0;
+
+// ==================== 主渲染函数 ====================
 export async function renderQuizView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -47,7 +51,7 @@ export async function renderQuizView() {
       </div>
       <div class="game-card">
         <div class="game-header"><span class="game-title">🎫 政策刮刮乐</span><span class="game-badge">每日3次机会</span></div>
-        <div><button id="getScratchBtn" class="submit-btn">刮一张</button><div id="scratchCard"></div></div>
+        <div><button id="getScratchBtn" class="submit-btn">🎫 刮一张</button><div id="scratchCard"></div></div>
       </div>
       <div class="game-card">
         <div class="game-header"><span class="game-title">📖 政策知多少</span><span class="game-badge">每日一测</span></div>
@@ -61,8 +65,23 @@ export async function renderQuizView() {
   document.getElementById('getFillDailyBtn').onclick = getFillDailyQuestions;
   document.getElementById('startWrongClearBtn').onclick = startWrongClear;
   document.getElementById('startContestBtn').onclick = startWeeklyContest;
-  document.getElementById('getScratchBtn').onclick = getScratchCard;
   document.getElementById('startPolicyQuizBtn').onclick = startPolicyQuiz;
+
+  // 刮刮乐按钮绑定（增强版）
+  const scratchBtn = document.getElementById('getScratchBtn');
+  if (scratchBtn) {
+    scratchBtn.onclick = async () => {
+      await fetchScratchRemaining();
+      if (currentScratchRemaining <= 0) {
+        alert('今日刮刮卡次数已用完，请明天再来！');
+        return;
+      }
+      getScratchCard();
+    };
+  }
+  await fetchScratchRemaining();
+  renderScratchButton();
+
   setActiveNavByView('quiz');
 }
 
@@ -118,14 +137,11 @@ async function startLevel(levelId) {
           </div>
         </div>
       `;
-
       const closeBtn = modal.querySelector('.modal-close');
       closeBtn.onclick = () => document.body.removeChild(modal);
       modal.onclick = (e) => { if(e.target===modal) document.body.removeChild(modal); };
-
       const opts = modal.querySelectorAll('.option-item');
       const explanationDiv = modal.querySelector('#explanationArea');
-
       if (userSelections[currentIndex] !== undefined) {
         const selectedIdx = userSelections[currentIndex];
         const isCorrect = (selectedIdx === q.answer);
@@ -140,7 +156,6 @@ async function startLevel(levelId) {
           explanationDiv.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
         }
       }
-
       opts.forEach(opt => {
         opt.onclick = async () => {
           const selected = parseInt(opt.dataset.opt);
@@ -168,7 +183,6 @@ async function startLevel(levelId) {
           }
         };
       });
-
       const prevBtn = modal.querySelector('#prevBtn');
       const nextBtn = modal.querySelector('#nextBtn');
       if (prevBtn) prevBtn.onclick = () => { if(currentIndex>0) { currentIndex--; renderQuestion(); } };
@@ -614,27 +628,99 @@ async function startWeeklyContest() {
   } catch(e) { alert(e.message); }
 }
 
-// ==================== 刮刮乐 ====================
+// ==================== 刮刮乐（增强版） ====================
+async function fetchScratchRemaining() {
+  // 由于后端没有提供剩余次数接口，前端使用 localStorage 记录当日刮卡次数
+  const today = new Date().toISOString().slice(0,10);
+  let count = parseInt(localStorage.getItem(`scratch_${today}`)) || 0;
+  if (count > 5) count = 5;
+  currentScratchRemaining = Math.max(0, 5 - count);
+  updateScratchRemaining(currentScratchRemaining);
+}
+
+function updateScratchRemaining(remaining) {
+  const container = document.getElementById('scratchCard');
+  if (!container) return;
+  let remainingDiv = container.querySelector('.scratch-remaining');
+  if (!remainingDiv) {
+    remainingDiv = document.createElement('div');
+    remainingDiv.className = 'scratch-remaining';
+    remainingDiv.style.marginTop = '8px';
+    remainingDiv.style.fontSize = '0.8rem';
+    remainingDiv.style.color = '#666';
+    container.appendChild(remainingDiv);
+  }
+  remainingDiv.textContent = `今日剩余次数：${remaining} 次`;
+  renderScratchButton();
+}
+
+function renderScratchButton() {
+  const btn = document.getElementById('getScratchBtn');
+  if (!btn) return;
+  if (currentScratchRemaining <= 0) {
+    btn.disabled = true;
+    btn.textContent = '🎫 今日次数已用完';
+  } else {
+    btn.disabled = false;
+    btn.textContent = '🎫 刮一张';
+  }
+}
+
 async function getScratchCard() {
   try {
     const res = await fetchWithAuth('/api/quiz/scratch/generate');
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || `请求失败 (${res.status})`);
+      if (res.status === 429) {
+        const errorData = await res.json().catch(() => ({}));
+        alert(errorData.error || '今日刮刮卡次数已用完，请明天再来！');
+        await fetchScratchRemaining();
+        return;
+      }
+      throw new Error(`请求失败 (${res.status})`);
     }
     const card = await res.json();
-    const container = document.getElementById('scratchCard');
-    container.innerHTML = `<div class="scratch-card" id="scratchSurface"><div class="scratch-cover">🎫 点击刮开涂层 🎫</div></div>`;
-    const surface = document.getElementById('scratchSurface');
-    surface.onclick = async () => {
-      surface.innerHTML = `<div class="scratch-question"><div class="question-text">${escapeHtml(card.question)}</div><div class="scratch-options">${card.options.map((opt, idx) => `<div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>`).join('')}</div></div>`;
-      const opts = surface.querySelectorAll('.scratch-option');
-      opts.forEach(opt => {
-        opt.onclick = async () => {
-          const selected = parseInt(opt.dataset.opt);
+    renderScratchCard(card);
+    // 刮卡成功后，本地计数+1（实际后端已减，但前端需要同步）
+    const today = new Date().toISOString().slice(0,10);
+    let count = parseInt(localStorage.getItem(`scratch_${today}`)) || 0;
+    count++;
+    localStorage.setItem(`scratch_${today}`, count);
+    await fetchScratchRemaining();
+  } catch(e) {
+    alert(e.message);
+  }
+}
+
+function renderScratchCard(card) {
+  const container = document.getElementById('scratchCard');
+  if (!container) return;
+  container.innerHTML = `
+    <div class="scratch-card" id="scratchSurface">
+      <div class="scratch-cover">🎫 点击刮开涂层 🎫</div>
+    </div>
+    <div class="scratch-remaining" style="margin-top:8px; font-size:0.8rem; color:#666;">今日剩余次数：--</div>
+    <button id="scratchAgainBtn" class="submit-btn" style="margin-top:12px; display:none;">再刮一张</button>
+  `;
+  const surface = document.getElementById('scratchSurface');
+  const againBtn = document.getElementById('scratchAgainBtn');
+  surface.onclick = async () => {
+    surface.innerHTML = `
+      <div class="scratch-question">
+        <div class="question-text">${escapeHtml(card.question)}</div>
+        <div class="scratch-options">
+          ${card.options.map((opt, idx) => `<div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>`).join('')}
+        </div>
+      </div>
+    `;
+    const opts = surface.querySelectorAll('.scratch-option');
+    opts.forEach(opt => {
+      opt.onclick = async () => {
+        const selected = parseInt(opt.dataset.opt);
+        try {
           const submitRes = await fetchWithAuth('/api/quiz/scratch/submit', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ cardId: card.cardId, selected })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cardId: card.cardId, selected })
           });
           const result = await submitRes.json();
           if (result.correct) {
@@ -643,8 +729,23 @@ async function getScratchCard() {
           } else {
             surface.innerHTML = `<div class="scratch-reward">😢 很遗憾，答案错误，下次再试试吧</div>`;
           }
-        };
-      });
-    };
-  } catch(e) { alert(e.message); }
+          // 更新剩余次数
+          await fetchScratchRemaining();
+          if (currentScratchRemaining > 0) {
+            againBtn.style.display = 'block';
+          } else {
+            againBtn.style.display = 'none';
+            renderScratchButton();
+          }
+        } catch(e) {
+          alert('提交失败：' + e.message);
+        }
+      };
+    });
+  };
+  againBtn.onclick = () => {
+    getScratchCard();
+  };
+  // 显示剩余次数
+  updateScratchRemaining(currentScratchRemaining);
 }
