@@ -1998,3 +1998,67 @@ body {
     font-size: 0.8rem;
   }
 }
+/* ========== 政策闯关关卡卡片样式优化 ========== */
+.level-start-btn {
+  background: #2e5d34;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  width: 100%;
+  transition: background 0.2s;
+}
+.level-start-btn:hover {
+  background: #1f4423;
+}
+
+/* 每日一练题号进度提示 */
+.progress-info {
+  margin: 8px 0;
+  font-size: 0.8rem;
+  color: #666;
+  text-align: center;
+}
+
+/* 排行榜弹窗样式（可选，提升视觉效果） */
+.rank-modal .rank-header,
+.rank-modal .rank-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 80px 80px;
+  gap: 8px;
+}
+.rank-header {
+  font-weight: bold;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+.rank-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+.rank-number {
+  font-weight: bold;
+}
+.rank-accuracy,
+.rank-time {
+  text-align: right;
+}
+
+/* 移动端卡片按钮调整 */
+@media (max-width: 768px) {
+  .level-start-btn {
+    padding: 4px 8px;
+    font-size: 0.7rem;
+  }
+  .module-btn {
+    font-size: 0.8rem;
+    padding: 6px 0;
+  }
+  .game-module .module-stats {
+    font-size: 0.7rem;
+  }
+}

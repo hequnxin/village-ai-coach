@@ -29,8 +29,8 @@ let currentAttemptNumber = 1;
 // 错题本
 let wrongQuestionsList = [];
 let currentWrongIndex = 0;
-let wrongClearStartCount = 0; // 记录开始时的错题数
-let wrongClearCorrectCount = 0; // 记录答对数量
+let wrongClearStartCount = 0;
+let wrongClearCorrectCount = 0;
 
 // 刮刮乐
 let scratchRemaining = 0;
@@ -187,7 +187,7 @@ function renderThemesDetail(container, themes) {
           <div class="level-desc">${escapeHtml(level.description)}</div>
           <div class="level-difficulty">难度: ${'⭐'.repeat(level.difficulty)}</div>
           <div class="level-reward">奖励: ${level.reward_points}分</div>
-          ${level.completed ? '<div class="level-badge">✅ 已通关</div>' : (locked ? `<div class="level-badge">🔒 需${level.unlock_points}分</div>` : '<div class="level-badge">⚡ 可挑战</div>')}
+          ${level.completed ? '<div class="level-badge">✅ 已通关</div>' : (locked ? `<div class="level-badge">🔒 需${level.unlock_points}分</div>` : '<button class="level-start-btn">开始挑战</button>')}
         </div>
       `;
     }
@@ -195,14 +195,26 @@ function renderThemesDetail(container, themes) {
   }
   container.innerHTML = html;
 
+  // 为每个关卡绑定点击事件（卡片整体或按钮）
   document.querySelectorAll('.level-card:not(.locked)').forEach(card => {
-    card.addEventListener('click', () => {
-      const levelId = card.dataset.levelId;
-      const levelName = card.querySelector('.level-name')?.textContent || '关卡';
+    const levelId = card.dataset.levelId;
+    const levelName = card.querySelector('.level-name')?.textContent || '关卡';
+    const startGame = () => {
       const modal = document.getElementById('levelsModal');
       if (modal) modal.style.display = 'none';
       startLevel(levelId, levelName);
+    };
+    card.addEventListener('click', (e) => {
+      if (e.target.classList && e.target.classList.contains('level-start-btn')) return;
+      startGame();
     });
+    const btn = card.querySelector('.level-start-btn');
+    if (btn) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startGame();
+      });
+    }
   });
 }
 
@@ -340,6 +352,7 @@ function showDailyQuestion(index) {
     <div class="modal-content" style="width:500px;">
       <button class="modal-close">&times;</button>
       <div class="question-text">${escapeHtml(q.question)}</div>
+      <div class="progress-info" style="margin: 8px 0; font-size: 0.8rem; color: #666;">第 ${index+1} / ${currentDailyQuestions.length} 题</div>
   `;
   if (q.type === 'choice') {
     contentHtml += `
@@ -428,75 +441,114 @@ function showDailyQuestion(index) {
 async function submitDailyAnswer(index, userAnswer, modal) {
   const q = currentDailyQuestions[index];
   let isCorrect = false;
+  let correctLabel = '';
+
   if (q.type === 'choice') {
-    isCorrect = (userAnswer === q.answer);
+    const correctIndex = parseInt(q.answer);
+    const userIndex = parseInt(userAnswer);
+    isCorrect = (userIndex === correctIndex);
+    correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + q.options[correctIndex];
+
+    if (isCorrect) {
+      if (!currentDailyScores[index]) {
+        currentDailyScores[index] = true;
+        dailyScore++;
+      }
+      const feedback = modal.querySelector('#feedbackArea');
+      feedback.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${q.explanation ? '<br>解析：'+escapeHtml(q.explanation) : ''}</div>`;
+      const opts = modal.querySelectorAll('.option-item');
+      opts.forEach(opt => {
+        if (parseInt(opt.dataset.opt) === correctIndex) opt.classList.add('correct');
+      });
+      const submitBtn = modal.querySelector('#submitAnswerBtn');
+      if (submitBtn) submitBtn.disabled = true;
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'submit-btn';
+      nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
+      nextBtn.style.marginLeft = '10px';
+      nextBtn.onclick = () => {
+        modal.querySelector('.modal-close').click();
+        if (index === currentDailyQuestions.length-1) finishDailyQuiz();
+        else showDailyQuestion(index+1);
+      };
+      modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
+    } else {
+      const feedback = modal.querySelector('#feedbackArea');
+      feedback.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
+      const opts = modal.querySelectorAll('.option-item');
+      opts.forEach(opt => {
+        const optVal = parseInt(opt.dataset.opt);
+        if (optVal === correctIndex) opt.classList.add('correct');
+        if (optVal === userIndex && !isCorrect) opt.classList.add('wrong');
+      });
+      await fetchWithAuth('/api/game/wrong-questions/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: q.id, userAnswer: userIndex })
+      });
+      const submitBtn = modal.querySelector('#submitAnswerBtn');
+      if (submitBtn) submitBtn.disabled = true;
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'submit-btn';
+      nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
+      nextBtn.style.marginLeft = '10px';
+      nextBtn.onclick = () => {
+        modal.querySelector('.modal-close').click();
+        if (index === currentDailyQuestions.length-1) finishDailyQuiz();
+        else showDailyQuestion(index+1);
+      };
+      modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
+    }
   } else {
+    // 填空题
     const correctStr = q.answer.trim().toLowerCase();
     const userStr = (typeof userAnswer === 'string' ? userAnswer : String(userAnswer)).trim().toLowerCase();
     isCorrect = (userStr === correctStr);
-  }
-  const correctAnswerLabel = q.type === 'choice'
-    ? (String.fromCharCode(65 + q.answer) + '. ' + q.options[q.answer])
-    : q.answer;
-  if (isCorrect) {
-    if (!currentDailyScores[index]) {
-      currentDailyScores[index] = true;
-      dailyScore++;
-    }
-    const feedback = modal.querySelector('#feedbackArea');
-    feedback.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${q.explanation ? '<br>解析：'+escapeHtml(q.explanation) : ''}</div>`;
-    if (q.type === 'choice') {
-      const opts = modal.querySelectorAll('.option-item');
-      opts.forEach(opt => {
-        if (parseInt(opt.dataset.opt) === q.answer) opt.classList.add('correct');
-        if (parseInt(opt.dataset.opt) === userAnswer && userAnswer !== q.answer) opt.classList.add('wrong');
-      });
-    } else {
+    correctLabel = q.answer;
+    if (isCorrect) {
+      if (!currentDailyScores[index]) {
+        currentDailyScores[index] = true;
+        dailyScore++;
+      }
+      const feedback = modal.querySelector('#feedbackArea');
+      feedback.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${q.explanation ? '<br>解析：'+escapeHtml(q.explanation) : ''}</div>`;
       const input = modal.querySelector('#fillAnswer');
       if (input) input.classList.add('correct');
-    }
-    const submitBtn = modal.querySelector('#submitAnswerBtn');
-    if (submitBtn) submitBtn.disabled = true;
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'submit-btn';
-    nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
-    nextBtn.style.marginLeft = '10px';
-    nextBtn.onclick = () => {
-      modal.querySelector('.modal-close').click();
-      if (index === currentDailyQuestions.length-1) finishDailyQuiz();
-      else showDailyQuestion(index+1);
-    };
-    modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
-  } else {
-    const feedback = modal.querySelector('#feedbackArea');
-    feedback.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctAnswerLabel)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
-    if (q.type === 'choice') {
-      const opts = modal.querySelectorAll('.option-item');
-      opts.forEach(opt => {
-        if (parseInt(opt.dataset.opt) === q.answer) opt.classList.add('correct');
-        if (parseInt(opt.dataset.opt) === userAnswer) opt.classList.add('wrong');
-      });
+      const submitBtn = modal.querySelector('#submitAnswerBtn');
+      if (submitBtn) submitBtn.disabled = true;
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'submit-btn';
+      nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
+      nextBtn.style.marginLeft = '10px';
+      nextBtn.onclick = () => {
+        modal.querySelector('.modal-close').click();
+        if (index === currentDailyQuestions.length-1) finishDailyQuiz();
+        else showDailyQuestion(index+1);
+      };
+      modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
     } else {
+      const feedback = modal.querySelector('#feedbackArea');
+      feedback.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
       const input = modal.querySelector('#fillAnswer');
       if (input) input.classList.add('wrong');
+      await fetchWithAuth('/api/game/wrong-questions/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: q.id, userAnswer: userAnswer })
+      });
+      const submitBtn = modal.querySelector('#submitAnswerBtn');
+      if (submitBtn) submitBtn.disabled = true;
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'submit-btn';
+      nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
+      nextBtn.style.marginLeft = '10px';
+      nextBtn.onclick = () => {
+        modal.querySelector('.modal-close').click();
+        if (index === currentDailyQuestions.length-1) finishDailyQuiz();
+        else showDailyQuestion(index+1);
+      };
+      modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
     }
-    await fetchWithAuth('/api/game/wrong-questions/record', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: q.id, userAnswer: userAnswer })
-    });
-    const submitBtn = modal.querySelector('#submitAnswerBtn');
-    if (submitBtn) submitBtn.disabled = true;
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'submit-btn';
-    nextBtn.textContent = index === currentDailyQuestions.length-1 ? '完成' : '下一题';
-    nextBtn.style.marginLeft = '10px';
-    nextBtn.onclick = () => {
-      modal.querySelector('.modal-close').click();
-      if (index === currentDailyQuestions.length-1) finishDailyQuiz();
-      else showDailyQuestion(index+1);
-    };
-    modal.querySelector('div[style*="margin-top:20px"]').appendChild(nextBtn);
   }
   playSound(isCorrect ? 'complete' : 'error');
 }
@@ -520,7 +572,7 @@ async function finishDailyQuiz() {
   }
 }
 
-// ==================== 每周竞赛（改进版） ====================
+// ==================== 每周竞赛（总倒计时不重置） ====================
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
@@ -538,7 +590,7 @@ async function startWeeklyContest() {
     currentContestId = data.contestId;
     currentContestQuestions = data.questions;
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
-    contestStartTime = Date.now();
+    contestStartTime = Date.now(); // 只初始化一次，切换题目不会重置
     currentAttemptNumber = data.attemptNumber;
     showContestQuestion(0);
   } catch(e) {
@@ -583,7 +635,7 @@ function showContestQuestion(index) {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  // 更新倒计时
+  // 更新倒计时（基于 contestStartTime，不会因换题而重置）
   if (contestTimerInterval) clearInterval(contestTimerInterval);
   contestTimerInterval = setInterval(() => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -639,6 +691,7 @@ function showContestQuestion(index) {
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
       await finalizeContest(modal, timeUsed);
     } else {
+      // 延迟1.5秒后自动进入下一题，倒计时继续
       setTimeout(() => {
         closeModal();
         showContestQuestion(index+1);
@@ -649,25 +702,30 @@ function showContestQuestion(index) {
 
 async function submitContestSingle(index, selected, modal) {
   const q = currentContestQuestions[index];
-  const isCorrect = (q.answer == selected);
+  const correctIndex = parseInt(q.answer);
+  const userIndex = parseInt(selected);
+  const isCorrect = (userIndex === correctIndex);
+  const correctText = q.options[correctIndex];
+  const correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + correctText;
   const feedbackDiv = modal.querySelector('#feedbackArea');
   const opts = modal.querySelectorAll('.option-item');
-  const correctAnswerLabel = String.fromCharCode(65 + q.answer) + '. ' + q.options[q.answer];
+
   opts.forEach(opt => {
     const optVal = parseInt(opt.dataset.opt);
-    if (optVal === q.answer) opt.classList.add('correct');
-    if (optVal === selected && !isCorrect) opt.classList.add('wrong');
+    if (optVal === correctIndex) opt.classList.add('correct');
+    if (optVal === userIndex && !isCorrect) opt.classList.add('wrong');
   });
+
   if (isCorrect) {
     feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
     playSound('complete');
   } else {
-    feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctAnswerLabel)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
+    feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${q.explanation ? '解析：'+escapeHtml(q.explanation) : ''}</div>`;
     playSound('error');
     await fetchWithAuth('/api/game/wrong-questions/record', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: q.id, userAnswer: selected })
+      body: JSON.stringify({ questionId: q.id, userAnswer: userIndex })
     });
   }
   const submitBtn = modal.querySelector('#submitBtn');
@@ -688,7 +746,6 @@ async function finalizeContest(modal, timeUsed) {
   modal.querySelector('.modal-close').click();
 }
 
-// 排行榜弹窗
 async function showContestRanking() {
   try {
     const now = new Date();
@@ -731,7 +788,7 @@ async function showContestRanking() {
   }
 }
 
-// ==================== 错题本（改进版） ====================
+// ==================== 错题本（退出后刷新错题数） ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   wrongQuestionsList = await res.json();
@@ -749,7 +806,7 @@ function showWrongQuestion() {
   if (currentWrongIndex >= wrongQuestionsList.length) {
     const remaining = wrongQuestionsList.length - wrongClearCorrectCount;
     alert(`错题闯关结束！本次共处理 ${wrongClearStartCount} 题，其中答对 ${wrongClearCorrectCount} 题，剩余错题 ${remaining} 道。`);
-    loadModuleStats();
+    loadModuleStats(); // 重新加载错题本数量
     return;
   }
   const w = wrongQuestionsList[currentWrongIndex];
@@ -794,33 +851,35 @@ function showWrongQuestion() {
   const submitBtn = modal.querySelector('#submitWrongBtn');
   const skipBtn = modal.querySelector('#skipWrongBtn');
   const feedbackDiv = modal.querySelector('#feedbackArea');
-  const correctAnswerLabel = String.fromCharCode(65 + w.answer) + '. ' + w.options[w.answer];
+  const correctIndex = parseInt(w.answer);
+  const correctText = w.options[correctIndex];
+  const correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + correctText;
 
   submitBtn.onclick = async () => {
     if (selected === null) { alert('请选择答案'); return; }
-    const isCorrect = (w.answer == selected);
+    const userIndex = parseInt(selected);
+    const isCorrect = (userIndex === correctIndex);
+
     opts.forEach(opt => {
       const optVal = parseInt(opt.dataset.opt);
-      if (optVal === w.answer) opt.classList.add('correct');
-      if (optVal === selected && !isCorrect) opt.classList.add('wrong');
+      if (optVal === correctIndex) opt.classList.add('correct');
+      if (optVal === userIndex && !isCorrect) opt.classList.add('wrong');
     });
+
     if (isCorrect) {
       feedbackDiv.innerHTML = `<div style="color:#2e5d34; background:#c8e6c9; padding:8px; border-radius:8px;">✅ 回答正确！${w.explanation ? '<br>解析：'+escapeHtml(w.explanation) : ''}</div>`;
       playSound('complete');
       const res = await fetchWithAuth('/api/game/wrong-questions/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: [{ questionId: w.question_id, selected }] })
+        body: JSON.stringify({ answers: [{ questionId: w.question_id, selected: userIndex }] })
       });
       const result = await res.json();
       if (result.clearedCount > 0) {
         addPoints(result.rewardPoints, '错题闯关');
         wrongClearCorrectCount++;
-        // 从列表中移除当前错题
         wrongQuestionsList.splice(currentWrongIndex, 1);
-        // 不增加索引，因为数组已变
       } else {
-        // 如果未清除（可能后端原因），仍然前进
         currentWrongIndex++;
       }
       setTimeout(() => {
@@ -828,7 +887,7 @@ function showWrongQuestion() {
         showWrongQuestion();
       }, 1500);
     } else {
-      feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctAnswerLabel)}<br>${w.explanation ? '解析：'+escapeHtml(w.explanation) : ''}</div>`;
+      feedbackDiv.innerHTML = `<div style="color:#d32f2f; background:#ffcdd2; padding:8px; border-radius:8px;">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${w.explanation ? '解析：'+escapeHtml(w.explanation) : ''}</div>`;
       playSound('error');
       submitBtn.disabled = true;
       const nextBtn = document.createElement('button');
