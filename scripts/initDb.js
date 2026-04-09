@@ -270,7 +270,35 @@ async function initDb() {
   } catch (err) {
     console.error('添加全文搜索失败:', err.message);
   }
+// ========== 确保 policy_levels 表有数据 ==========
+const levelCount = await db.get('SELECT COUNT(*) as cnt FROM policy_levels');
+if (levelCount.cnt === 0) {
+  const levels = [
+    { id: 'level_1', name: '土地管理基础', order_num: 1, questions: JSON.stringify(['q1', 'q2']) },
+    { id: 'level_2', name: '基层治理', order_num: 2, questions: JSON.stringify(['q3', 'q4']) },
+    { id: 'level_3', name: '政策法规', order_num: 3, questions: JSON.stringify(['q5']) }
+  ];
+  for (const lvl of levels) {
+    await db.run(`INSERT INTO policy_levels (id, name, order_num, questions) VALUES ($1, $2, $3, $4)`,
+      [lvl.id, lvl.name, lvl.order_num, lvl.questions]);
+  }
+  console.log('✅ 插入默认关卡');
+}
 
+// ========== 确保 fill_questions 表有数据 ==========
+const fillCount = await db.get('SELECT COUNT(*) as cnt FROM fill_questions');
+if (fillCount.cnt === 0) {
+  const fills = [
+    { id: 'fill1', sentence: '宅基地三权分置是指所有权、资格权、______分置。', correct_word: '使用权', hint: '与"使用"相关', category: '土地管理' },
+    { id: 'fill2', sentence: '"四议两公开"中"两公开"是指决议公开和______公开。', correct_word: '结果', hint: '实施后的情况', category: '基层治理' },
+    { id: 'fill3', sentence: '农民专业合作社的盈余分配中，按交易量返还的比例不得低于______%。', correct_word: '60', hint: '百分之六十', category: '产业发展' }
+  ];
+  for (const f of fills) {
+    await db.run(`INSERT INTO fill_questions (id, sentence, correct_word, hint, category) VALUES ($1, $2, $3, $4, $5)`,
+      [f.id, f.sentence, f.correct_word, f.hint, f.category]);
+  }
+  console.log('✅ 插入默认填空题目');
+}
   console.log('数据库初始化完成');
 }
 
