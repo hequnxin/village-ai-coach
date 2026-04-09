@@ -5,12 +5,11 @@ async function getKnowledgeBase() {
   return await db.all(sql, ['approved']);
 }
 
-// 全文搜索（替代关键词搜索）
 async function fullTextSearch(query, limit = 3) {
   if (!query) return [];
   const sql = `
     SELECT id, title, content, type, category, tags,
-           ts_rank_cd(tsv, plainto_tsquery('simple', $1)) AS rank
+      ts_rank_cd(tsv, plainto_tsquery('simple', $1)) AS rank
     FROM knowledge
     WHERE status = 'approved' AND tsv @@ plainto_tsquery('simple', $1)
     ORDER BY rank DESC
@@ -19,7 +18,6 @@ async function fullTextSearch(query, limit = 3) {
   return await db.all(sql, [query, limit]);
 }
 
-// 保留原关键词搜索作为降级
 async function keywordSearch(query, limit = 3) {
   const keywords = query.toLowerCase().split(/[\s,，。？?！!、]+/).filter(k => k.length > 1);
   const knowledge = await getKnowledgeBase();
@@ -33,7 +31,6 @@ async function keywordSearch(query, limit = 3) {
 }
 
 async function webSearch(query, limit = 3) {
-  // 保持原有实现不变
   if (!process.env.BAIDU_API_KEY) return [];
   try {
     const axios = require('axios');
@@ -52,4 +49,4 @@ async function webSearch(query, limit = 3) {
   }
 }
 
-module.exports = { getKnowledgeBase, keywordSearch, fullTextSearch, webSearch };
+module.exports = { getKnowledgeBase, fullTextSearch, keywordSearch, webSearch };

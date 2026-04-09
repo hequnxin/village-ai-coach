@@ -1,5 +1,5 @@
 import { fetchWithAuth } from '../utils/api';
-import { appState, switchSession, createNewSession } from './state';
+import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput } from '../utils/helpers';
 import { renderSessionList } from './ui';
 
@@ -270,16 +270,17 @@ export async function renderChatView(existingSession = null) {
       </div>
     </div>
   `;
+
   const messagesDiv = document.getElementById('messages');
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
-  const typingIndicator = document.getElementById('typingIndicator');
-  const currentTitle = document.getElementById('currentSessionTitle');
   const exportBtn = document.getElementById('exportBtn');
   const summaryBtn = document.getElementById('summaryBtn');
+
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.onclick = () => { userInput.value = btn.dataset.question; sendMessage(); };
   });
+
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
   exportBtn.onclick = exportCurrentChat;
@@ -310,18 +311,21 @@ export async function renderChatView(existingSession = null) {
       summaryBtn.textContent = '📋 生成摘要';
     }
   };
+
   setupVoiceInput(userInput, document.getElementById('voiceBtn'));
+
   if (appState.currentSessionId && !existingSession) {
     const res = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
     const session = await res.json();
-    currentTitle.textContent = session.title || '村官AI伙伴';
+    document.getElementById('currentSessionTitle').textContent = session.title || '村官AI伙伴';
     displayMessages(session.messages || []);
     document.getElementById('infoContent').innerHTML = '<div style="color:#888;">点击"生成摘要"获取分析</div>';
   } else if (existingSession) {
-    currentTitle.textContent = existingSession.title || '村官AI伙伴';
+    document.getElementById('currentSessionTitle').textContent = existingSession.title || '村官AI伙伴';
     displayMessages(existingSession.messages || []);
     document.getElementById('infoContent').innerHTML = '<div style="color:#888;">点击"生成摘要"获取分析</div>';
   }
+
   document.getElementById('policyQuickSearch')?.addEventListener('click', showPolicyQuickSearch);
 }
 
@@ -399,12 +403,13 @@ function showKnowledgeDetail(item) {
   document.body.appendChild(modal);
 }
 
-// 辅助函数（需要从 state 导入，但这里简单实现避免循环）
-async function loadSessions() {
-  const res = await fetchWithAuth('/api/sessions');
-  if (res.ok) appState.sessions = await res.json();
-}
-async function loadMessageFavorites() {
-  const res = await fetchWithAuth('/api/user/favorites');
-  if (res.ok) appState.messageFavorites = await res.json();
+// 导出切换函数，供导航使用
+export function switchToChat() {
+  if (appState.currentSessionId && appState.sessions.find(s => s.id === appState.currentSessionId)?.type === 'chat') {
+    renderChatView();
+  } else {
+    createNewSession('新会话').then(() => {
+      renderChatView();
+    });
+  }
 }

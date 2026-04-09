@@ -1,5 +1,3 @@
-// frontend/src/utils/helpers.js
-
 export function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>]/g, function(m) {
@@ -84,9 +82,7 @@ export function initParticles() {
   animateParticles();
 }
 
-// 任务系统
 let taskList = [];
-
 export function initDailyTasks() {
   const today = new Date().toLocaleDateString();
   const saved = localStorage.getItem('dailyTasks');
@@ -187,7 +183,6 @@ function showTaskCompleteToast(task) {
 }
 
 export async function addPoints(points, reason = '游戏奖励') {
-  // 显示飘字特效
   const pointDiv = document.createElement('div');
   pointDiv.textContent = `+${points}`;
   pointDiv.style.position = 'fixed';
@@ -201,7 +196,6 @@ export async function addPoints(points, reason = '游戏奖励') {
   pointDiv.style.zIndex = '999';
   document.body.appendChild(pointDiv);
   setTimeout(() => pointDiv.remove(), 1000);
-  // 调用后端接口持久化
   try {
     const { fetchWithAuth } = await import('./api');
     await fetchWithAuth('/api/quiz/add-points', {
@@ -212,9 +206,7 @@ export async function addPoints(points, reason = '游戏奖励') {
   } catch(e) { console.error('积分记录失败', e); }
 }
 
-// 连击特效（用于聊天中连续提问）
 export function showComboEffect() {
-  // 简单实现：在右下角显示一个“连击+1”飘字
   const comboDiv = document.createElement('div');
   comboDiv.textContent = '⚡ 连击 +1';
   comboDiv.style.position = 'fixed';
@@ -230,7 +222,6 @@ export function showComboEffect() {
   comboDiv.style.zIndex = '999';
   document.body.appendChild(comboDiv);
   setTimeout(() => comboDiv.remove(), 800);
-  // 可选：播放音效
   playSound('reward');
 }
 
@@ -244,7 +235,12 @@ export function setupGlobalEventListeners() {
   const navKnowledge = document.getElementById('navKnowledge');
   const navQuiz = document.getElementById('navQuiz');
   const navProfile = document.getElementById('navProfile');
-  navChat.onclick = () => import('../modules/chat').then(m => m.switchToChat());
+  navChat.onclick = () => {
+    import('../modules/chat').then(m => {
+      if (typeof m.switchToChat === 'function') m.switchToChat();
+      else console.error('switchToChat not found');
+    });
+  };
   navSimulate.onclick = () => import('../modules/simulate').then(m => m.renderSimulateView(true));
   navMeeting.onclick = () => import('../modules/meeting').then(m => m.renderMeetingSetupView());
   navKnowledge.onclick = () => import('../modules/knowledge').then(m => m.renderKnowledgeView());
@@ -252,7 +248,6 @@ export function setupGlobalEventListeners() {
   navProfile.onclick = () => import('../modules/profile').then(m => m.renderProfileView());
 }
 
-// 通用语音输入函数
 export function setupVoiceInput(inputElement, buttonElement, onResultCallback) {
   if (!inputElement || !buttonElement) return;
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -298,7 +293,6 @@ export function setupVoiceInput(inputElement, buttonElement, onResultCallback) {
   buttonElement.addEventListener('mouseleave', stopRecording);
 }
 
-// 更新侧边栏等级（供 state.js 调用）
 export function updateSidebarLevel(level, points, nextLevelPoints) {
   let levelContainer = document.getElementById('sidebarLevelContainer');
   if (!levelContainer) {

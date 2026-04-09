@@ -1,6 +1,6 @@
-// frontend/src/modules/state.js
 import { fetchWithAuth } from '../utils/api';
 import { renderSessionList, renderMessageFavoriteList } from './ui';
+import { updateSidebarLevel } from '../utils/helpers';
 
 export const appState = {
   currentSessionId: null,
@@ -21,7 +21,6 @@ export function setAppState(newState) {
   Object.assign(appState, newState);
 }
 
-// ==================== 会话相关 ====================
 export async function loadSessions() {
   const res = await fetchWithAuth('/api/sessions');
   if (!res.ok) throw new Error('加载会话失败');
@@ -47,29 +46,8 @@ export async function loadLevelProgress() {
     appState.userPoints = data.points;
     appState.userLevel = data.level;
     appState.userNextLevelPoints = data.nextLevelPoints;
-    updateSidebarLevel();
+    updateSidebarLevel(data.level, data.points, data.nextLevelPoints);
   } catch(e) { console.error(e); }
-}
-
-function updateSidebarLevel() {
-  let levelContainer = document.getElementById('sidebarLevelContainer');
-  if (!levelContainer) {
-    const container = document.createElement('div');
-    container.id = 'sidebarLevelContainer';
-    container.className = 'level-progress-container';
-    const userInfo = document.querySelector('.user-info');
-    const taskPanel = document.getElementById('taskPanel');
-    if (userInfo && taskPanel) {
-      taskPanel.parentNode.insertBefore(container, userInfo);
-    }
-    levelContainer = container;
-  }
-  levelContainer.style.display = 'block';
-  const percent = (appState.userPoints / appState.userNextLevelPoints) * 100;
-  levelContainer.innerHTML = `
-    <div class="level-info"><span>Lv.${appState.userLevel}</span><span>${appState.userPoints}/${appState.userNextLevelPoints}</span></div>
-    <div class="level-progress-bar"><div class="level-progress-fill" style="width: ${percent}%"></div></div>
-  `;
 }
 
 export async function toggleSessionFavorite(sessionId, favorite) {

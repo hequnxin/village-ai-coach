@@ -55,7 +55,6 @@ export async function renderQuizView() {
       </div>
     </div>
   `;
-
   await loadLevels();
   document.getElementById('createPkBtn').onclick = createPkRoom;
   document.getElementById('joinPkBtn').onclick = joinPkRoom;
@@ -92,49 +91,93 @@ async function startLevel(levelId) {
     if (!questions.length) return alert('关卡无题目');
     let currentIndex = 0;
     let answers = [];
+    let userSelections = [];
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.display = 'flex';
+
     const renderQuestion = () => {
       const q = questions[currentIndex];
       modal.innerHTML = `
         <div class="modal-content" style="width:500px;">
           <button class="modal-close">&times;</button>
           <div class="question-text">${escapeHtml(q.question)}</div>
-          <div class="options-list">
+          <div class="options-list" id="optionsList">
             ${q.options.map((opt, idx) => `
               <div class="option-item" data-opt="${idx}">
-                <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>${escapeHtml(opt)}
+                <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
+                ${escapeHtml(opt)}
               </div>
             `).join('')}
           </div>
+          <div id="explanationArea" style="margin-top:12px; padding:8px; border-radius:8px; display:none;"></div>
           <div style="margin-top:20px; display:flex; justify-content:space-between;">
             <button id="prevBtn" class="summary-btn" ${currentIndex===0?'disabled':''}>上一题</button>
             <button id="nextBtn" class="submit-btn">${currentIndex===questions.length-1?'提交':'下一题'}</button>
           </div>
         </div>
       `;
+
       const closeBtn = modal.querySelector('.modal-close');
       closeBtn.onclick = () => document.body.removeChild(modal);
       modal.onclick = (e) => { if(e.target===modal) document.body.removeChild(modal); };
+
       const opts = modal.querySelectorAll('.option-item');
+      const explanationDiv = modal.querySelector('#explanationArea');
+
+      if (userSelections[currentIndex] !== undefined) {
+        const selectedIdx = userSelections[currentIndex];
+        const isCorrect = (selectedIdx === q.answer);
+        opts.forEach(opt => {
+          const idx = parseInt(opt.dataset.opt);
+          if (idx === selectedIdx) opt.classList.add(isCorrect ? 'correct' : 'wrong');
+          if (idx === q.answer && !isCorrect) opt.classList.add('correct-answer');
+        });
+        if (explanationDiv) {
+          explanationDiv.style.display = 'block';
+          explanationDiv.innerHTML = `<strong>${isCorrect ? '✅ 回答正确' : '❌ 回答错误'}</strong><br>${escapeHtml(q.explanation || '无解析')}`;
+          explanationDiv.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
+        }
+      }
+
       opts.forEach(opt => {
-        opt.onclick = () => {
+        opt.onclick = async () => {
           const selected = parseInt(opt.dataset.opt);
-          answers[currentIndex] = selected;
-          opts.forEach(o => o.classList.remove('selected'));
-          opt.classList.add('selected');
+          const isCorrect = (selected === q.answer);
+          userSelections[currentIndex] = selected;
+          answers[currentIndex] = { questionId: q.id, selected: selected, isCorrect: isCorrect };
+          opts.forEach(o => o.classList.remove('correct', 'wrong', 'correct-answer'));
+          opt.classList.add(isCorrect ? 'correct' : 'wrong');
+          if (!isCorrect) {
+            opts.forEach(o => { if (parseInt(o.dataset.opt) === q.answer) o.classList.add('correct-answer'); });
+          }
+          if (explanationDiv) {
+            explanationDiv.style.display = 'block';
+            explanationDiv.innerHTML = `<strong>${isCorrect ? '✅ 回答正确' : '❌ 回答错误'}</strong><br>${escapeHtml(q.explanation || '无解析')}`;
+            explanationDiv.style.backgroundColor = isCorrect ? '#d4edda' : '#f8d7da';
+          }
+          if (!isCorrect) {
+            try {
+              await fetchWithAuth('/api/quiz/wrong-questions/record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ questionId: q.id, userAnswer: selected })
+              });
+            } catch(e) { console.warn('记录错题失败', e); }
+          }
         };
       });
+
       const prevBtn = modal.querySelector('#prevBtn');
       const nextBtn = modal.querySelector('#nextBtn');
       if (prevBtn) prevBtn.onclick = () => { if(currentIndex>0) { currentIndex--; renderQuestion(); } };
       nextBtn.onclick = async () => {
-        if (answers[currentIndex] === undefined) { alert('请选择答案'); return; }
+        if (userSelections[currentIndex] === undefined) { alert('请先回答本题'); return; }
         if (currentIndex === questions.length-1) {
           const submitRes = await fetchWithAuth('/api/quiz/level/submit', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ levelId, answers: questions.map((q,i)=> ({ questionId: q.id, selected: answers[i] })) })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ levelId, answers: answers.map(a => ({ questionId: a.questionId, selected: a.selected })) })
           });
           const result = await submitRes.json();
           document.body.removeChild(modal);
@@ -146,14 +189,17 @@ async function startLevel(levelId) {
           } else {
             let explanationMsg = `闯关失败！答对${result.correct}/${result.total}题，以下为错题解析：\n`;
             for (let i = 0; i < questions.length; i++) {
-              if (answers[i] !== questions[i].answer) {
+              if (userSelections[i] !== questions[i].answer) {
                 const correctOption = String.fromCharCode(65 + questions[i].answer);
                 explanationMsg += `\n${i+1}. ${questions[i].question}\n 正确答案：${correctOption}. ${questions[i].options[questions[i].answer]}\n 解析：${questions[i].explanation || '无'}\n`;
               }
             }
             alert(explanationMsg);
           }
-        } else { currentIndex++; renderQuestion(); }
+        } else {
+          currentIndex++;
+          renderQuestion();
+        }
       };
     };
     renderQuestion();
@@ -161,7 +207,7 @@ async function startLevel(levelId) {
   } catch(e) { alert('加载关卡失败'); }
 }
 
-// ==================== PK房间（完整实现） ====================
+// ==================== PK房间 ====================
 async function createPkRoom() {
   try {
     const res = await fetchWithAuth('/api/quiz/pk/create', { method:'POST' });
@@ -175,7 +221,6 @@ async function createPkRoom() {
       const status = await statusRes.json();
       if (status.status === 'playing') {
         clearInterval(pkInterval);
-        // 获取题目详情
         const questionsRes = await fetchWithAuth('/api/quiz/questions/batch', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: data.questions })
@@ -225,7 +270,8 @@ async function startPkGame(roomId, questions) {
         <div class="options-list">
           ${q.options.map((opt, idx) => `
             <div class="option-item" data-opt="${idx}">
-              <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>${escapeHtml(opt)}
+              <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
+              ${escapeHtml(opt)}
             </div>
           `).join('')}
         </div>
@@ -251,7 +297,7 @@ async function startPkGame(roomId, questions) {
     const nextBtn = modal.querySelector('#pkNextBtn');
     if (prevBtn) prevBtn.onclick = () => { if(currentIndex>0) { currentIndex--; renderQuestion(); } };
     nextBtn.onclick = async () => {
-      if (answers[currentIndex] === undefined) { alert('请选择答案'); return; }
+      if (answers[currentIndex] === null) { alert('请选择答案'); return; }
       if (currentIndex === questions.length-1) {
         await fetchWithAuth('/api/quiz/pk/submit', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -353,7 +399,8 @@ function showPolicyQuizQuestion() {
       <div class="options-list">
         ${q.options.map((opt, idx) => `
           <div class="option-item" data-opt="${idx}">
-            <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>${escapeHtml(opt)}
+            <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
+            ${escapeHtml(opt)}
           </div>
         `).join('')}
       </div>
@@ -410,7 +457,7 @@ function showPolicyQuizQuestion() {
   };
 }
 
-// ==================== 错题闯关（逐题） ====================
+// ==================== 错题闯关 ====================
 let wrongQuestionsList = [];
 let currentWrongIndex = 0;
 
@@ -442,7 +489,8 @@ function showWrongQuestion() {
       <div class="options-list">
         ${JSON.parse(w.options).map((opt, idx) => `
           <div class="option-item" data-opt="${idx}">
-            <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>${escapeHtml(opt)}
+            <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
+            ${escapeHtml(opt)}
           </div>
         `).join('')}
       </div>
@@ -488,6 +536,7 @@ function showWrongQuestion() {
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/quiz/weekly/current');
+    if (!res.ok) throw new Error('加载竞赛失败');
     const data = await res.json();
     contestQuestions = data.questions;
     contestAnswers = new Array(contestQuestions.length).fill(null);
@@ -506,7 +555,8 @@ async function startWeeklyContest() {
           <div class="options-list">
             ${q.options.map((opt, idx) => `
               <div class="option-item" data-opt="${idx}">
-                <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>${escapeHtml(opt)}
+                <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
+                ${escapeHtml(opt)}
               </div>
             `).join('')}
           </div>
@@ -533,7 +583,7 @@ async function startWeeklyContest() {
           const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
           const submitRes = await fetchWithAuth('/api/quiz/weekly/submit', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({ contestId: data.contestId, answers: contestQuestions.map((q,i)=> ({ questionId: q.id, selected: contestAnswers[i] })), timeUsed })
+            body:JSON.stringify({ contestId: data.contestId, answers: contestQuestions.map((q,i) => ({ questionId: q.id, selected: contestAnswers[i] })), timeUsed })
           });
           const result = await submitRes.json();
           document.body.removeChild(modal);
@@ -544,7 +594,10 @@ async function startWeeklyContest() {
           let rankHtml = '<h4>排行榜</h4>';
           ranks.forEach((r, idx) => { rankHtml += `<div class="rank-item"><span class="rank-number">${idx+1}</span><span>${r.username}</span><span>${r.score}分</span><span>${r.time_used}秒</span></div>`; });
           document.getElementById('contestRank').innerHTML = rankHtml;
-        } else { current++; renderQuestion(); }
+        } else {
+          current++;
+          renderQuestion();
+        }
       };
     };
     if (contestTimer) clearInterval(contestTimer);
@@ -557,13 +610,17 @@ async function startWeeklyContest() {
     }, 1000);
     renderQuestion();
     document.body.appendChild(modal);
-  } catch(e) { alert('加载竞赛失败'); }
+  } catch(e) { alert(e.message); }
 }
 
 // ==================== 刮刮乐 ====================
 async function getScratchCard() {
   try {
     const res = await fetchWithAuth('/api/quiz/scratch/generate');
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `请求失败 (${res.status})`);
+    }
     const card = await res.json();
     const container = document.getElementById('scratchCard');
     container.innerHTML = `<div class="scratch-card" id="scratchSurface"><div class="scratch-cover">🎫 点击刮开涂层 🎫</div></div>`;
@@ -588,5 +645,5 @@ async function getScratchCard() {
         };
       });
     };
-  } catch(e) { alert(e.message || '获取刮刮卡失败'); }
+  } catch(e) { alert(e.message); }
 }
