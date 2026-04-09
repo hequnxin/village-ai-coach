@@ -13,23 +13,20 @@ body {
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  font-size: 16px; /* 基础字体调大 */
+  font-size: 16px;
 }
 
 .app {
-  width: 98vw;
+  width: 100vw;
   max-width: 1600px;
-  height: 95vh;
+  height: 100vh;
   background: white;
-  border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
   display: flex;
   overflow: hidden;
   position: relative;
   z-index: 1;
 }
 
-/* 3D 容器 */
 #threeContainer {
   position: fixed;
   top: 0;
@@ -54,7 +51,6 @@ body {
   overflow-y: auto;
 }
 
-/* 移动端侧边栏默认隐藏 */
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
@@ -72,7 +68,6 @@ body {
   }
 }
 
-/* 菜单按钮（仅移动端显示） */
 .menu-toggle {
   display: none;
   position: fixed;
@@ -168,11 +163,6 @@ body {
 
 .favorite-btn.favorited {
   color: gold;
-  text-shadow: 0 0 2px #000;
-}
-
-.favorite-btn:hover {
-  color: gold;
 }
 
 .delete-session {
@@ -182,10 +172,6 @@ body {
   font-size: 1rem;
   cursor: pointer;
   padding: 0 4px;
-}
-
-.delete-session:hover {
-  color: white;
 }
 
 .session-tabs {
@@ -202,7 +188,6 @@ body {
   padding: 8px 0;
   cursor: pointer;
   font-size: 0.85rem;
-  transition: 0.2s;
 }
 
 .session-tab.active {
@@ -223,11 +208,6 @@ body {
   padding: 10px;
   margin-bottom: 8px;
   cursor: pointer;
-  transition: 0.2s;
-}
-
-.favorite-message-item:hover {
-  background: rgba(255,255,255,0.15);
 }
 
 .favorite-message-item .session-title {
@@ -255,7 +235,7 @@ body {
   justify-content: space-between;
 }
 
-/* 任务面板 */
+/* 任务面板（移动端隐藏） */
 .task-panel {
   padding: 12px 16px;
   background: rgba(255,255,255,0.1);
@@ -263,10 +243,15 @@ body {
   border-radius: 12px;
 }
 
+@media (max-width: 768px) {
+  .task-panel {
+    display: none;
+  }
+}
+
 .task-panel h4 {
   margin: 0 0 8px;
   font-size: 0.85rem;
-  font-weight: 500;
 }
 
 .task-item {
@@ -303,7 +288,6 @@ body {
   color: #ffd700;
 }
 
-/* 等级进度条 */
 .level-progress-container {
   padding: 12px 16px;
   border-top: 1px solid rgba(255,255,255,0.2);
@@ -361,7 +345,6 @@ body {
   z-index: 2;
 }
 
-/* 顶部导航栏（桌面端显示） */
 .top-nav {
   display: flex;
   background: white;
@@ -392,7 +375,6 @@ body {
   font-weight: 500;
 }
 
-/* 底部导航栏（移动端显示） */
 .bottom-nav {
   display: none;
   position: fixed;
@@ -425,7 +407,6 @@ body {
   color: #666;
   cursor: pointer;
   padding: 4px 0;
-  transition: 0.2s;
 }
 
 .bottom-nav-item.active {
@@ -449,6 +430,7 @@ body {
 .chat-view {
   display: flex;
   height: 100%;
+  flex-direction: column;
 }
 
 .chat-area {
@@ -459,16 +441,18 @@ body {
 }
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 12px 16px;
   background: white;
   border-bottom: 1px solid #ddd;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .chat-header h1 {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   color: #2e5d34;
 }
 
@@ -476,20 +460,15 @@ body {
   background: #f0f0f0;
   border: 1px solid #ccc;
   border-radius: 30px;
-  padding: 6px 16px;
+  padding: 4px 12px;
   cursor: pointer;
-  font-size: 0.9rem;
-  margin-left: 8px;
-}
-
-.summary-btn:hover {
-  background: #e4e4e4;
+  font-size: 0.8rem;
 }
 
 .chat-container {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
 }
@@ -498,16 +477,17 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .message {
-  max-width: 80%;
-  padding: 12px 16px;
+  max-width: 85%;
+  padding: 10px 14px;
   border-radius: 20px;
-  line-height: 1.6;
+  line-height: 1.5;
   word-wrap: break-word;
   white-space: pre-wrap;
+  font-size: 0.95rem;
 }
 
 .message.user {
@@ -525,29 +505,12 @@ body {
   color: #333;
 }
 
-.thought {
-  color: #888;
-  font-style: italic;
-  margin-bottom: 8px;
-  padding: 4px 8px;
-  background: #f5f5f5;
-  border-radius: 8px;
-  font-size: 0.9rem;
-}
-
-.thought-separator {
-  border: none;
-  border-top: 1px dashed #ccc;
-  margin: 8px 0;
-}
-
 .message-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
   justify-content: flex-end;
   opacity: 0.5;
-  transition: opacity 0.2s;
 }
 
 .message-actions:hover {
@@ -587,7 +550,7 @@ body {
 }
 
 .chat-footer {
-  padding: 16px 20px;
+  padding: 12px;
   background: white;
   border-top: 1px solid #ddd;
 }
@@ -613,11 +576,6 @@ body {
   padding: 4px 12px;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: 0.2s;
-}
-
-.preset-btn:hover {
-  background: #e0e0e0;
 }
 
 .input-area {
@@ -627,17 +585,13 @@ body {
 
 #userInput {
   flex: 1;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid #ccc;
   border-radius: 24px;
   resize: none;
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   outline: none;
-}
-
-#userInput:focus {
-  border-color: #2e5d34;
 }
 
 #sendBtn {
@@ -645,14 +599,9 @@ body {
   color: white;
   border: none;
   border-radius: 30px;
-  padding: 0 24px;
+  padding: 0 20px;
   font-weight: 500;
   cursor: pointer;
-  transition: 0.2s;
-}
-
-#sendBtn:hover {
-  background: #1f4423;
 }
 
 .voice-btn {
@@ -663,16 +612,7 @@ body {
   padding: 0 16px;
   font-weight: 500;
   cursor: pointer;
-  transition: 0.2s;
   font-size: 1.1rem;
-}
-
-.voice-btn:hover {
-  background: #357abd;
-}
-
-.voice-btn:active {
-  background: #2a5f8a;
 }
 
 .info-panel {
@@ -687,12 +627,6 @@ body {
   color: #2e5d34;
   margin-bottom: 12px;
   font-size: 1rem;
-}
-
-.info-content {
-  font-size: 0.9rem;
-  white-space: pre-wrap;
-  word-wrap: break-word;
 }
 
 /* ========== 知识库界面 ========== */
@@ -717,7 +651,6 @@ body {
   padding: 4px 12px;
   font-size: 0.8rem;
   cursor: pointer;
-  transition: 0.2s;
 }
 
 .filter-btn.active, .category-filter.active {
@@ -739,11 +672,6 @@ body {
   border-radius: 8px;
   padding: 12px;
   cursor: pointer;
-  transition: 0.2s;
-}
-
-.knowledge-item:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .knowledge-item .title {
@@ -819,11 +747,6 @@ body {
   color: #2e5d34;
 }
 
-.profile-info p {
-  margin: 0;
-  color: #666;
-}
-
 .profile-stats {
   display: flex;
   gap: 20px;
@@ -877,14 +800,6 @@ body {
   box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.badge-icon {
-  font-size: 1.2rem;
-}
-
-.badge-name {
-  color: #333;
-}
-
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px,1fr));
@@ -920,11 +835,6 @@ body {
   color: #2e5d34;
 }
 
-.simulate-header p {
-  margin: 4px 0;
-  color: #555;
-}
-
 #simulateMessagesContainer {
   flex: 1;
   overflow-y: auto;
@@ -935,16 +845,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-#simulateTyping {
-  padding: 10px 16px;
-  background: #e9e9e9;
-  border-radius: 20px;
-  align-self: flex-start;
-  font-size: 0.9rem;
-  color: #555;
-  margin-top: 8px;
 }
 
 .scenarios-list {
@@ -966,11 +866,6 @@ body {
   margin-bottom: 8px;
 }
 
-.scenario-card p {
-  margin: 8px 0;
-  color: #555;
-}
-
 .scenario-card button {
   background: #2e5d34;
   color: white;
@@ -978,12 +873,7 @@ body {
   padding: 8px 16px;
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.9rem;
   margin-top: 8px;
-}
-
-.scenario-card button:hover {
-  background: #1f4423;
 }
 
 .report-section {
@@ -994,17 +884,6 @@ body {
   margin: 16px 20px;
 }
 
-.report-section h4 {
-  color: #2e5d34;
-  margin-bottom: 12px;
-}
-
-.score-item {
-  margin-bottom: 8px;
-  font-size: 1rem;
-}
-
-/* 模拟对练头像样式 */
 #simulateMessages .message {
   display: flex;
   align-items: flex-start;
@@ -1022,33 +901,16 @@ body {
   background: #e9e9e9;
   border-radius: 50%;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
   position: relative;
-}
-
-#simulateMessages .message-avatar .emotion-icon {
-  font-size: 0.9rem;
-  position: absolute;
-  bottom: -8px;
-  right: -8px;
-  background: white;
-  border-radius: 50%;
-  padding: 2px;
 }
 
 #simulateMessages .message.user .message-avatar {
   background: #2e5d34;
   color: white;
-}
-
-#simulateMessages .message.assistant .message-avatar {
-  background: #f0f0f0;
-  color: #333;
 }
 
 #simulateMessages .message-bubble {
@@ -1064,55 +926,6 @@ body {
   background: #2e5d34;
   color: white;
   border: none;
-}
-
-#simulateMessages .message.user .message-bubble .message-content {
-  color: white;
-}
-
-#simulateMessages .message.assistant .message-bubble {
-  background: white;
-  border: 1px solid #e0e0e0;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.difficulty-selector {
-  margin: 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.difficulty-select {
-  padding: 4px 8px;
-  border-radius: 20px;
-  border: 1px solid #ccc;
-  background: white;
-  font-size: 0.85rem;
-}
-
-.difficulty-badge {
-  font-size: 0.7rem;
-  background: #f0f0f0;
-  padding: 2px 8px;
-  border-radius: 20px;
-  margin-left: 8px;
-  color: #333;
-}
-
-.summary-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .satisfaction-bar {
@@ -1142,38 +955,6 @@ body {
   align-items: center;
 }
 
-.simulate-status-panel progress {
-  width: 80px;
-  height: 6px;
-  border-radius: 3px;
-}
-
-.simulate-status-panel .stages span {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #555;
-  border-radius: 12px;
-  margin: 0 2px;
-}
-
-.simulate-status-panel .stages span.completed {
-  background: #4caf50;
-}
-
-#strategyTip {
-  position: fixed;
-  bottom: 80px;
-  right: 20px;
-  background: #ff9800;
-  color: white;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  animation: fadeInUp 0.3s ease;
-}
-
 /* ========== 村民大会样式 ========== */
 .meeting-view {
   height: 100%;
@@ -1188,17 +969,6 @@ body {
   color: white;
   padding: 16px 20px;
   text-align: center;
-}
-
-.meeting-header h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-
-.meeting-header p {
-  margin: 5px 0 0;
-  font-size: 0.85rem;
-  opacity: 0.9;
 }
 
 .meeting-villagers {
@@ -1219,8 +989,6 @@ body {
   text-align: center;
   padding: 12px 8px;
   cursor: pointer;
-  transition: 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   border: 2px solid transparent;
 }
 
@@ -1231,16 +999,6 @@ body {
 
 .villager-card .villager-avatar {
   font-size: 2.5rem;
-}
-
-.villager-card .villager-name {
-  font-weight: bold;
-  margin: 8px 0 4px;
-}
-
-.villager-card .villager-emotion {
-  font-size: 1.5rem;
-  transition: 0.2s;
 }
 
 .meeting-chat-area {
@@ -1282,7 +1040,6 @@ body {
   border-radius: 18px;
   padding: 8px 14px;
   max-width: 70%;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .meeting-message.user .message-bubble {
@@ -1334,16 +1091,6 @@ body {
   border-left: 4px solid #ff9800;
 }
 
-.meeting-agenda h4 {
-  margin: 0 0 8px;
-  color: #2e5d34;
-}
-
-.meeting-agenda-item {
-  padding: 4px 0;
-  font-size: 0.9rem;
-}
-
 .meeting-agenda-item.current {
   font-weight: bold;
   color: #ff9800;
@@ -1354,16 +1101,7 @@ body {
   color: #888;
 }
 
-.villager-stance {
-  font-size: 0.7rem;
-  margin-left: 4px;
-}
-
-.stance-support { color: #4caf50; }
-.stance-oppose { color: #f44336; }
-.stance-neutral { color: #ff9800; }
-
-/* ========== 游戏大厅（挑战中心）样式 ========== */
+/* ========== 挑战中心（游戏大厅） ========== */
 .game-lobby {
   padding: 16px 20px;
   background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
@@ -1380,11 +1118,6 @@ body {
   font-size: 1.8rem;
   color: #2e5d34;
   margin-bottom: 6px;
-}
-
-.game-lobby-header p {
-  color: #6c757d;
-  font-size: 0.9rem;
 }
 
 .game-grid {
@@ -1449,323 +1182,233 @@ body {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s;
   width: 100%;
 }
 
-.module-btn:hover {
-  background: #1f4423;
-}
-
-/* 游戏模态框 */
-.game-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.game-modal-content {
-  background: white;
-  border-radius: 32px;
-  width: 90%;
-  max-width: 900px;
-  max-height: 85vh;
-  overflow-y: auto;
+/* 趣味闯关主题选择 */
+.fun-levels-container {
+  text-align: center;
   padding: 20px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
 }
 
-.game-modal-header {
+.difficulty-selector {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #2e5d34;
-  padding-bottom: 16px;
-  border-bottom: 2px solid #e9ecef;
-  margin-bottom: 20px;
-}
-
-.close-modal {
-  background: none;
-  border: none;
-  font-size: 1.8rem;
-  cursor: pointer;
-  color: #adb5bd;
-}
-
-.close-modal:hover {
-  color: #dc3545;
-}
-
-.theme-group {
-  margin-bottom: 32px;
-}
-
-.theme-group-header {
-  display: flex;
-  align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #dee2e6;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.difficulty-btn {
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 30px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.difficulty-btn.active {
+  background: #2e5d34;
+  color: white;
+  border-color: #2e5d34;
+}
+
+.themes-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.fun-theme-card {
+  background: white;
+  border-radius: 20px;
+  padding: 20px;
+  width: 200px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+
+.fun-theme-card:hover {
+  transform: translateY(-5px);
+}
+
+.fun-theme-card.completed {
+  background: #e8f5e9;
+  border: 1px solid #4caf50;
 }
 
 .theme-icon {
-  font-size: 1.8rem;
+  font-size: 3rem;
 }
 
 .theme-name {
   font-size: 1.2rem;
-  font-weight: 600;
-  color: #2e5d34;
+  font-weight: bold;
+  margin: 10px 0;
 }
 
 .theme-desc {
-  font-size: 0.85rem;
-  color: #6c757d;
+  font-size: 0.8rem;
+  color: #666;
 }
 
-.level-cards {
+.theme-status {
+  margin: 10px 0;
+  font-size: 0.8rem;
+}
+
+/* 全屏答题界面（通用） */
+.fullscreen-quiz {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.level-card {
-  background: #f8f9fa;
-  border-radius: 20px;
-  padding: 16px;
-  width: 180px;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid #e9ecef;
-  position: relative;
-}
-
-.level-card:hover {
-  background: #e9ecef;
-  transform: translateY(-2px);
-}
-
-.level-card.completed {
-  background: #d4edda;
-  border-color: #28a745;
-}
-
-.level-card.locked {
-  opacity: 0.6;
-  cursor: not-allowed;
-  filter: grayscale(0.1);
-}
-
-.level-name {
-  font-weight: bold;
-  font-size: 1rem;
-  margin-bottom: 6px;
-}
-
-.level-desc {
-  font-size: 0.75rem;
-  color: #6c757d;
-  margin-bottom: 8px;
-}
-
-.level-difficulty, .level-reward {
-  font-size: 0.7rem;
-  margin-bottom: 4px;
-}
-
-.level-badge {
-  font-size: 0.7rem;
-  margin-top: 8px;
-  padding: 2px 8px;
-  border-radius: 12px;
-  display: inline-block;
-  background: #e9ecef;
-}
-
-/* ========== 通用弹窗和按钮样式 ========== */
-.modal {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
+  flex-direction: column;
   height: 100%;
-  background: rgba(0,0,0,0.5);
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
+  background: #f5f7fa;
   padding: 20px;
-  border-radius: 12px;
-  max-width: 600px;
-  max-height: 80vh;
   overflow-y: auto;
-  position: relative;
 }
 
-.modal-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+.quiz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+  padding: 12px 20px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.back-btn {
   background: none;
   border: none;
-  font-size: 20px;
+  font-size: 1rem;
   cursor: pointer;
-}
-
-.modal-title {
-  font-size: 1.2rem;
   color: #2e5d34;
-  margin-bottom: 12px;
-  padding-right: 20px;
+  font-weight: 500;
 }
 
-.modal-type {
-  display: inline-block;
-  background: #e0e0e0;
-  padding: 4px 8px;
-  border-radius: 16px;
-  font-size: 0.8rem;
-  margin-bottom: 12px;
+.quiz-title {
+  font-size: 1.2rem;
+  font-weight: bold;
 }
 
-.modal-content-body {
-  line-height: 1.6;
-  white-space: pre-wrap;
+.quiz-progress, .quiz-score, .contest-timer {
+  font-size: 0.9rem;
+  color: #666;
 }
 
-.modal-tags {
-  margin-top: 12px;
+.quiz-body {
+  flex: 1;
+  background: white;
+  border-radius: 24px;
+  padding: 24px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.question-text {
+  font-size: 1.2rem;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.quiz-options-list {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quiz-option-item {
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.quiz-option-item.selected {
+  background: #d4e6f1;
+  border: 1px solid #2e5d34;
+}
+
+.quiz-option-item.correct {
+  background: #c8e6c9;
+}
+
+.quiz-option-item.wrong {
+  background: #ffcdd2;
+}
+
+.quiz-fill-area {
+  margin-top: 20px;
+}
+
+.quiz-fill-input {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 30px;
+  margin-top: 12px;
+}
+
+.quiz-feedback-area {
+  margin-top: 24px;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.feedback-correct {
+  background: #e8f5e9;
+  color: #2e5d34;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.feedback-wrong {
+  background: #ffebee;
+  color: #c62828;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.quiz-footer {
+  margin-top: 20px;
+  text-align: center;
 }
 
 .submit-btn {
   background: #2e5d34;
   color: white;
   border: none;
-  padding: 8px 20px;
-  border-radius: 30px;
-  cursor: pointer;
+  padding: 12px 32px;
+  border-radius: 40px;
   font-size: 1rem;
-}
-
-.submit-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-
-/* 答题选项样式 */
-.options-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.option-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: #f5f5f5;
-  border-radius: 12px;
   cursor: pointer;
   transition: 0.2s;
-  border: 1px solid transparent;
 }
 
-.option-item:hover {
-  background: #e8e8e8;
+.submit-btn:hover {
+  background: #1f4423;
 }
 
-.option-item.selected {
-  background: #d4e6f1;
-  border-color: #2e5d34;
+.submit-btn.success {
+  background: #4caf50;
 }
 
-.option-item.correct {
-  background: #c8e6c9;
-  border-color: #2e5d34;
-}
-
-.option-item.wrong {
-  background: #ffcdd2;
-  border-color: #f44336;
-}
-
-.option-prefix {
-  font-weight: bold;
-  width: 30px;
-}
-
-.question-text {
-  font-size: 1.1rem;
-  font-weight: 500;
-  margin-bottom: 20px;
-  line-height: 1.5;
-}
-
-/* 填空样式 */
-.fill-sentence {
-  font-size: 1.2rem;
-  margin-bottom: 20px;
-  line-height: 1.6;
-}
-
-.fill-input {
-  padding: 10px 16px;
-  width: 100%;
-  border: 1px solid #ccc;
-  border-radius: 30px;
-  font-size: 1rem;
-  text-align: center;
-}
-
-.fill-input.correct {
-  border-color: #4caf50;
-  background: #e8f5e9;
-}
-
-.fill-input.wrong {
-  border-color: #f44336;
-  background: #ffebee;
-}
-
-.fill-hint {
-  margin-top: 12px;
-  color: #888;
-  font-size: 0.8rem;
-}
-
-/* 刮刮乐样式 */
+/* 刮刮乐卡片 */
 .scratch-card {
   background: linear-gradient(135deg, #f5f0e6 0%, #e8dccc 100%);
   border-radius: 20px;
   padding: 30px;
   text-align: center;
   cursor: pointer;
-  transition: 0.2s;
-  position: relative;
-  overflow: hidden;
-}
-
-.scratch-card.scratched {
-  background: #fff8e7;
 }
 
 .scratch-cover {
@@ -1774,10 +1417,6 @@ body {
   padding: 20px;
   border-radius: 12px;
   font-weight: bold;
-}
-
-.scratch-question {
-  margin-top: 16px;
 }
 
 .scratch-options {
@@ -1796,45 +1435,49 @@ body {
   cursor: pointer;
 }
 
-.scratch-reward {
-  margin-top: 16px;
-  color: #ff9800;
-  font-weight: bold;
-}
-
-/* 每周竞赛 */
-.contest-header {
-  background: #ff9800;
-  color: white;
-  padding: 8px;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  display: flex;
-  justify-content: space-between;
+/* 模态框（排行榜等） */
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  justify-content: center;
   align-items: center;
+  z-index: 1000;
 }
 
-.contest-timer {
-  font-family: monospace;
-  font-size: 1.2rem;
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
 }
 
-.rank-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
-}
-
-.rank-number {
-  font-weight: bold;
-  width: 40px;
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
 }
 
 /* 动画 */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes floatUp {
-  0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-60px) scale(1.2); }
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-60px); }
 }
 
 @keyframes bounceIn {
@@ -1843,14 +1486,13 @@ body {
   100% { opacity: 1; transform: translateX(-50%) scale(1); }
 }
 
-@keyframes emotionPulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); }
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
 }
 
-.emotion-animate {
-  animation: emotionPulse 0.3s ease;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* 登录界面 */
@@ -1901,7 +1543,6 @@ body {
   margin-bottom: 15px;
   border: 1px solid #ccc;
   border-radius: 6px;
-  box-sizing: border-box;
 }
 
 .auth-box button[type="submit"] {
@@ -1922,14 +1563,7 @@ body {
   text-align: center;
 }
 
-.loading {
-  text-align: center;
-  padding: 40px;
-  font-size: 1.2rem;
-  color: #666;
-}
-
-/* ========== 移动端适配（优化字体和布局） ========== */
+/* 移动端适配 */
 @media (max-width: 768px) {
   .app {
     width: 100%;
@@ -1942,9 +1576,6 @@ body {
   .dynamic-content {
     padding: 12px;
   }
-  .game-lobby-header h1 {
-    font-size: 1.4rem;
-  }
   .game-grid {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1952,378 +1583,18 @@ body {
   .module-icon {
     font-size: 2rem;
   }
-  .module-title {
-    font-size: 1rem;
-  }
-  .module-desc {
-    font-size: 0.75rem;
-  }
-  .level-card {
-    width: 140px;
-  }
-  .chat-header h1 {
-    font-size: 1.1rem;
-  }
-  .message {
-    max-width: 90%;
-    font-size: 0.9rem;
-  }
-  .preset-btn {
-    font-size: 0.7rem;
-  }
-  .option-item {
-    padding: 8px 12px;
-  }
-  .question-text {
-    font-size: 1rem;
-  }
-  .modal-content {
-    width: 95%;
-    padding: 16px;
-  }
-}
-
-@media (max-width: 480px) {
-  .level-card {
-    width: 120px;
-    padding: 10px;
-  }
-  .level-name {
-    font-size: 0.9rem;
-  }
-  .module-stats {
-    font-size: 0.7rem;
-  }
-  .module-btn {
-    font-size: 0.8rem;
-  }
-}
-/* ========== 政策闯关关卡卡片样式优化 ========== */
-.level-start-btn {
-  background: #2e5d34;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  padding: 6px 12px;
-  margin-top: 8px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  width: 100%;
-  transition: background 0.2s;
-}
-.level-start-btn:hover {
-  background: #1f4423;
-}
-
-/* 每日一练题号进度提示 */
-.progress-info {
-  margin: 8px 0;
-  font-size: 0.8rem;
-  color: #666;
-  text-align: center;
-}
-
-/* 排行榜弹窗样式（可选，提升视觉效果） */
-.rank-modal .rank-header,
-.rank-modal .rank-row {
-  display: grid;
-  grid-template-columns: 60px 1fr 80px 80px;
-  gap: 8px;
-}
-.rank-header {
-  font-weight: bold;
-  border-bottom: 1px solid #ccc;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-}
-.rank-row {
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
-}
-.rank-number {
-  font-weight: bold;
-}
-.rank-accuracy,
-.rank-time {
-  text-align: right;
-}
-
-/* 移动端卡片按钮调整 */
-@media (max-width: 768px) {
-  .level-start-btn {
-    padding: 4px 8px;
-    font-size: 0.7rem;
-  }
-  .module-btn {
-    font-size: 0.8rem;
-    padding: 6px 0;
-  }
-  .game-module .module-stats {
-    font-size: 0.7rem;
-  }
-}
-/* ========== 挑战中心放大弹窗 & 动画效果 ========== */
-
-/* 全局弹窗放大（接近全屏） */
-.modal {
-  background: rgba(0,0,0,0.7);
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-content {
-  width: 90vw;
-  max-width: 900px;
-  height: 85vh;
-  max-height: 85vh;
-  padding: 24px;
-  overflow-y: auto;
-  border-radius: 32px;
-  background: white;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 弹窗内部内容自适应 */
-.modal-content .options-list {
-  flex: 1;
-  overflow-y: auto;
-  margin: 16px 0;
-}
-
-.modal-content .question-text {
-  font-size: 1.2rem;
-  line-height: 1.5;
-}
-
-.option-item {
-  padding: 12px 16px;
-  font-size: 1rem;
-}
-
-/* 趣味闯关卡片网格 */
-.policy-themes-grid, .themes-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  justify-content: center;
-  margin-top: 20px;
-}
-
-.fun-theme-card, .policy-theme-card {
-  background: white;
-  border-radius: 20px;
-  padding: 20px;
-  width: 200px;
-  text-align: center;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
-  cursor: pointer;
-}
-
-.fun-theme-card:hover, .policy-theme-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-}
-
-.fun-theme-card.completed, .policy-theme-card.completed {
-  background: #e8f5e9;
-  border: 1px solid #4caf50;
-}
-
-.theme-icon {
-  font-size: 3rem;
-}
-
-.theme-name {
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin: 10px 0;
-}
-
-.theme-desc {
-  font-size: 0.8rem;
-  color: #666;
-}
-
-.theme-status {
-  margin: 10px 0;
-  font-size: 0.8rem;
-}
-
-.policy-start-btn, .theme-start-btn {
-  background: #2e5d34;
-  color: white;
-  border: none;
-  border-radius: 30px;
-  padding: 6px 12px;
-  cursor: pointer;
-  width: 100%;
-  margin-top: 8px;
-}
-
-/* 难度选择器 */
-.difficulty-selector {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin: 20px 0;
-}
-
-.difficulty-btn {
-  background: #f0f0f0;
-  border: 1px solid #ccc;
-  border-radius: 30px;
-  padding: 6px 16px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.difficulty-btn.active {
-  background: #2e5d34;
-  color: white;
-  border-color: #2e5d34;
-}
-
-/* 趣味闯关答题界面头部 */
-.fun-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  font-weight: bold;
-}
-
-.fun-event {
-  background: #fff3cd;
-  border-left: 4px solid #ffc107;
-  padding: 8px;
-  margin-bottom: 12px;
-  font-size: 0.9rem;
-}
-
-/* 动画 */
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out;
-}
-
-.animate-scale-up {
-  animation: scaleUp 0.3s ease-out;
-}
-
-.animate-slide-up {
-  animation: slideUp 0.4s ease-out;
-}
-
-.animate-pulse {
-  animation: pulse 1s infinite;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes scaleUp {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { transform: translateY(30px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 1; }
-  100% { opacity: 0.6; }
-}
-
-/* 正确/错误动画 */
-.correct-flash {
-  animation: correctFlash 0.5s ease;
-}
-
-.wrong-shake {
-  animation: wrongShake 0.3s ease;
-}
-
-@keyframes correctFlash {
-  0% { background-color: #c8e6c9; transform: scale(1); }
-  50% { background-color: #a5d6a7; transform: scale(1.02); }
-  100% { background-color: #c8e6c9; transform: scale(1); }
-}
-
-@keyframes wrongShake {
-  0% { transform: translateX(0); background-color: #ffcdd2; }
-  25% { transform: translateX(-5px); }
-  50% { transform: translateX(5px); }
-  75% { transform: translateX(-3px); }
-  100% { transform: translateX(0); background-color: #ffcdd2; }
-}
-
-/* 成功模态框 */
-.success-modal {
-  text-align: center;
-}
-
-.success-emoji {
-  font-size: 3rem;
-  animation: bounce 0.5s ease;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-20px); }
-}
-
-/* 移动端适配 */
-@media (max-width: 768px) {
-  .modal-content {
-    width: 95vw;
-    height: 90vh;
-    padding: 16px;
-  }
-  .question-text {
-    font-size: 1rem;
-  }
-  .option-item {
-    padding: 10px 12px;
-  }
-  .fun-theme-card, .policy-theme-card {
-    width: 160px;
+  .fullscreen-quiz {
     padding: 12px;
   }
-  .theme-icon {
-    font-size: 2.5rem;
+  .quiz-header {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .question-text {
+    font-size: 1rem;
+  }
+  .quiz-option-item {
+    padding: 10px 12px;
   }
 }
-/* 放大弹窗 */
-.modal-content {
-  width: 90vw;
-  max-width: 900px;
-  height: 85vh;
-  max-height: 85vh;
-  padding: 24px;
-  overflow-y: auto;
-  border-radius: 32px;
-}
-
-@media (max-width: 768px) {
-  .modal-content {
-    width: 95vw;
-    height: 90vh;
-    padding: 16px;
-  }
-}
-
-/* 动画保留（如有冲突，保留原有） */
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-out;
-}
-.animate-scale-up {
-  animation: scaleUp 0.3s ease-out;
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes scaleUp { from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; } }
