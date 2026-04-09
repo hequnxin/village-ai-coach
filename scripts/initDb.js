@@ -225,6 +225,14 @@ async function initDb() {
       time_used INTEGER NOT NULL,
       submitted_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(contest_id, user_id, attempt_number)
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_theme_progress (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      theme_id TEXT REFERENCES game_themes(id) ON DELETE CASCADE,
+      completed INTEGER DEFAULT 0,
+      completed_at TIMESTAMPTZ,
+      UNIQUE(user_id, theme_id)
     )`
   ];
 
@@ -293,9 +301,22 @@ async function initDb() {
     '促成双方相互理解，并约定合理的活动时间。', '村民老刘', '天天晚上吵到一两点，我高血压都犯了！你们村干部管不管？',
     JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
 
-  // 初始化游戏主题和关卡
-  const initGameData = require('./initGameData');
-  await initGameData();
+  // 初始化游戏主题（趣味闯关）
+  const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
+  if (themeCount.count === 0) {
+    const themes = [
+      { id: 'theme_land', name: '土地管理', icon: '🌾', description: '宅基地、土地流转、确权登记', sort_order: 1 },
+      { id: 'theme_industry', name: '产业发展', icon: '🏭', description: '合作社、电商、乡村旅游', sort_order: 2 },
+      { id: 'theme_livelihood', name: '民生保障', icon: '❤️', description: '低保、医保、养老保险', sort_order: 3 },
+      { id: 'theme_conflict', name: '矛盾调解', icon: '🤝', description: '邻里纠纷、土地纠纷', sort_order: 4 },
+      { id: 'theme_governance', name: '基层治理', icon: '🏛️', description: '四议两公开、村规民约', sort_order: 5 }
+    ];
+    for (const t of themes) {
+      await db.run(`INSERT INTO game_themes (id, name, icon, description, sort_order, is_active) VALUES ($1, $2, $3, $4, $5, 1) ON CONFLICT (id) DO NOTHING`,
+        [t.id, t.name, t.icon, t.description, t.sort_order]);
+    }
+    console.log('✅ 游戏主题初始化完成');
+  }
 
   // 自动生成高质量题目
   const { generateAndStoreQuestions } = require('../services/questionGenerator');

@@ -35,31 +35,41 @@ let wrongClearCorrectCount = 0;
 // 刮刮乐
 let scratchRemaining = 0;
 
+// 趣味闯关
+let currentFunQuestions = [];
+let currentFunIndex = 0;
+let currentFunScore = 0;
+let currentFunLives = 3;
+let currentFunTheme = '';
+let currentFunDifficulty = 'medium';
+let currentFunEvent = null;
+let currentFunEventUsed = false;
+
 // ==================== 主渲染 ====================
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="game-lobby">
-      <div class="game-lobby-header">
+      <div class="game-lobby-header animate-fade-in">
         <h1>🎮 挑战中心</h1>
         <p>积分挑战，赢取勋章</p>
       </div>
       <div class="game-grid">
-        <div class="game-module module-levels">
+        <div class="game-module module-fun animate-scale-up">
           <div class="module-icon">🏆</div>
-          <div class="module-title">政策闯关</div>
-          <div class="module-desc">逐级解锁，赢取积分</div>
-          <div class="module-preview" id="themesPreview">点击进入</div>
-          <button class="module-btn" id="openLevelsBtn">进入闯关 →</button>
+          <div class="module-title">趣味闯关</div>
+          <div class="module-desc">主题挑战，随机事件，生命值系统</div>
+          <div class="module-stats" id="funStats">点击进入</div>
+          <button class="module-btn" id="openFunBtn">开始闯关 →</button>
         </div>
-        <div class="game-module module-daily">
+        <div class="game-module module-daily animate-scale-up" style="animation-delay:0.1s">
           <div class="module-icon">📖</div>
           <div class="module-title">每日一练</div>
           <div class="module-desc">选择题+填空题，每日更新</div>
           <div class="module-stats" id="dailyStats">今日未开始</div>
           <button class="module-btn" id="startDailyBtn">开始练习 →</button>
         </div>
-        <div class="game-module module-contest">
+        <div class="game-module module-contest animate-scale-up" style="animation-delay:0.2s">
           <div class="module-icon">🏅</div>
           <div class="module-title">每周竞赛</div>
           <div class="module-desc">限时2分钟，每周3次</div>
@@ -69,14 +79,14 @@ export async function renderGameView() {
             <button class="module-btn" id="rankContestBtn" style="background: #ff9800;">🏆 排行榜</button>
           </div>
         </div>
-        <div class="game-module module-wrong">
+        <div class="game-module module-wrong animate-scale-up" style="animation-delay:0.3s">
           <div class="module-icon">❌</div>
           <div class="module-title">错题本</div>
           <div class="module-desc">消灭错题，查漏补缺</div>
           <div class="module-stats" id="wrongStats">加载中...</div>
           <button class="module-btn" id="startWrongClearBtn">错题闯关 →</button>
         </div>
-        <div class="game-module module-scratch">
+        <div class="game-module module-scratch animate-scale-up" style="animation-delay:0.4s">
           <div class="module-icon">🎫</div>
           <div class="module-title">刮刮乐</div>
           <div class="module-desc">每日5次，刮出惊喜</div>
@@ -87,7 +97,7 @@ export async function renderGameView() {
       <div id="levelsModal" class="game-modal" style="display:none;">
         <div class="game-modal-content">
           <div class="game-modal-header">
-            <span>🏆 政策闯关</span>
+            <span>🏆 趣味闯关</span>
             <button class="close-modal">&times;</button>
           </div>
           <div id="themesDetailContainer" class="themes-detail"></div>
@@ -99,7 +109,7 @@ export async function renderGameView() {
   await loadModuleStats();
   await updateScratchRemaining();
 
-  document.getElementById('openLevelsBtn').onclick = () => showLevelsModal();
+  document.getElementById('openFunBtn').onclick = () => showFunLevelsModal();
   document.getElementById('startDailyBtn').onclick = startDailyQuiz;
   document.getElementById('startContestBtn').onclick = startWeeklyContest;
   document.getElementById('startWrongClearBtn').onclick = startWrongClear;
@@ -164,8 +174,8 @@ async function loadModuleStats() {
   }
 }
 
-// ==================== 政策闯关 ====================
-async function showLevelsModal() {
+// ==================== 趣味闯关（原政策闯关） ====================
+async function showFunLevelsModal() {
   const modal = document.getElementById('levelsModal');
   const container = document.getElementById('themesDetailContainer');
   if (!container) return;
@@ -174,111 +184,123 @@ async function showLevelsModal() {
   if (closeBtn) closeBtn.onclick = () => { modal.style.display = 'none'; };
   modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
 
-  container.innerHTML = '<div>加载中...</div>';
-  try {
-    const res = await fetchWithAuth('/api/game/themes');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const themes = await res.json();
-    renderThemesDetail(container, themes);
-  } catch (err) {
-    console.error('加载主题失败', err);
-    container.innerHTML = '<div style="color:red;">加载失败，请刷新重试</div>';
-  }
-}
+  container.innerHTML = `
+    <div class="fun-levels-container animate-fade-in">
+      <h3>🎮 趣味闯关</h3>
+      <p>选择主题和难度，挑战自我！</p>
+      <div class="difficulty-selector">
+        <button class="difficulty-btn" data-diff="easy">🌱 简单 (3题)</button>
+        <button class="difficulty-btn" data-diff="medium">⚡ 中等 (5题)</button>
+        <button class="difficulty-btn" data-diff="hard">🔥 困难 (8题)</button>
+      </div>
+      <div class="themes-grid" id="funThemesGrid">加载中...</div>
+    </div>
+  `;
 
-function renderThemesDetail(container, themes) {
-  let html = '';
-  for (const theme of themes) {
-    html += `
-      <div class="theme-group">
-        <div class="theme-group-header">
-          <span class="theme-icon">${escapeHtml(theme.icon)}</span>
-          <span class="theme-name">${escapeHtml(theme.name)}</span>
-          <span class="theme-desc">${escapeHtml(theme.description)}</span>
-        </div>
-        <div class="level-cards">
-    `;
-    for (const level of theme.levels) {
-      const locked = !level.completed && level.unlock_points > 0 && appState.userPoints < level.unlock_points;
-      html += `
-        <div class="level-card ${level.completed ? 'completed' : ''} ${locked ? 'locked' : ''}" data-level-id="${level.id}">
-          <div class="level-name">${escapeHtml(level.name)}</div>
-          <div class="level-desc">${escapeHtml(level.description)}</div>
-          <div class="level-difficulty">难度: ${'⭐'.repeat(level.difficulty)}</div>
-          <div class="level-reward">奖励: ${level.reward_points}分</div>
-          ${level.completed ? '<div class="level-badge">✅ 已通关</div>' : (locked ? `<div class="level-badge">🔒 需${level.unlock_points}分</div>` : '<button class="level-start-btn">开始挑战</button>')}
-        </div>
-      `;
-    }
-    html += `</div></div>`;
-  }
-  container.innerHTML = html;
+  const themesRes = await fetchWithAuth('/api/game/policy-themes');
+  const themes = await themesRes.json();
+  const grid = document.getElementById('funThemesGrid');
+  grid.innerHTML = themes.map(theme => `
+    <div class="fun-theme-card animate-scale-up" data-theme="${theme.name}" data-id="${theme.id}">
+      <div class="theme-icon">${theme.icon}</div>
+      <div class="theme-name">${theme.name}</div>
+      <div class="theme-desc">${theme.description}</div>
+      <div class="theme-status">${theme.completed ? '✅ 已通关' : '🔓 未挑战'}</div>
+    </div>
+  `).join('');
 
-  document.querySelectorAll('.level-card:not(.locked)').forEach(card => {
-    const levelId = card.dataset.levelId;
-    const levelName = card.querySelector('.level-name')?.textContent || '关卡';
-    const startGame = () => {
-      const modal = document.getElementById('levelsModal');
-      if (modal) modal.style.display = 'none';
-      startLevel(levelId, levelName);
+  let selectedDifficulty = 'medium';
+  document.querySelectorAll('.difficulty-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedDifficulty = btn.dataset.diff;
+      btn.style.transform = 'scale(0.95)';
+      setTimeout(() => btn.style.transform = '', 150);
     };
-    card.addEventListener('click', (e) => {
-      if (e.target.classList && e.target.classList.contains('level-start-btn')) return;
-      startGame();
-    });
-    const btn = card.querySelector('.level-start-btn');
-    if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        startGame();
-      });
-    }
+  });
+  document.querySelector('.difficulty-btn[data-diff="medium"]').classList.add('active');
+
+  document.querySelectorAll('.fun-theme-card').forEach(card => {
+    card.onclick = async () => {
+      const theme = card.dataset.theme;
+      const themeId = card.dataset.id;
+      await startFunChallenge(theme, themeId, selectedDifficulty);
+    };
   });
 }
 
-async function startLevel(levelId, levelName) {
-  try {
-    const res = await fetchWithAuth(`/api/game/level/${levelId}`);
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || '无法开始关卡');
-      return;
-    }
-    const questions = await res.json();
-    if (!questions.length) {
-      alert('该关卡暂无题目');
-      return;
-    }
-    currentLevelQuestions = questions;
-    currentLevelAnswers = new Array(questions.length).fill(null);
-    currentLevelIndex = 0;
-    currentLevelId = levelId;
-    showLevelQuestion();
-  } catch (e) {
-    alert('加载关卡失败');
-  }
+async function startFunChallenge(theme, themeId, difficulty) {
+  let questionCount = 3;
+  if (difficulty === 'medium') questionCount = 5;
+  if (difficulty === 'hard') questionCount = 8;
+
+  const res = await fetchWithAuth(`/api/game/fun-level-questions?theme=${encodeURIComponent(theme)}&difficulty=${difficulty}&count=${questionCount}`);
+  const data = await res.json();
+  currentFunQuestions = data.questions;
+  currentFunIndex = 0;
+  currentFunScore = 0;
+  currentFunLives = 3;
+  currentFunTheme = theme;
+  currentFunDifficulty = difficulty;
+  currentFunEvent = data.event;
+  currentFunEventUsed = false;
+
+  showFunQuestion();
 }
 
-function showLevelQuestion() {
-  const q = currentLevelQuestions[currentLevelIndex];
+function showFunQuestion() {
+  if (currentFunIndex >= currentFunQuestions.length) {
+    const totalPossible = currentFunQuestions.length * 10;
+    const bonus = (currentFunLives * 5) + (currentFunScore > totalPossible * 0.8 ? 20 : 0);
+    const finalScore = currentFunScore + bonus;
+    showSuccessModal(`🎉 闯关成功！\n得分：${currentFunScore}\n剩余生命：${currentFunLives}\n额外奖励：${bonus}\n总积分：${finalScore}`);
+    addPoints(finalScore, '趣味闯关');
+    fetchWithAuth('/api/game/policy-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ themeId: currentFunTheme, score: currentFunScore, total: currentFunQuestions.length })
+    });
+    const modal = document.getElementById('levelsModal');
+    if (modal) modal.style.display = 'none';
+    loadModuleStats();
+    return;
+  }
+
+  const q = currentFunQuestions[currentFunIndex];
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal animate-slide-up';
   modal.style.display = 'flex';
+  let eventHtml = '';
+  if (currentFunEvent && !currentFunEventUsed && currentFunIndex === 0) {
+    let eventText = '';
+    if (currentFunEvent === 'double') eventText = '🎁 双倍积分事件！本题答对得双倍积分！';
+    else if (currentFunEvent === 'hint') eventText = '💡 提示事件：可免费获得一次提示（点击提示按钮）';
+    else if (currentFunEvent === 'skip') eventText = '⏭️ 免答事件：可免费跳过本题（不扣生命）';
+    eventHtml = `<div class="fun-event animate-pulse">${eventText}</div>`;
+  }
   modal.innerHTML = `
     <div class="modal-content" style="width:500px;">
       <button class="modal-close">&times;</button>
+      <div class="fun-header">
+        <span class="heart-icon">❤️ ${currentFunLives}</span>
+        <span class="star-icon">⭐ ${currentFunScore}</span>
+        <span class="progress-icon">📊 ${currentFunIndex+1}/${currentFunQuestions.length}</span>
+      </div>
+      ${eventHtml}
       <div class="question-text">${escapeHtml(q.question)}</div>
       <div class="options-list">
         ${q.options.map((opt, idx) => `
-          <div class="option-item" data-opt="${idx}">
+          <div class="option-item animate-option" data-opt="${idx}">
             <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
             ${escapeHtml(opt)}
           </div>
         `).join('')}
       </div>
-      <div style="margin-top:20px; display:flex; justify-content:space-between;">
-        <button id="prevBtn" class="summary-btn" ${currentLevelIndex===0?'disabled':''}>上一题</button>
-        <button id="nextBtn" class="submit-btn">${currentLevelIndex===currentLevelQuestions.length-1?'提交':'下一题'}</button>
+      <div style="margin-top:20px; display:flex; gap:10px;">
+        <button id="submitAnswerBtn" class="submit-btn pulse-on-hover">提交答案</button>
+        ${currentFunEvent === 'hint' && !currentFunEventUsed ? '<button id="hintBtn" class="summary-btn">💡 提示</button>' : ''}
+        ${currentFunEvent === 'skip' && !currentFunEventUsed ? '<button id="skipBtn" class="summary-btn">⏭️ 跳过</button>' : ''}
       </div>
     </div>
   `;
@@ -287,53 +309,94 @@ function showLevelQuestion() {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
+  let selected = null;
   const opts = modal.querySelectorAll('.option-item');
-  if (currentLevelAnswers[currentLevelIndex] !== undefined) {
-    const selectedIdx = currentLevelAnswers[currentLevelIndex];
-    opts.forEach(opt => {
-      if (parseInt(opt.dataset.opt) === selectedIdx) opt.classList.add('selected');
-    });
-  }
   opts.forEach(opt => {
     opt.onclick = () => {
-      const selected = parseInt(opt.dataset.opt);
-      currentLevelAnswers[currentLevelIndex] = selected;
       opts.forEach(o => o.classList.remove('selected'));
       opt.classList.add('selected');
+      selected = parseInt(opt.dataset.opt);
+      opt.style.transform = 'scale(0.98)';
+      setTimeout(() => opt.style.transform = '', 150);
     };
   });
 
-  const prevBtn = modal.querySelector('#prevBtn');
-  const nextBtn = modal.querySelector('#nextBtn');
-  if (prevBtn) prevBtn.onclick = () => { if(currentLevelIndex>0) { currentLevelIndex--; closeModal(); showLevelQuestion(); } };
-  nextBtn.onclick = async () => {
-    if (currentLevelAnswers[currentLevelIndex] === undefined) {
-      alert('请选择答案');
-      return;
-    }
-    if (currentLevelIndex === currentLevelQuestions.length-1) {
-      const answers = currentLevelQuestions.map((q, i) => ({ questionId: q.id, selected: currentLevelAnswers[i] }));
-      const res = await fetchWithAuth('/api/game/level/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ levelId: currentLevelId, answers })
-      });
-      const result = await res.json();
+  const submitBtn = modal.querySelector('#submitAnswerBtn');
+  const hintBtn = modal.querySelector('#hintBtn');
+  const skipBtn = modal.querySelector('#skipBtn');
+
+  if (hintBtn) {
+    hintBtn.onclick = () => {
+      const correctAnswer = q.options[q.answer];
+      alert(`💡 提示：正确答案是 "${correctAnswer}"`);
+      currentFunEventUsed = true;
+      hintBtn.disabled = true;
+      hintBtn.style.opacity = '0.6';
+    };
+  }
+  if (skipBtn) {
+    skipBtn.onclick = () => {
+      currentFunEventUsed = true;
       closeModal();
-      if (result.passed) {
-        alert(`闯关成功！获得 ${result.reward} 积分`);
-        addPoints(result.reward, '政策闯关通关');
-        updateTaskProgress('policyLevel', 1);
-        loadModuleStats();
-      } else {
-        alert(`闯关失败！得分 ${result.totalScore}/${result.maxScore}，再接再厉！`);
-      }
+      currentFunIndex++;
+      showFunQuestion();
+    };
+  }
+
+  submitBtn.onclick = async () => {
+    if (selected === null) { alert('请选择答案'); return; }
+    const isCorrect = (selected === q.answer);
+    let pointsGain = 10;
+    if (currentFunDifficulty === 'hard') pointsGain += 5;
+    if (currentFunEvent === 'double' && !currentFunEventUsed && isCorrect) {
+      pointsGain *= 2;
+      currentFunEventUsed = true;
+    }
+    if (isCorrect) {
+      currentFunScore += pointsGain;
+      playSound('complete');
+      const correctOpt = opts[q.answer];
+      correctOpt.classList.add('correct-flash');
+      setTimeout(() => correctOpt.classList.remove('correct-flash'), 500);
+      alert(`✅ 回答正确！ +${pointsGain} 积分`);
     } else {
-      currentLevelIndex++;
-      closeModal();
-      showLevelQuestion();
+      currentFunLives--;
+      playSound('error');
+      const wrongOpt = opts[selected];
+      wrongOpt.classList.add('wrong-shake');
+      setTimeout(() => wrongOpt.classList.remove('wrong-shake'), 500);
+      alert(`❌ 回答错误！正确答案是：${q.options[q.answer]}\n${q.explanation || ''}`);
+      if (currentFunLives <= 0) {
+        alert(`💀 闯关失败！得分：${currentFunScore}`);
+        closeModal();
+        const modalDiv = document.getElementById('levelsModal');
+        if (modalDiv) modalDiv.style.display = 'none';
+        return;
+      }
     }
+    closeModal();
+    currentFunIndex++;
+    showFunQuestion();
   };
+}
+
+function showSuccessModal(message) {
+  const modal = document.createElement('div');
+  modal.className = 'modal animate-fade-in';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-content success-modal">
+      <button class="modal-close">&times;</button>
+      <div class="success-emoji">🎉🏆🎉</div>
+      <div style="white-space:pre-line;">${escapeHtml(message)}</div>
+      <button id="successCloseBtn" class="submit-btn" style="margin-top:20px;">太棒了</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const close = () => document.body.removeChild(modal);
+  modal.querySelector('.modal-close').onclick = close;
+  modal.querySelector('#successCloseBtn').onclick = close;
+  modal.onclick = (e) => { if(e.target===modal) close(); };
 }
 
 // ==================== 每日一练 ====================
@@ -584,13 +647,13 @@ async function finishDailyQuiz() {
     alert(`练习完成！得分 ${dailyScore}/${total}，获得 ${rewardPoints} 积分`);
     addPoints(rewardPoints, '每日一练');
     updateTaskProgress('quiz', 1);
-    await loadModuleStats(); // 刷新卡片状态
+    await loadModuleStats();
   } catch(e) {
     alert('提交失败，但本地得分已记录');
   }
 }
 
-// ==================== 每周竞赛（总倒计时不重置） ====================
+// ==================== 每周竞赛 ====================
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
@@ -608,7 +671,7 @@ async function startWeeklyContest() {
     currentContestId = data.contestId;
     currentContestQuestions = data.questions;
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
-    contestStartTime = Date.now(); // 只初始化一次
+    contestStartTime = Date.now();
     currentAttemptNumber = data.attemptNumber;
     showContestQuestion(0);
   } catch(e) {
@@ -653,7 +716,6 @@ function showContestQuestion(index) {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  // 更新倒计时（基于固定起始时间）
   const updateTimerDisplay = () => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
     const remaining = Math.max(0, contestTotalTime - elapsed);
@@ -668,7 +730,7 @@ function showContestQuestion(index) {
     }
   };
   if (contestTimerInterval) clearInterval(contestTimerInterval);
-  updateTimerDisplay(); // 立即更新一次
+  updateTimerDisplay();
   contestTimerInterval = setInterval(updateTimerDisplay, 1000);
 
   const opts = modal.querySelectorAll('.option-item');
@@ -711,7 +773,6 @@ function showContestQuestion(index) {
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
       await finalizeContest(modal, timeUsed);
     } else {
-      // 延迟1.5秒后自动进入下一题，倒计时继续
       setTimeout(() => {
         closeModal();
         showContestQuestion(index+1);
@@ -762,12 +823,12 @@ async function finalizeContest(modal, timeUsed) {
   const result = await res.json();
   alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
   addPoints(result.rewardPoints, '每周竞赛');
-  await loadModuleStats(); // 刷新卡片状态
+  await loadModuleStats();
   modal.querySelector('.modal-close').click();
 }
+
 async function showContestRanking() {
   try {
-    // 获取当前周竞赛ID
     const now = new Date();
     const day = now.getDay();
     const weekStart = new Date(now);
@@ -775,13 +836,11 @@ async function showContestRanking() {
     weekStart.setHours(0,0,0,0);
     const startStr = weekStart.toISOString().slice(0,10);
 
-    // 先获取竞赛信息
     const contestRes = await fetchWithAuth(`/api/game/weekly/current`);
     if (!contestRes.ok) throw new Error('获取竞赛信息失败');
     const contestData = await contestRes.json();
     const contestId = contestData.contestId;
 
-    // 获取排行榜
     const rankRes = await fetchWithAuth(`/api/game/weekly/rank/${contestId}`);
     if (!rankRes.ok) throw new Error('获取排行榜失败');
     const ranks = await rankRes.json();
@@ -824,7 +883,7 @@ async function showContestRanking() {
   }
 }
 
-// ==================== 错题本（实时更新侧边栏） ====================
+// ==================== 错题本 ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   wrongQuestionsList = await res.json();
@@ -842,7 +901,7 @@ function showWrongQuestion() {
   if (currentWrongIndex >= wrongQuestionsList.length) {
     const remaining = wrongQuestionsList.length - wrongClearCorrectCount;
     alert(`错题闯关结束！本次共处理 ${wrongClearStartCount} 题，其中答对 ${wrongClearCorrectCount} 题，剩余错题 ${remaining} 道。`);
-    loadModuleStats(); // 刷新侧边栏错题数
+    loadModuleStats();
     return;
   }
   const w = wrongQuestionsList[currentWrongIndex];
@@ -915,7 +974,7 @@ function showWrongQuestion() {
         addPoints(result.rewardPoints, '错题闯关');
         wrongClearCorrectCount++;
         wrongQuestionsList.splice(currentWrongIndex, 1);
-        loadModuleStats(); // 实时更新侧边栏错题数
+        loadModuleStats();
       } else {
         currentWrongIndex++;
       }

@@ -2062,3 +2062,239 @@ body {
     font-size: 0.7rem;
   }
 }
+/* ========== 挑战中心放大弹窗 & 动画效果 ========== */
+
+/* 全局弹窗放大（接近全屏） */
+.modal {
+  background: rgba(0,0,0,0.7);
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  width: 90vw;
+  max-width: 900px;
+  height: 85vh;
+  max-height: 85vh;
+  padding: 24px;
+  overflow-y: auto;
+  border-radius: 32px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 弹窗内部内容自适应 */
+.modal-content .options-list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 16px 0;
+}
+
+.modal-content .question-text {
+  font-size: 1.2rem;
+  line-height: 1.5;
+}
+
+.option-item {
+  padding: 12px 16px;
+  font-size: 1rem;
+}
+
+/* 趣味闯关卡片网格 */
+.policy-themes-grid, .themes-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.fun-theme-card, .policy-theme-card {
+  background: white;
+  border-radius: 20px;
+  padding: 20px;
+  width: 200px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+}
+
+.fun-theme-card:hover, .policy-theme-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+.fun-theme-card.completed, .policy-theme-card.completed {
+  background: #e8f5e9;
+  border: 1px solid #4caf50;
+}
+
+.theme-icon {
+  font-size: 3rem;
+}
+
+.theme-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin: 10px 0;
+}
+
+.theme-desc {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.theme-status {
+  margin: 10px 0;
+  font-size: 0.8rem;
+}
+
+.policy-start-btn, .theme-start-btn {
+  background: #2e5d34;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 6px 12px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* 难度选择器 */
+.difficulty-selector {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.difficulty-btn {
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 30px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.difficulty-btn.active {
+  background: #2e5d34;
+  color: white;
+  border-color: #2e5d34;
+}
+
+/* 趣味闯关答题界面头部 */
+.fun-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  font-weight: bold;
+}
+
+.fun-event {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+/* 动画 */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-scale-up {
+  animation: scaleUp 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 1s infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+/* 正确/错误动画 */
+.correct-flash {
+  animation: correctFlash 0.5s ease;
+}
+
+.wrong-shake {
+  animation: wrongShake 0.3s ease;
+}
+
+@keyframes correctFlash {
+  0% { background-color: #c8e6c9; transform: scale(1); }
+  50% { background-color: #a5d6a7; transform: scale(1.02); }
+  100% { background-color: #c8e6c9; transform: scale(1); }
+}
+
+@keyframes wrongShake {
+  0% { transform: translateX(0); background-color: #ffcdd2; }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-3px); }
+  100% { transform: translateX(0); background-color: #ffcdd2; }
+}
+
+/* 成功模态框 */
+.success-modal {
+  text-align: center;
+}
+
+.success-emoji {
+  font-size: 3rem;
+  animation: bounce 0.5s ease;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95vw;
+    height: 90vh;
+    padding: 16px;
+  }
+  .question-text {
+    font-size: 1rem;
+  }
+  .option-item {
+    padding: 10px 12px;
+  }
+  .fun-theme-card, .policy-theme-card {
+    width: 160px;
+    padding: 12px;
+  }
+  .theme-icon {
+    font-size: 2.5rem;
+  }
+}

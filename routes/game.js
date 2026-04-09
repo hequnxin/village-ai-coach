@@ -19,68 +19,70 @@ async function getUserTotalPoints(userId) {
   return basePoints + rewardPoints;
 }
 
-// ==================== 政策闯关（主题+关卡） ====================
-router.get('/themes', async (req, res) => {
+// ==================== 趣味闯关（原政策闯关） ====================
+// 获取所有主题
+router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
   for (const theme of themes) {
-    const levels = await db.all(`SELECT * FROM game_levels WHERE theme_id = $1 ORDER BY level_num`, [theme.id]);
-    for (const level of levels) {
-      const progress = await db.get(`SELECT completed, best_score FROM user_game_progress WHERE user_id = $1 AND level_id = $2`, [userId, level.id]);
-      level.completed = progress ? (progress.completed === 1) : false;
-      level.bestScore = progress ? progress.best_score : 0;
-    }
-    theme.levels = levels;
+    const progress = await db.get(`SELECT completed FROM user_theme_progress WHERE user_id = $1 AND theme_id = $2`, [userId, theme.id]);
+    theme.completed = progress ? progress.completed === 1 : false;
   }
   res.json(themes);
 });
 
-router.get('/level/:levelId', async (req, res) => {
-  const userId = req.user.userId;
-  const level = await db.get(`SELECT * FROM game_levels WHERE id = $1`, [req.params.levelId]);
-  if (!level) return res.status(404).json({ error: '关卡不存在' });
-  if (level.unlock_points > 0) {
-    const totalPoints = await getUserTotalPoints(userId);
-    if (totalPoints < level.unlock_points) {
-      return res.status(403).json({ error: `需要${level.unlock_points}积分才能解锁` });
-    }
+// 获取趣味闯关题目（支持主题、难度、数量，并随机附带事件）
+router.get('/fun-level-questions', async (req, res) => {
+  const { theme, difficulty, count = 5 } = req.query;
+  if (!theme) return res.status(400).json({ error: '缺少主题参数' });
+
+  // 从 quiz_questions 中筛选题目，优先按 source_category 或 category 匹配主题
+  let questions = await db.all(`
+    SELECT id, question, options, answer, explanation, type 
+    FROM quiz_questions 
+    WHERE type = 'choice' AND (source_category = $1 OR category = $1)
+    ORDER BY RANDOM() 
+    LIMIT $2
+  `, [theme, parseInt(count)]);
+
+  if (questions.length < parseInt(count)) {
+    // 补充其他题目
+    const extra = await db.all(`
+      SELECT id, question, options, answer, explanation, type 
+      FROM quiz_questions 
+      WHERE type = 'choice'
+      ORDER BY RANDOM() 
+      LIMIT $1
+    `, [parseInt(count) - questions.length]);
+    questions = [...questions, ...extra];
   }
-  const questionIds = await db.all(`SELECT question_id FROM game_level_questions WHERE level_id = $1`, [level.id]);
-  if (questionIds.length === 0) return res.status(404).json({ error: '关卡无题目' });
-  const placeholders = questionIds.map((_,i) => `$${i+1}`).join(',');
-  const questions = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE id IN (${placeholders})`, questionIds.map(q => q.question_id));
-  res.json(questions.map(q => ({ ...q, options: JSON.parse(q.options) })));
+
+  // 随机事件（20%概率触发）
+  const events = ['double', 'hint', 'skip'];
+  const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
+
+  res.json({
+    questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })),
+    event: randomEvent
+  });
 });
 
-router.post('/level/submit', async (req, res) => {
-  const { levelId, answers } = req.body;
+// 提交趣味闯关结果
+router.post('/policy-submit', async (req, res) => {
+  const { themeId, score, total } = req.body;
   const userId = req.user.userId;
-  const level = await db.get(`SELECT * FROM game_levels WHERE id = $1`, [levelId]);
-  if (!level) return res.status(404).json({ error: '关卡不存在' });
-  let correctCount = 0;
-  for (const ans of answers) {
-    const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
-    if (q && q.answer == ans.selected) correctCount++;
+  const passingScore = Math.ceil(total * 0.6);
+  const passed = score >= passingScore;
+  const reward = passed ? 50 : 0;
+  if (passed) {
+    await db.run(`INSERT INTO user_theme_progress (id, user_id, theme_id, completed, completed_at) VALUES ($1, $2, $3, 1, NOW()) ON CONFLICT (user_id, theme_id) DO UPDATE SET completed = 1, completed_at = NOW()`,
+      [uuidv4(), userId, themeId]);
+    if (reward > 0) {
+      await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+        [uuidv4(), userId, reward, `通关主题: ${themeId}`]);
+    }
   }
-  const totalScore = correctCount * 10;
-  const maxScore = level.question_count * 10;
-  const passed = totalScore >= (level.passing_score / 100) * maxScore;
-  const existing = await db.get(`SELECT * FROM user_game_progress WHERE user_id = $1 AND level_id = $2`, [userId, levelId]);
-  if (existing) {
-    if (existing.completed) return res.json({ passed: true, alreadyCompleted: true, reward: 0 });
-    await db.run(`UPDATE user_game_progress SET completed = $1, best_score = $2, attempts = attempts + 1, completed_at = $3 WHERE id = $4`,
-      [passed ? 1 : 0, Math.max(existing.best_score, totalScore), passed ? new Date().toISOString() : null, existing.id]);
-  } else {
-    await db.run(`INSERT INTO user_game_progress (id, user_id, level_id, completed, best_score, attempts, completed_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [uuidv4(), userId, levelId, passed ? 1 : 0, totalScore, 1, passed ? new Date().toISOString() : null]);
-  }
-  let reward = 0;
-  if (passed && (!existing || !existing.completed)) {
-    reward = level.reward_points;
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), userId, reward, `通关关卡：${level.name}`, new Date().toISOString()]);
-  }
-  res.json({ passed, totalScore, maxScore, reward });
+  res.json({ passed, reward });
 });
 
 // ==================== 每日一练（从政策/常见问题类别取高质量题目） ====================
@@ -116,7 +118,7 @@ router.get('/daily', async (req, res) => {
     LIMIT 2
   `);
 
-  // 如果选择题数量不足3，再从所有选择题中补充（保证总是有3道选择题）
+  // 如果选择题数量不足3，再从所有选择题中补充
   let finalChoice = [...choiceQuestions];
   if (finalChoice.length < 3) {
     const extra = await db.all(`
@@ -129,7 +131,6 @@ router.get('/daily', async (req, res) => {
     finalChoice.push(...extra);
   }
 
-  // 组装题目
   for (let q of finalChoice) {
     questions.push({
       id: q.id,
@@ -158,9 +159,7 @@ router.get('/daily', async (req, res) => {
   const quizId = uuidv4();
   await db.run(`INSERT INTO daily_quiz (id, user_id, quiz_date, score, completed, created_at) VALUES ($1, $2, $3, 0, 0, $4)`, [quizId, userId, today, new Date().toISOString()]);
   for (const q of questions) {
-    // 确保题目在 quiz_questions 中存在（填空题的 id 可能不在 quiz_questions 中，需要插入）
     if (q.type === 'fill') {
-      // 检查是否已存在
       let existing = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [q.id]);
       if (!existing) {
         await db.run(`
@@ -186,7 +185,6 @@ router.post('/daily/submit', async (req, res) => {
   res.json({ score, total, rewardPoints });
 });
 
-// ==================== 每日一练状态接口（修复） ====================
 router.get('/daily/status', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
@@ -203,7 +201,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛（支持多次参赛，时间2分钟） ====================
+// ==================== 每周竞赛 ====================
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
@@ -475,7 +473,7 @@ router.post('/add-points', async (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== 调试接口（可选，部署后可删除） ====================
+// 调试接口：清除今日刮刮乐记录
 router.post('/debug/clear-scratch-today', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
