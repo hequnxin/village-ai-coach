@@ -20,7 +20,6 @@ function initMobileMenu() {
       e.stopPropagation();
       sidebar.classList.toggle('open');
     });
-    // 点击侧边栏外部关闭（可选）
     document.addEventListener('click', (e) => {
       if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuToggle) {
         sidebar.classList.remove('open');
@@ -33,13 +32,11 @@ function initMobileMenu() {
 function initBottomNav() {
   const bottomNav = document.getElementById('bottomNav');
   if (!bottomNav) return;
-  // 只在移动端显示（由CSS控制）
   const navItems = bottomNav.querySelectorAll('.bottom-nav-item');
   navItems.forEach(item => {
     item.addEventListener('click', () => {
       const view = item.dataset.view;
       if (!view) return;
-      // 调用对应的视图渲染函数
       switch (view) {
         case 'chat':
           import('./modules/chat').then(m => m.switchToChat());
@@ -62,10 +59,8 @@ function initBottomNav() {
         default:
           break;
       }
-      // 更新激活样式
       navItems.forEach(i => i.classList.remove('active'));
       item.classList.add('active');
-      // 同时更新顶部导航的激活状态（如果有）
       setActiveNavByView(view);
     });
   });
@@ -89,7 +84,6 @@ export async function initApp() {
   setupGlobalEventListeners();
   setupSessionTabs();
 
-  // 初始化移动端控件
   initMobileMenu();
   initBottomNav();
 

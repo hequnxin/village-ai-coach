@@ -83,7 +83,7 @@ router.post('/level/submit', async (req, res) => {
   res.json({ passed, totalScore, maxScore, reward });
 });
 
-// ==================== 每日一练（混合题型） ====================
+// ==================== 每日一练（混合题型，修复外键问题） ====================
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -98,6 +98,7 @@ router.get('/daily', async (req, res) => {
   }
 
   let questions = [];
+  // 选择题
   const choiceQuestions = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 3`);
   for (let q of choiceQuestions) {
     questions.push({
@@ -109,8 +110,17 @@ router.get('/daily', async (req, res) => {
       explanation: q.explanation
     });
   }
+  // 填空题：从 fill_questions 取，确保在 quiz_questions 中有对应记录
   const fillQuestions = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT 2`);
   for (let f of fillQuestions) {
+    // 检查 quiz_questions 中是否已有该 ID
+    let existing = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [f.id]);
+    if (!existing) {
+      await db.run(`
+        INSERT INTO quiz_questions (id, type, question, options, answer, explanation, created_at)
+        VALUES ($1, 'fill', $2, NULL, $3, $4, NOW())
+      `, [f.id, f.question, f.answer, `正确答案是“${f.answer}”`]);
+    }
     questions.push({
       id: f.id,
       type: 'fill',
@@ -145,10 +155,9 @@ router.post('/daily/submit', async (req, res) => {
   res.json({ score, total, rewardPoints });
 });
 
-// ==================== 每周竞赛（支持多次参赛） ====================
+// ==================== 每周竞赛（支持多次参赛，时间2分钟） ====================
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
-  // 检查表是否存在
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
   if (!tableExists.exists) {
     return res.json({ participated: false, attemptsLeft: 3 });
