@@ -13,7 +13,6 @@ async function tableExists(tableName) {
 async function ensureMissingTables() {
   console.log('🔧 检查并创建缺失的表...');
 
-  // 确保 weekly_contest_attempts 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
@@ -29,7 +28,6 @@ async function ensureMissingTables() {
   `);
   console.log('✅ weekly_contest_attempts 表已确保存在');
 
-  // 清理 daily_quiz_questions 中无效的外键（指向不存在的题目）
   await db.run(`
     DELETE FROM daily_quiz_questions 
     WHERE question_id NOT IN (SELECT id FROM quiz_questions)
@@ -49,16 +47,14 @@ async function fixQuizQuestions() {
 }
 
 async function fixLevelQuestions() {
-  const linkCount = await db.get(`SELECT COUNT(*) as c FROM game_level_questions`);
-  if (linkCount.c === 0) {
-    console.log('⚠️ 游戏关卡无题目，重新关联...');
-    // 确保 quiz_questions 有 theme 和 difficulty
-    await db.run(`UPDATE quiz_questions SET theme = category, difficulty = 1 WHERE theme IS NULL`);
-    const initGameData = require('./initGameData');
-    await initGameData();
-  } else {
-    console.log(`✅ 游戏关卡已有 ${linkCount.c} 条关联，跳过`);
-  }
+  // 强制重建关联：删除所有现有关联，重新生成
+  console.log('⚠️ 强制重建游戏关卡题目关联...');
+  await db.run(`DELETE FROM game_level_questions`);
+  // 确保 quiz_questions 有 theme 和 difficulty
+  await db.run(`UPDATE quiz_questions SET theme = category, difficulty = 1 WHERE theme IS NULL`);
+  const initGameData = require('./initGameData');
+  await initGameData();
+  console.log('✅ 游戏关卡题目关联重建完成');
 }
 
 (async () => {
@@ -71,10 +67,8 @@ async function fixLevelQuestions() {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
 
-      // 无论表是否存在，都先创建缺失的表和清理无效数据
       await ensureMissingTables();
 
-      // 检查关键表
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
 
@@ -85,9 +79,8 @@ async function fixLevelQuestions() {
         const importKnowledge = require('./importKnowledge');
         await importKnowledge();
       } else {
-        // 修复题目数量不足的问题
         await fixQuizQuestions();
-        // 修复关卡题目关联
+        // 强制重建关卡关联（不再判断是否为空）
         await fixLevelQuestions();
       }
 
