@@ -214,7 +214,7 @@ async function initDb() {
   await insertScenario('scenario_004', '产业发展项目申报动员会', '村里想申请乡村振兴衔接资金发展特色农产品加工，但部分村民担心失败不愿配合。', '说服至少5户村民参与项目，并收集他们的意见建议。', '村民李大叔', '搞什么加工厂？我们祖祖辈辈种地，投资那么多钱要是亏了谁负责？', JSON.stringify(['政策解读能力', '动员说服力', '风险沟通', '组织协调力']));
   await insertScenario('scenario_005', '邻里噪音纠纷调解', '村民小陈家晚上经常聚会打牌，邻居老刘多次投诉，双方产生口角。你前往调解。', '促成双方相互理解，并约定合理的活动时间。', '村民老刘', '天天晚上吵到一两点，我高血压都犯了！你们村干部管不管？', JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
 
-  // 插入默认题目
+  // 插入默认题目（仅当 quiz_questions 为空时）
   const existingQuestions = await db.get('SELECT COUNT(*) as count FROM quiz_questions');
   if (existingQuestions.count === 0) {
     const defaultQuestions = [
@@ -230,7 +230,7 @@ async function initDb() {
     console.log('✅ 插入默认选择题 5 道');
   }
 
-  // 插入默认填空题目
+  // 插入默认填空题目（仅当 fill_questions 为空时）
   const existingFill = await db.get('SELECT COUNT(*) as count FROM fill_questions');
   if (existingFill.count === 0) {
     const fills = [
@@ -270,7 +270,7 @@ async function initDb() {
     console.error('添加全文搜索失败:', err.message);
   }
 
-  // ========== 从知识库生成政策闯关题目 ==========
+  // ========== 从知识库生成政策闯关题目（选择题和填空题） ==========
   const levelCount = await db.get('SELECT COUNT(*) as count FROM policy_levels');
   if (levelCount.count === 0) {
     console.log('未检测到政策闯关关卡，尝试从知识库生成题目...');
