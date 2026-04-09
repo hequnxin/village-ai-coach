@@ -10,7 +10,9 @@ async function tableExists(tableName) {
   return res.exists;
 }
 
-async function ensureTables() {
+async function ensureMissingTables() {
+  console.log('🔧 检查并创建缺失的表...');
+
   // 确保 weekly_contest_attempts 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
@@ -25,6 +27,14 @@ async function ensureTables() {
       UNIQUE(contest_id, user_id, attempt_number)
     )
   `);
+  console.log('✅ weekly_contest_attempts 表已确保存在');
+
+  // 清理 daily_quiz_questions 中无效的外键（指向不存在的题目）
+  await db.run(`
+    DELETE FROM daily_quiz_questions 
+    WHERE question_id NOT IN (SELECT id FROM quiz_questions)
+  `);
+  console.log('✅ 清理了无效的每日一练题目关联');
 }
 
 async function fixQuizQuestions() {
@@ -33,6 +43,8 @@ async function fixQuizQuestions() {
     console.log(`⚠️ 选择题数量不足 (${count.c})，重新生成...`);
     const { generateAndStoreQuestions } = require('./questionGenerator');
     await generateAndStoreQuestions(50);
+  } else {
+    console.log(`✅ 已有 ${count.c} 道选择题，跳过生成`);
   }
 }
 
@@ -42,6 +54,8 @@ async function fixLevelQuestions() {
     console.log('⚠️ 游戏关卡无题目，重新关联...');
     const initGameData = require('./initGameData');
     await initGameData();
+  } else {
+    console.log(`✅ 游戏关卡已有 ${linkCount.c} 条关联，跳过`);
   }
 }
 
@@ -55,10 +69,10 @@ async function fixLevelQuestions() {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
 
-      // 1. 确保所有表存在（包括新增的）
-      await ensureTables();
+      // 无论表是否存在，都先创建缺失的表和清理无效数据
+      await ensureMissingTables();
 
-      // 2. 检查关键表
+      // 检查关键表
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
 
@@ -69,9 +83,9 @@ async function fixLevelQuestions() {
         const importKnowledge = require('./importKnowledge');
         await importKnowledge();
       } else {
-        // 3. 修复题目数量不足的问题
+        // 修复题目数量不足的问题
         await fixQuizQuestions();
-        // 4. 修复关卡题目关联
+        // 修复关卡题目关联
         await fixLevelQuestions();
       }
 

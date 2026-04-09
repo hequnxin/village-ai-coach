@@ -104,7 +104,7 @@ async function initDb() {
       completed_at TIMESTAMPTZ,
       UNIQUE(user_id, level_id)
     )`,
-    // 重点修复：quiz_questions 表，answer 为 TEXT 类型
+    // quiz_questions 表，type 字段默认 'choice'，answer 为 TEXT 类型
     `CREATE TABLE IF NOT EXISTS quiz_questions (
       id TEXT PRIMARY KEY,
       type TEXT DEFAULT 'choice',
@@ -214,6 +214,18 @@ async function initDb() {
       is_used INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ,
       used_at TIMESTAMPTZ
+    )`,
+    // 新增：weekly_contest_attempts 表（支持多次参赛）
+    `CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
+      id TEXT PRIMARY KEY,
+      contest_id TEXT REFERENCES weekly_contest(id) ON DELETE CASCADE,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      attempt_number INTEGER NOT NULL,
+      score INTEGER NOT NULL,
+      total_questions INTEGER NOT NULL,
+      time_used INTEGER NOT NULL,
+      submitted_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(contest_id, user_id, attempt_number)
     )`
   ];
 
