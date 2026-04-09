@@ -5,7 +5,7 @@ const { chat } = require('../services/openai');
 
 const router = express.Router();
 
-// ==================== 每日一练 ====================
+// ==================== 每日一练（政策知多少） ====================
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -25,26 +25,33 @@ router.get('/daily', async (req, res) => {
       score: existing.score
     });
   }
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
-  const yesterdayQuiz = await db.get('SELECT id FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2', [userId, yesterdayStr]);
-  let excludeIds = [];
-  if (yesterdayQuiz) {
-    const yesterdayQuestions = await db.all('SELECT question_id FROM daily_quiz_questions WHERE quiz_id = $1', [yesterdayQuiz.id]);
-    excludeIds = yesterdayQuestions.map(q => q.question_id);
+
+  // 尝试从题库中随机取5题
+  let questions = await db.all(`SELECT id, type, question, options, answer, explanation, category FROM quiz_questions ORDER BY RANDOM() LIMIT 5`);
+
+  // 如果题库为空，则从知识库动态生成5道选择题
+  if (!questions.length) {
+    const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT 5`);
+    if (knowledge.length === 0) {
+      return res.status(404).json({ error: '暂无任何知识库数据，请先导入知识' });
+    }
+    questions = knowledge.map(k => {
+      const text = (k.content.length > 200 ? k.content.substring(0, 200) : k.content) || k.title;
+      const words = text.split(/[，,。？?！!、\s]+/).filter(w => w.length >= 2 && !/^\d+$/.test(w));
+      const correct = words.length ? words[0] : '政策';
+      const options = [correct, '其他选项A', '其他选项B', '其他选项C'].slice(0, 4);
+      return {
+        id: `dyn_${k.id}`,
+        type: 'choice',
+        question: `根据知识："${k.title}"，以下哪个关键词最相关？`,
+        options: JSON.stringify(options),
+        answer: 0,
+        explanation: `正确答案是${correct}，因为内容中提到：${text.substring(0, 100)}`,
+        category: k.type || '政策法规'
+      };
+    });
   }
-  let sql = `SELECT id, type, question, options, answer, explanation, category FROM quiz_questions`;
-  let params = [];
-  if (excludeIds.length > 0) {
-    sql += ` WHERE id NOT IN (${excludeIds.map((_, i) => `$${i+1}`).join(',')})`;
-    params = excludeIds;
-  }
-  sql += ` ORDER BY RANDOM() LIMIT 5`;
-  let questions = await db.all(sql, params);
-  if (questions.length < 5) {
-    questions = await db.all(`SELECT id, type, question, options, answer, explanation, category FROM quiz_questions ORDER BY RANDOM() LIMIT 5`);
-  }
+
   const quizId = uuidv4();
   const now = new Date().toISOString();
   await db.run(
@@ -108,26 +115,47 @@ router.get('/wrong-questions', async (req, res) => {
   res.json(wrongs.map(w => ({ ...w, options: JSON.parse(w.options) })));
 });
 
-// ==================== 填空每日5题 ====================
+// ==================== 填空每日5题（动态生成版） ====================
 router.get('/fill-daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
   let fillDaily = await db.get('SELECT * FROM fill_daily WHERE user_id = $1 AND date = $2', [userId, today]);
-  if (!fillDaily) {
-    const questions = await db.all('SELECT * FROM fill_questions ORDER BY RANDOM() LIMIT 5');
-    const fillId = uuidv4();
-    await db.run('INSERT INTO fill_daily (id, user_id, date, questions, completed, score) VALUES ($1, $2, $3, $4, $5, $6)',
-      [fillId, userId, today, JSON.stringify(questions), 0, 0]);
-    fillDaily = { id: fillId, questions: questions, completed: 0 };
-  } else {
+  if (fillDaily) {
     fillDaily.questions = JSON.parse(fillDaily.questions);
+    const hiddenQuestions = fillDaily.questions.map(q => ({
+      id: q.id,
+      sentence: q.sentence,
+      hint: q.hint && q.hint.length > 15 ? q.hint.substring(0, 15) + '...' : (q.hint || '根据上下文填空')
+    }));
+    return res.json({ questions: hiddenQuestions, completed: fillDaily.completed === 1 });
   }
-  const hiddenQuestions = fillDaily.questions.map(q => ({
-    id: q.id,
-    sentence: q.sentence,
-    hint: q.hint && q.hint.length > 15 ? q.hint.substring(0, 15) + '...' : (q.hint || '根据上下文填空')
-  }));
-  res.json({ questions: hiddenQuestions, completed: fillDaily.completed === 1 });
+
+  // 从填空题表中取5题，如果为空则从知识库动态生成
+  let questions = await db.all('SELECT * FROM fill_questions ORDER BY RANDOM() LIMIT 5');
+  if (!questions.length) {
+    const knowledge = await db.all(`SELECT id, title, content FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT 5`);
+    if (knowledge.length === 0) {
+      return res.status(404).json({ error: '暂无任何知识库数据，请先导入知识' });
+    }
+    questions = knowledge.map(k => {
+      let text = (k.content.length > 80 ? k.content.substring(0, 80) : k.content) || k.title;
+      const words = text.split(/[，,。？?！!、\s]+/).filter(w => w.length >= 2 && !/^\d+$/.test(w));
+      const target = words.length ? words[Math.floor(Math.random() * words.length)] : '政策';
+      const sentence = text.replace(new RegExp(target, 'g'), '______');
+      return {
+        id: `dyn_${k.id}`,
+        sentence: sentence,
+        correct_word: target,
+        hint: `提示：关于“${target}”`
+      };
+    });
+  }
+
+  const fillId = uuidv4();
+  await db.run('INSERT INTO fill_daily (id, user_id, date, questions, completed, score) VALUES ($1, $2, $3, $4, $5, $6)',
+    [fillId, userId, today, JSON.stringify(questions), 0, 0]);
+  const hiddenQuestions = questions.map(q => ({ id: q.id, sentence: q.sentence, hint: q.hint }));
+  res.json({ questions: hiddenQuestions, completed: false });
 });
 
 router.post('/fill-daily/submit', async (req, res) => {
@@ -294,8 +322,14 @@ router.get('/level/:levelId', async (req, res) => {
   const level = await db.get('SELECT * FROM policy_levels WHERE id = $1', [req.params.levelId]);
   if (!level) return res.status(404).json({ error: '关卡不存在' });
   const questionIds = JSON.parse(level.questions);
-  const placeholders = questionIds.map((_, i) => `$${i+1}`).join(',');
-  const questions = await db.all(`SELECT * FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
+  let questions = [];
+  if (questionIds && questionIds.length > 0) {
+    const placeholders = questionIds.map((_, i) => `$${i+1}`).join(',');
+    questions = await db.all(`SELECT * FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
+  }
+  if (questions.length === 0) {
+    return res.status(404).json({ error: '该关卡暂无题目，请联系管理员' });
+  }
   res.json(questions.map(q => ({ ...q, options: JSON.parse(q.options) })));
 });
 
@@ -446,30 +480,61 @@ router.post('/wrong-questions/clear', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛 ====================
+// ==================== 每周竞赛（动态生成版，修复空IN错误） ====================
 router.get('/weekly/current', async (req, res) => {
-  const now = new Date();
-  const day = now.getDay();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
-  weekStart.setHours(0,0,0,0);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23,59,59,999);
-  const startStr = weekStart.toISOString().slice(0,10);
-  const endStr = weekEnd.toISOString().slice(0,10);
-  let contest = await db.get('SELECT * FROM weekly_contest WHERE week_start = $1', [startStr]);
-  if (!contest) {
-    const questionIds = (await db.all(`SELECT id FROM quiz_questions ORDER BY RANDOM() LIMIT 10`)).map(q => q.id);
-    const contestId = uuidv4();
-    await db.run('INSERT INTO weekly_contest (id, week_start, week_end, questions, status) VALUES ($1, $2, $3, $4, $5)',
-      [contestId, startStr, endStr, JSON.stringify(questionIds), 'active']);
-    contest = { id: contestId, week_start: startStr, week_end: endStr, questions: JSON.stringify(questionIds), status: 'active' };
+  try {
+    const now = new Date();
+    const day = now.getDay();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
+    weekStart.setHours(0, 0, 0, 0);
+    const startStr = weekStart.toISOString().slice(0, 10);
+    let contest = await db.get('SELECT * FROM weekly_contest WHERE week_start = $1', [startStr]);
+    let questionIds = [];
+    let questions = [];
+    if (contest) {
+      questionIds = JSON.parse(contest.questions);
+      if (questionIds && questionIds.length > 0) {
+        const placeholders = questionIds.map((_, i) => `$${i+1}`).join(',');
+        questions = await db.all(`SELECT * FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
+      }
+    }
+    // 如果题库为空，则从知识库动态生成10道选择题
+    if (!questions.length) {
+      const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT 10`);
+      if (knowledge.length === 0) {
+        return res.status(404).json({ error: '暂无任何知识库数据，无法生成竞赛题目' });
+      }
+      questions = knowledge.map(k => {
+        const text = (k.content.length > 200 ? k.content.substring(0, 200) : k.content) || k.title;
+        const words = text.split(/[，,。？?！!、\s]+/).filter(w => w.length >= 2 && !/^\d+$/.test(w));
+        const correct = words.length ? words[0] : '政策';
+        const options = [correct, '其他选项A', '其他选项B', '其他选项C'].slice(0, 4);
+        return {
+          id: `dyn_${k.id}`,
+          type: 'choice',
+          question: `关于“${k.title}”，以下哪项描述最准确？`,
+          options: JSON.stringify(options),
+          answer: 0,
+          explanation: `参考知识：${text.substring(0, 100)}`,
+          category: k.type || '政策法规'
+        };
+      });
+      // 将动态生成的题目存入 weekly_contest（便于后续直接使用）
+      const contestId = uuidv4();
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const endStr = weekEnd.toISOString().slice(0, 10);
+      const newQuestionIds = questions.map(q => q.id);
+      await db.run('INSERT INTO weekly_contest (id, week_start, week_end, questions, status) VALUES ($1, $2, $3, $4, $5)',
+        [contestId, startStr, endStr, JSON.stringify(newQuestionIds), 'active']);
+      contest = { id: contestId };
+    }
+    res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })) });
+  } catch (err) {
+    console.error('weekly/current error:', err);
+    res.status(500).json({ error: '生成竞赛题目失败', detail: err.message });
   }
-  const questionIds = JSON.parse(contest.questions);
-  const placeholders = questionIds.map((_, i) => `$${i+1}`).join(',');
-  const questions = await db.all(`SELECT * FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
-  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })) });
 });
 
 router.post('/weekly/submit', async (req, res) => {
@@ -512,9 +577,9 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
 // ==================== 刮刮乐 ====================
 router.get('/scratch/generate', async (req, res) => {
   const userId = req.user.userId;
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Date().toISOString().slice(0, 10);
   const count = (await db.get('SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2', [userId, today])).c;
-  if (count >= 5) return res.status(429).json({ error: '今日刮刮卡已达上限' });
+  if (count >= 100) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
   const question = await db.get(`SELECT id, question, options, answer FROM quiz_questions ORDER BY RANDOM() LIMIT 1`);
   if (!question) return res.status(404).json({ error: '无题目' });
   const cardId = uuidv4();
