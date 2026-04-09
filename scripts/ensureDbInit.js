@@ -12,7 +12,6 @@ async function tableExists(tableName) {
 
 async function ensureMissingTables() {
   console.log('🔧 检查并创建缺失的表...');
-
   await db.run(`
     CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
@@ -27,7 +26,6 @@ async function ensureMissingTables() {
     )
   `);
   console.log('✅ weekly_contest_attempts 表已确保存在');
-
   await db.run(`
     DELETE FROM daily_quiz_questions 
     WHERE question_id NOT IN (SELECT id FROM quiz_questions)
@@ -47,11 +45,8 @@ async function fixQuizQuestions() {
 }
 
 async function fixLevelQuestions() {
-  // 强制重建关联：删除所有现有关联，重新生成
   console.log('⚠️ 强制重建游戏关卡题目关联...');
   await db.run(`DELETE FROM game_level_questions`);
-  // 确保 quiz_questions 有 theme 和 difficulty
-  await db.run(`UPDATE quiz_questions SET theme = category, difficulty = 1 WHERE theme IS NULL`);
   const initGameData = require('./initGameData');
   await initGameData();
   console.log('✅ 游戏关卡题目关联重建完成');
@@ -61,17 +56,13 @@ async function fixLevelQuestions() {
   console.log('🔍 检查数据库初始化状态...');
   let retries = 5;
   let initialized = false;
-
   while (retries > 0 && !initialized) {
     try {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
-
       await ensureMissingTables();
-
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
-
       if (!themesExist || !quizExist) {
         console.log('⚠️ 缺失关键表，执行完整初始化...');
         const initDb = require('./initDb');
@@ -80,10 +71,8 @@ async function fixLevelQuestions() {
         await importKnowledge();
       } else {
         await fixQuizQuestions();
-        // 强制重建关卡关联（不再判断是否为空）
         await fixLevelQuestions();
       }
-
       console.log('✅ 数据库准备就绪');
       initialized = true;
       break;
