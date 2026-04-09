@@ -52,31 +52,60 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件（用于每日一练、每周竞赛） ====================
-function renderFullscreenQuiz(config) {
+// ==================== 通用答题组件（支持每日一练、每周竞赛、趣味闯关） ====================
+/**
+ * 通用全屏答题组件 - 提交后无论对错都显示下一题按钮
+ * @param {Object} config
+ */
+function renderGenericQuiz(config) {
   const {
     questions,
     currentIndex,
     userAnswers,
-    userScores = [],
-    totalScore = 0,
-    title = '答题闯关',
+    userScores,
+    totalScore,
+    title,
     onSubmit,
     onFinish,
     onBack,
-    questionPoints = 10,
-    showPrev = true
+    extraHeader = null, // 额外头部内容（如倒计时、生命值）
+    showPrev = true,
+    showSubmit = true,
+    showFeedback = true
   } = config;
 
   const dynamicContent = document.getElementById('dynamicContent');
   const q = questions[currentIndex];
-  const isChoice = q.type === 'choice';
+  const isChoice = q.type === 'choice' || q.question_type === 'choice' || q.question_type === 'judge';
+  const isSort = q.question_type === 'sort';
   const isLast = currentIndex === questions.length - 1;
   const isFirst = currentIndex === 0;
+  const alreadyAnswered = userAnswers[currentIndex] !== undefined && userAnswers[currentIndex] !== null;
   const alreadyCorrect = userScores[currentIndex] === true;
 
   let optionsHtml = '';
-  if (isChoice) {
+  if (isSort) {
+    // 排序题渲染
+    const items = q.options.map((opt, idx) => ({ text: opt, originalIdx: idx }));
+    const shuffled = [...items];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    optionsHtml = `
+      <div class="sort-options" id="sortContainer">
+        ${shuffled.map((item, idx) => `
+          <div class="sort-item" data-idx="${item.originalIdx}" data-pos="${idx}">
+            ${escapeHtml(item.text)}
+          </div>
+        `).join('')}
+      </div>
+      <div class="sort-controls">
+        <button id="sortUpBtn" class="summary-btn">↑ 上移</button>
+        <button id="sortDownBtn" class="summary-btn">↓ 下移</button>
+      </div>
+    `;
+  } else {
     optionsHtml = `
       <div class="quiz-options-list">
         ${q.options.map((opt, idx) => `
@@ -85,13 +114,6 @@ function renderFullscreenQuiz(config) {
             ${escapeHtml(opt)}
           </div>
         `).join('')}
-      </div>
-    `;
-  } else {
-    optionsHtml = `
-      <div class="quiz-fill-area">
-        <div class="fill-hint">💡 ${escapeHtml(q.hint || '根据上下文填空')}</div>
-        <input type="text" id="quizFillInput" class="quiz-fill-input" placeholder="填写答案" value="${escapeHtml(userAnswers[currentIndex] || '')}">
       </div>
     `;
   }
@@ -103,6 +125,7 @@ function renderFullscreenQuiz(config) {
         <div class="quiz-title">${escapeHtml(title)}</div>
         <div class="quiz-progress">第 ${currentIndex+1} / ${questions.length} 题</div>
         <div class="quiz-score">得分: ${totalScore}</div>
+        ${extraHeader ? extraHeader : ''}
       </div>
       <div class="quiz-body">
         <div class="question-text">${escapeHtml(q.question)}</div>
@@ -110,11 +133,11 @@ function renderFullscreenQuiz(config) {
         <div id="quizFeedbackArea" class="quiz-feedback-area"></div>
       </div>
       <div class="quiz-footer">
-        ${!alreadyCorrect ? `<button id="quizSubmitBtn" class="submit-btn">提交答案</button>` : ''}
+        ${showSubmit && !alreadyAnswered ? `<button id="quizSubmitBtn" class="submit-btn">提交答案</button>` : ''}
         <div style="display: flex; gap: 12px; justify-content: center; margin-top: 12px;">
           ${showPrev && !isFirst ? `<button id="quizPrevBtn" class="summary-btn">← 上一题</button>` : ''}
-          ${alreadyCorrect && !isLast ? `<button id="quizNextBtn" class="submit-btn">下一题 →</button>` : ''}
-          ${alreadyCorrect && isLast ? `<button id="quizFinishBtn" class="submit-btn success">完成闯关</button>` : ''}
+          ${alreadyAnswered && !isLast ? `<button id="quizNextBtn" class="submit-btn">下一题 →</button>` : ''}
+          ${alreadyAnswered && isLast ? `<button id="quizFinishBtn" class="submit-btn success">完成闯关</button>` : ''}
         </div>
       </div>
     </div>
@@ -125,51 +148,113 @@ function renderFullscreenQuiz(config) {
     else renderGameView();
   };
 
-  if (isChoice) {
+  // 选择题/判断题选项点击
+  if (!isSort) {
     const opts = document.querySelectorAll('.quiz-option-item');
     opts.forEach(opt => {
       opt.onclick = () => {
-        if (alreadyCorrect) return;
+        if (alreadyAnswered) return;
         const selected = parseInt(opt.dataset.opt);
         userAnswers[currentIndex] = selected;
         opts.forEach(o => o.classList.remove('selected'));
         opt.classList.add('selected');
       };
     });
+  } else {
+    // 排序题交互
+    let sortItems = document.querySelectorAll('.sort-item');
+    let selectedSortItem = null;
+    function updateSortOrder() {
+      const container = document.getElementById('sortContainer');
+      const items = Array.from(container.children);
+      items.sort((a, b) => parseInt(a.dataset.pos) - parseInt(b.dataset.pos));
+      items.forEach(item => container.appendChild(item));
+      container.querySelectorAll('.sort-item').forEach((item, idx) => {
+        item.dataset.pos = idx;
+      });
+    }
+    sortItems.forEach(item => {
+      item.onclick = () => {
+        if (alreadyAnswered) return;
+        sortItems.forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        selectedSortItem = item;
+      };
+    });
+    const sortUpBtn = document.getElementById('sortUpBtn');
+    const sortDownBtn = document.getElementById('sortDownBtn');
+    if (sortUpBtn) {
+      sortUpBtn.onclick = () => {
+        if (!selectedSortItem || alreadyAnswered) return;
+        const pos = parseInt(selectedSortItem.dataset.pos);
+        if (pos > 0) {
+          const prev = document.querySelector(`.sort-item[data-pos="${pos-1}"]`);
+          if (prev) {
+            prev.dataset.pos = pos;
+            selectedSortItem.dataset.pos = pos-1;
+            updateSortOrder();
+            selectedSortItem = document.querySelector(`.sort-item[data-pos="${pos-1}"]`);
+            selectedSortItem.classList.add('selected');
+          }
+        }
+      };
+    }
+    if (sortDownBtn) {
+      sortDownBtn.onclick = () => {
+        if (!selectedSortItem || alreadyAnswered) return;
+        const pos = parseInt(selectedSortItem.dataset.pos);
+        const max = sortItems.length - 1;
+        if (pos < max) {
+          const next = document.querySelector(`.sort-item[data-pos="${pos+1}"]`);
+          if (next) {
+            next.dataset.pos = pos;
+            selectedSortItem.dataset.pos = pos+1;
+            updateSortOrder();
+            selectedSortItem = document.querySelector(`.sort-item[data-pos="${pos+1}"]`);
+            selectedSortItem.classList.add('selected');
+          }
+        }
+      };
+    }
   }
 
+  // 提交答案
   const submitBtn = document.getElementById('quizSubmitBtn');
   if (submitBtn) {
     submitBtn.onclick = async () => {
       let userAnswer;
-      if (isChoice) {
+      if (isSort) {
+        const items = Array.from(document.querySelectorAll('.sort-item'));
+        userAnswer = items.map(item => parseInt(item.dataset.idx));
+      } else {
         if (userAnswers[currentIndex] === undefined || userAnswers[currentIndex] === null) {
           alert('请选择答案');
           return;
         }
         userAnswer = userAnswers[currentIndex];
-      } else {
-        const input = document.getElementById('quizFillInput');
-        userAnswer = input.value.trim();
-        if (!userAnswer) { alert('请填写答案'); return; }
-        userAnswers[currentIndex] = userAnswer;
       }
       const result = await onSubmit(currentIndex, userAnswer);
       if (result) {
-        const { correct, correctLabel, explanation } = result;
+        const { correct, correctLabel, explanation, pointsGain, livesRemaining } = result;
         const feedbackDiv = document.getElementById('quizFeedbackArea');
         if (correct) {
           if (!userScores[currentIndex]) {
             userScores[currentIndex] = true;
-            config.totalScore = (config.totalScore || 0) + questionPoints;
+            config.totalScore = (config.totalScore || 0) + (pointsGain || 10);
           }
-          feedbackDiv.innerHTML = `<div class="feedback-correct">✅ 回答正确！${explanation ? '<br>解析：'+escapeHtml(explanation) : ''}</div>`;
+          feedbackDiv.innerHTML = `<div class="feedback-correct">✅ 回答正确！${pointsGain ? ` +${pointsGain} 积分` : ''}<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
           playSound('complete');
         } else {
           feedbackDiv.innerHTML = `<div class="feedback-wrong">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
           playSound('error');
+          if (livesRemaining !== undefined && livesRemaining <= 0) {
+            alert('💀 生命值归零，闯关失败！');
+            onFinish(config.totalScore);
+            return;
+          }
         }
-        if (isChoice) {
+        // 高亮正确/错误选项（选择题/判断题）
+        if (!isSort) {
           const opts = document.querySelectorAll('.quiz-option-item');
           const correctIndex = q.answer;
           opts.forEach(opt => {
@@ -177,8 +262,13 @@ function renderFullscreenQuiz(config) {
             if (optVal === correctIndex) opt.classList.add('correct');
             if (optVal === userAnswer && !correct) opt.classList.add('wrong');
           });
+        } else {
+          const correctOrder = q.answer;
+          const correctOrderText = correctOrder.map(idx => q.options[idx]).join(' → ');
+          feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctOrderText)}</div>`;
         }
-        renderFullscreenQuiz({
+        // 重新渲染以显示下一题按钮（但保留已提交的答案）
+        renderGenericQuiz({
           ...config,
           currentIndex,
           userAnswers,
@@ -191,7 +281,7 @@ function renderFullscreenQuiz(config) {
 
   const prevBtn = document.getElementById('quizPrevBtn');
   if (prevBtn) prevBtn.onclick = () => {
-    renderFullscreenQuiz({
+    renderGenericQuiz({
       ...config,
       currentIndex: currentIndex - 1,
       userAnswers,
@@ -202,7 +292,7 @@ function renderFullscreenQuiz(config) {
 
   const nextBtn = document.getElementById('quizNextBtn');
   if (nextBtn) nextBtn.onclick = () => {
-    renderFullscreenQuiz({
+    renderGenericQuiz({
       ...config,
       currentIndex: currentIndex + 1,
       userAnswers,
@@ -218,7 +308,7 @@ function renderFullscreenQuiz(config) {
   };
 }
 
-// ==================== 每日一练全屏实现 ====================
+// ==================== 每日一练 ====================
 async function startDailyQuiz() {
   try {
     const res = await fetchWithAuth('/api/game/daily');
@@ -282,7 +372,7 @@ async function startDailyQuiz() {
       renderGameView();
     };
 
-    renderFullscreenQuiz({
+    renderGenericQuiz({
       questions,
       currentIndex: 0,
       userAnswers,
@@ -292,150 +382,14 @@ async function startDailyQuiz() {
       onSubmit,
       onFinish,
       onBack: () => renderGameView(),
-      questionPoints: 10,
       showPrev: true
     });
   } catch(e) {
     alert('加载每日练习失败');
   }
 }
-// ==================== 每周竞赛全屏组件（带倒计时） ====================
-function renderContestFullscreen(config) {
-  const {
-    questions,
-    userAnswers,
-    userScores,
-    totalScore,
-    title,
-    onSubmit,
-    onFinish,
-    onBack,
-    contestStartTime,
-    contestTotalTime
-  } = config;
-  let currentIndex = 0;
-  let interval = null;
 
-  function updateTimerDisplay() {
-    const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
-    const remaining = Math.max(0, contestTotalTime - elapsed);
-    const minutes = Math.floor(remaining / 60);
-    const seconds = remaining % 60;
-    const timerSpan = document.getElementById('contestTimer');
-    if (timerSpan) timerSpan.textContent = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
-    if (remaining <= 0) {
-      if (interval) clearInterval(interval);
-      alert('时间到！自动提交竞赛');
-      onFinish(totalScore);
-    }
-  }
-
-  function renderQuestion(index) {
-    const q = questions[index];
-    const isLast = index === questions.length - 1;
-    const isFirst = index === 0;
-    const alreadyCorrect = userScores[index] === true;
-
-    const dynamicContent = document.getElementById('dynamicContent');
-    dynamicContent.innerHTML = `
-      <div class="fullscreen-quiz">
-        <div class="quiz-header">
-          <button class="back-btn" id="quizBackBtn">← 返回</button>
-          <div class="quiz-title">${escapeHtml(title)}</div>
-          <div class="quiz-progress">第 ${index+1} / ${questions.length} 题</div>
-          <div class="quiz-score">得分: ${totalScore}</div>
-          <div class="contest-timer" id="contestTimer">--:--</div>
-        </div>
-        <div class="quiz-body">
-          <div class="question-text">${escapeHtml(q.question)}</div>
-          <div class="quiz-options-list">
-            ${q.options.map((opt, idx) => `
-              <div class="quiz-option-item ${userAnswers[index] === idx ? 'selected' : ''}" data-opt="${idx}">
-                <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
-                ${escapeHtml(opt)}
-              </div>
-            `).join('')}
-          </div>
-          <div id="quizFeedbackArea" class="quiz-feedback-area"></div>
-        </div>
-        <div class="quiz-footer">
-          ${!alreadyCorrect ? `<button id="quizSubmitBtn" class="submit-btn">提交答案</button>` : ''}
-          <div style="display: flex; gap: 12px; justify-content: center; margin-top: 12px;">
-            ${!isFirst ? `<button id="quizPrevBtn" class="summary-btn">← 上一题</button>` : ''}
-            ${alreadyCorrect && !isLast ? `<button id="quizNextBtn" class="submit-btn">下一题 →</button>` : ''}
-            ${alreadyCorrect && isLast ? `<button id="quizFinishBtn" class="submit-btn success">完成竞赛</button>` : ''}
-          </div>
-        </div>
-      </div>
-    `;
-
-    document.getElementById('quizBackBtn').onclick = () => {
-      if (interval) clearInterval(interval);
-      if (onBack) onBack();
-      else renderGameView();
-    };
-
-    const opts = document.querySelectorAll('.quiz-option-item');
-    opts.forEach(opt => {
-      opt.onclick = () => {
-        if (alreadyCorrect) return;
-        const selected = parseInt(opt.dataset.opt);
-        userAnswers[index] = selected;
-        opts.forEach(o => o.classList.remove('selected'));
-        opt.classList.add('selected');
-      };
-    });
-
-    const submitBtn = document.getElementById('quizSubmitBtn');
-    if (submitBtn) {
-      submitBtn.onclick = async () => {
-        if (userAnswers[index] === undefined || userAnswers[index] === null) {
-          alert('请选择答案');
-          return;
-        }
-        const result = await onSubmit(index, userAnswers[index]);
-        if (result) {
-          const { correct, correctLabel, explanation } = result;
-          const feedbackDiv = document.getElementById('quizFeedbackArea');
-          if (correct) {
-            if (!userScores[index]) userScores[index] = true;
-            config.totalScore = (config.totalScore || 0) + 10;
-            feedbackDiv.innerHTML = `<div class="feedback-correct">✅ 回答正确！<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
-            playSound('complete');
-          } else {
-            feedbackDiv.innerHTML = `<div class="feedback-wrong">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
-            playSound('error');
-          }
-          const correctIndex = q.answer;
-          opts.forEach(opt => {
-            const optVal = parseInt(opt.dataset.opt);
-            if (optVal === correctIndex) opt.classList.add('correct');
-            if (optVal === userAnswers[index] && !correct) opt.classList.add('wrong');
-          });
-          renderQuestion(index);
-        }
-      };
-    }
-
-    const prevBtn = document.getElementById('quizPrevBtn');
-    if (prevBtn) prevBtn.onclick = () => renderQuestion(index - 1);
-
-    const nextBtn = document.getElementById('quizNextBtn');
-    if (nextBtn) nextBtn.onclick = () => renderQuestion(index + 1);
-
-    const finishBtn = document.getElementById('quizFinishBtn');
-    if (finishBtn) finishBtn.onclick = () => {
-      if (interval) clearInterval(interval);
-      onFinish(totalScore);
-    };
-  }
-
-  if (interval) clearInterval(interval);
-  updateTimerDisplay();
-  interval = setInterval(updateTimerDisplay, 1000);
-  renderQuestion(0);
-}
-
+// ==================== 每周竞赛（带倒计时） ====================
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
@@ -496,330 +450,43 @@ async function startWeeklyContest() {
       renderGameView();
     };
 
-    renderContestFullscreen({
+    // 自定义渲染带倒计时
+    let interval = null;
+    function updateTimerDisplay() {
+      const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
+      const remaining = Math.max(0, contestTotalTime - elapsed);
+      const minutes = Math.floor(remaining / 60);
+      const seconds = remaining % 60;
+      const timerSpan = document.getElementById('contestTimer');
+      if (timerSpan) timerSpan.textContent = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+      if (remaining <= 0 && interval) {
+        clearInterval(interval);
+        alert('时间到！自动提交竞赛');
+        onFinish(totalScore);
+      }
+    }
+    interval = setInterval(updateTimerDisplay, 1000);
+    updateTimerDisplay();
+
+    renderGenericQuiz({
       questions: currentContestQuestions,
+      currentIndex: 0,
       userAnswers,
       userScores,
       totalScore,
       title: `每周竞赛 (第${currentAttemptNumber}/3次)`,
       onSubmit,
       onFinish,
-      onBack: () => renderGameView(),
-      contestStartTime,
-      contestTotalTime
+      onBack: () => { if (interval) clearInterval(interval); renderGameView(); },
+      extraHeader: `<div class="contest-timer" id="contestTimer">02:00</div>`,
+      showPrev: true
     });
   } catch(e) {
     alert('加载竞赛失败');
   }
 }
 
-// ==================== 趣味闯关全屏组件（支持判断、排序、限时模式） ====================
-function renderFunFullscreen(config) {
-  const {
-    questions,
-    userAnswers,
-    userScores,
-    totalScore,
-    lives,
-    title,
-    onSubmit,
-    onFinish,
-    onBack,
-    eventActive,
-    eventUsed,
-    setEventUsed,
-    timingMode,
-    difficulty
-  } = config;
-  let currentIndex = 0;
-  let timerInterval = null;
-  let timeLeft = 15;
-
-  function clearTimer() {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-    }
-  }
-
-  function startTimer(index, onTimeout) {
-    if (!timingMode) return;
-    clearTimer();
-    timeLeft = 15;
-    const timerDisplay = document.getElementById('questionTimer');
-    if (timerDisplay) timerDisplay.textContent = `⏱️ ${timeLeft}s`;
-    timerInterval = setInterval(() => {
-      if (timeLeft <= 1) {
-        clearTimer();
-        onTimeout(index);
-      } else {
-        timeLeft--;
-        const timerSpan = document.getElementById('questionTimer');
-        if (timerSpan) timerSpan.textContent = `⏱️ ${timeLeft}s`;
-      }
-    }, 1000);
-  }
-
-  function renderQuestion(index) {
-    clearTimer();
-    const q = questions[index];
-    const isLast = index === questions.length - 1;
-    const isFirst = index === 0;
-    const alreadyCorrect = userScores[index] === true;
-    const currentLives = lives;
-
-    let optionsHtml = '';
-    if (q.question_type === 'sort') {
-      const items = q.options.map((opt, idx) => ({ text: opt, originalIdx: idx }));
-      const shuffled = [...items];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      optionsHtml = `
-        <div class="sort-options" id="sortContainer">
-          ${shuffled.map((item, idx) => `
-            <div class="sort-item" data-idx="${item.originalIdx}" data-pos="${idx}">
-              ${escapeHtml(item.text)}
-            </div>
-          `).join('')}
-        </div>
-        <div class="sort-controls">
-          <button id="sortUpBtn" class="summary-btn">↑ 上移</button>
-          <button id="sortDownBtn" class="summary-btn">↓ 下移</button>
-        </div>
-      `;
-    } else {
-      optionsHtml = `
-        <div class="quiz-options-list">
-          ${q.options.map((opt, idx) => `
-            <div class="quiz-option-item ${userAnswers[index] === idx ? 'selected' : ''}" data-opt="${idx}">
-              <span class="option-prefix">${String.fromCharCode(65+idx)}.</span>
-              ${escapeHtml(opt)}
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    let eventHtml = '';
-    if (eventActive && !eventUsed && index === 0) {
-      let eventText = '';
-      if (eventActive === 'double') eventText = '🎁 双倍积分事件！本题答对得双倍积分！';
-      else if (eventActive === 'hint') eventText = '💡 提示事件：可免费获得一次提示（点击提示按钮）';
-      else if (eventActive === 'skip') eventText = '⏭️ 免答事件：可免费跳过本题（不扣生命）';
-      eventHtml = `<div class="fun-event">${eventText}</div>`;
-    }
-
-    const dynamicContent = document.getElementById('dynamicContent');
-    dynamicContent.innerHTML = `
-      <div class="fullscreen-quiz">
-        <div class="quiz-header">
-          <button class="back-btn" id="quizBackBtn">← 返回</button>
-          <div class="quiz-title">${escapeHtml(title)}</div>
-          <div class="quiz-progress">第 ${index+1} / ${questions.length} 题</div>
-          <div class="quiz-score">得分: ${totalScore}</div>
-          <div class="fun-lives">❤️ ${lives}</div>
-          ${timingMode ? `<div class="question-timer" id="questionTimer">⏱️ 15s</div>` : ''}
-        </div>
-        <div class="quiz-body">
-          ${eventHtml}
-          <div class="question-text">${escapeHtml(q.question)}</div>
-          ${optionsHtml}
-          <div id="quizFeedbackArea" class="quiz-feedback-area"></div>
-        </div>
-        <div class="quiz-footer">
-          ${!alreadyCorrect ? `<button id="quizSubmitBtn" class="submit-btn">提交答案</button>` : ''}
-          <div style="display: flex; gap: 12px; justify-content: center; margin-top: 12px;">
-            ${!isFirst ? `<button id="quizPrevBtn" class="summary-btn">← 上一题</button>` : ''}
-            ${alreadyCorrect && !isLast ? `<button id="quizNextBtn" class="submit-btn">下一题 →</button>` : ''}
-            ${alreadyCorrect && isLast ? `<button id="quizFinishBtn" class="submit-btn success">完成闯关</button>` : ''}
-          </div>
-          ${eventActive === 'hint' && !eventUsed && !alreadyCorrect ? `<button id="hintBtn" class="summary-btn" style="margin-top: 8px;">💡 提示</button>` : ''}
-          ${eventActive === 'skip' && !eventUsed && !alreadyCorrect ? `<button id="skipBtn" class="summary-btn" style="margin-top: 8px;">⏭️ 跳过</button>` : ''}
-        </div>
-      </div>
-    `;
-
-    document.getElementById('quizBackBtn').onclick = () => {
-      clearTimer();
-      if (onBack) onBack();
-      else renderGameView();
-    };
-
-    if (q.question_type !== 'sort') {
-      const opts = document.querySelectorAll('.quiz-option-item');
-      opts.forEach(opt => {
-        opt.onclick = () => {
-          if (alreadyCorrect) return;
-          const selected = parseInt(opt.dataset.opt);
-          userAnswers[index] = selected;
-          opts.forEach(o => o.classList.remove('selected'));
-          opt.classList.add('selected');
-        };
-      });
-    } else {
-      let sortItems = document.querySelectorAll('.sort-item');
-      function updateSortOrder() {
-        const container = document.getElementById('sortContainer');
-        const items = Array.from(container.children);
-        items.sort((a, b) => parseInt(a.dataset.pos) - parseInt(b.dataset.pos));
-        items.forEach(item => container.appendChild(item));
-        container.querySelectorAll('.sort-item').forEach((item, idx) => {
-          item.dataset.pos = idx;
-        });
-      }
-      const sortUpBtn = document.getElementById('sortUpBtn');
-      const sortDownBtn = document.getElementById('sortDownBtn');
-      let selectedSortItem = null;
-      sortItems.forEach(item => {
-        item.onclick = () => {
-          if (alreadyCorrect) return;
-          sortItems.forEach(i => i.classList.remove('selected'));
-          item.classList.add('selected');
-          selectedSortItem = item;
-        };
-      });
-      if (sortUpBtn) {
-        sortUpBtn.onclick = () => {
-          if (!selectedSortItem || alreadyCorrect) return;
-          const pos = parseInt(selectedSortItem.dataset.pos);
-          if (pos > 0) {
-            const prev = document.querySelector(`.sort-item[data-pos="${pos-1}"]`);
-            if (prev) {
-              prev.dataset.pos = pos;
-              selectedSortItem.dataset.pos = pos-1;
-              updateSortOrder();
-              selectedSortItem = document.querySelector(`.sort-item[data-pos="${pos-1}"]`);
-              selectedSortItem.classList.add('selected');
-            }
-          }
-        };
-      }
-      if (sortDownBtn) {
-        sortDownBtn.onclick = () => {
-          if (!selectedSortItem || alreadyCorrect) return;
-          const pos = parseInt(selectedSortItem.dataset.pos);
-          const max = sortItems.length - 1;
-          if (pos < max) {
-            const next = document.querySelector(`.sort-item[data-pos="${pos+1}"]`);
-            if (next) {
-              next.dataset.pos = pos;
-              selectedSortItem.dataset.pos = pos+1;
-              updateSortOrder();
-              selectedSortItem = document.querySelector(`.sort-item[data-pos="${pos+1}"]`);
-              selectedSortItem.classList.add('selected');
-            }
-          }
-        };
-      }
-    }
-
-    const submitBtn = document.getElementById('quizSubmitBtn');
-    if (submitBtn) {
-      submitBtn.onclick = async () => {
-        clearTimer();
-        let userAnswer;
-        if (q.question_type === 'sort') {
-          const items = Array.from(document.querySelectorAll('.sort-item'));
-          userAnswer = items.map(item => parseInt(item.dataset.idx));
-        } else {
-          if (userAnswers[index] === undefined || userAnswers[index] === null) {
-            alert('请选择答案');
-            startTimer(index, () => submitBtn.click());
-            return;
-          }
-          userAnswer = userAnswers[index];
-        }
-        const result = await onSubmit(index, userAnswer);
-        if (result) {
-          const { correct, correctLabel, explanation, pointsGain, livesRemaining } = result;
-          const feedbackDiv = document.getElementById('quizFeedbackArea');
-          if (correct) {
-            if (!userScores[index]) {
-              userScores[index] = true;
-              config.totalScore = (config.totalScore || 0) + pointsGain;
-            }
-            feedbackDiv.innerHTML = `<div class="feedback-correct">✅ 回答正确！ +${pointsGain} 积分<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
-            playSound('complete');
-          } else {
-            config.lives = livesRemaining;
-            feedbackDiv.innerHTML = `<div class="feedback-wrong">❌ 回答错误！正确答案是：${escapeHtml(correctLabel)}<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
-            playSound('error');
-            if (livesRemaining <= 0) {
-              alert('💀 生命值归零，闯关失败！');
-              onFinish(config.totalScore);
-              return;
-            }
-          }
-          if (q.question_type !== 'sort') {
-            const opts = document.querySelectorAll('.quiz-option-item');
-            const correctIndex = q.answer;
-            opts.forEach(opt => {
-              const optVal = parseInt(opt.dataset.opt);
-              if (optVal === correctIndex) opt.classList.add('correct');
-              if (optVal === userAnswer && !correct) opt.classList.add('wrong');
-            });
-          } else {
-            const correctOrder = q.answer;
-            const correctOrderText = correctOrder.map(idx => q.options[idx]).join(' → ');
-            feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctOrderText)}</div>`;
-          }
-          renderQuestion(index);
-        }
-      };
-    }
-
-    const prevBtn = document.getElementById('quizPrevBtn');
-    if (prevBtn) prevBtn.onclick = () => { clearTimer(); renderQuestion(index - 1); };
-    const nextBtn = document.getElementById('quizNextBtn');
-    if (nextBtn) nextBtn.onclick = () => { clearTimer(); renderQuestion(index + 1); };
-    const finishBtn = document.getElementById('quizFinishBtn');
-    if (finishBtn) finishBtn.onclick = () => { clearTimer(); onFinish(config.totalScore); };
-
-    const hintBtn = document.getElementById('hintBtn');
-    if (hintBtn) {
-      hintBtn.onclick = () => {
-        const correctAnswer = q.question_type === 'sort'
-          ? q.answer.map(idx => q.options[idx]).join(' → ')
-          : formatAnswerLabel(q, q.answer);
-        alert(`💡 提示：正确答案是 "${correctAnswer}"`);
-        if (setEventUsed) setEventUsed(true);
-        hintBtn.disabled = true;
-      };
-    }
-    const skipBtn = document.getElementById('skipBtn');
-    if (skipBtn) {
-      skipBtn.onclick = () => {
-        if (setEventUsed) setEventUsed(true);
-        userScores[index] = false;
-        userAnswers[index] = null;
-        if (index + 1 < questions.length) renderQuestion(index + 1);
-        else onFinish(config.totalScore);
-      };
-    }
-
-    if (timingMode && !alreadyCorrect) {
-      startTimer(index, (idx) => {
-        alert('⏰ 时间到！本题自动判错');
-        onSubmit(idx, null).then(result => {
-          if (result && !result.correct) {
-            config.lives = result.livesRemaining;
-            if (result.livesRemaining <= 0) {
-              alert('💀 生命值归零，闯关失败！');
-              onFinish(config.totalScore);
-              return;
-            }
-            renderQuestion(idx);
-          }
-        });
-      });
-    }
-  }
-
-  renderQuestion(0);
-}
-// ==================== 趣味闯关启动函数 ====================
+// ==================== 趣味闯关 ====================
 async function showFunLevelsModal() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -947,21 +614,112 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     renderGameView();
   };
 
-  renderFunFullscreen({
+  // 渲染趣味闯关，带生命值和限时模式
+  let timerInterval = null;
+  let timeLeft = 15;
+  function updateTimerDisplay() {
+    if (!timingMode) return;
+    const timerSpan = document.getElementById('questionTimer');
+    if (timerSpan) timerSpan.textContent = `⏱️ ${timeLeft}s`;
+  }
+  function startTimer(index, onTimeout) {
+    if (!timingMode) return;
+    if (timerInterval) clearInterval(timerInterval);
+    timeLeft = 15;
+    updateTimerDisplay();
+    timerInterval = setInterval(() => {
+      if (timeLeft <= 1) {
+        clearInterval(timerInterval);
+        onTimeout(index);
+      } else {
+        timeLeft--;
+        updateTimerDisplay();
+      }
+    }, 1000);
+  }
+  function clearTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+  }
+
+  // 包装渲染函数以支持限时模式
+  const customRender = (cfg) => {
+    const extra = `
+      <div class="fun-lives">❤️ ${lives}</div>
+      ${timingMode ? `<div class="question-timer" id="questionTimer">⏱️ 15s</div>` : ''}
+      ${eventActive && !eventUsed && cfg.currentIndex === 0 ? `<div class="fun-event">${eventActive === 'double' ? '🎁 双倍积分事件！' : (eventActive === 'hint' ? '💡 提示事件！' : '⏭️ 免答事件！')}</div>` : ''}
+    `;
+    renderGenericQuiz({
+      ...cfg,
+      extraHeader: extra,
+      onSubmit: async (idx, ans) => {
+        clearTimer();
+        const result = await onSubmit(idx, ans);
+        return result;
+      }
+    });
+    // 绑定提示/跳过按钮（事件已由通用组件处理，但需要额外处理）
+    if (eventActive === 'hint' && !eventUsed && !userAnswers[cfg.currentIndex]) {
+      setTimeout(() => {
+        const hintBtn = document.getElementById('hintBtn');
+        if (hintBtn) {
+          hintBtn.onclick = () => {
+            const correctAnswer = questions[cfg.currentIndex].question_type === 'sort'
+              ? questions[cfg.currentIndex].answer.map(idx => questions[cfg.currentIndex].options[idx]).join(' → ')
+              : formatAnswerLabel(questions[cfg.currentIndex], questions[cfg.currentIndex].answer);
+            alert(`💡 提示：正确答案是 "${correctAnswer}"`);
+            eventUsed = true;
+            hintBtn.disabled = true;
+          };
+        }
+      }, 100);
+    }
+    if (eventActive === 'skip' && !eventUsed && !userAnswers[cfg.currentIndex]) {
+      setTimeout(() => {
+        const skipBtn = document.getElementById('skipBtn');
+        if (skipBtn) {
+          skipBtn.onclick = () => {
+            eventUsed = true;
+            // 跳过本题：标记为已答但不扣分，不得分，直接进入下一题
+            userScores[cfg.currentIndex] = false;
+            userAnswers[cfg.currentIndex] = null;
+            if (cfg.currentIndex + 1 < questions.length) {
+              customRender({ ...cfg, currentIndex: cfg.currentIndex + 1 });
+            } else {
+              onFinish(totalScore);
+            }
+          };
+        }
+      }, 100);
+    }
+    if (timingMode && !userAnswers[cfg.currentIndex]) {
+      startTimer(cfg.currentIndex, (idx) => {
+        alert('⏰ 时间到！本题自动判错');
+        onSubmit(idx, null).then(result => {
+          if (result && !result.correct) {
+            lives = result.livesRemaining;
+            if (lives <= 0) {
+              alert('💀 生命值归零，闯关失败！');
+              onFinish(totalScore);
+              return;
+            }
+            customRender({ ...cfg, currentIndex: idx });
+          }
+        });
+      });
+    }
+  };
+
+  customRender({
     questions,
+    currentIndex: 0,
     userAnswers,
     userScores,
     totalScore,
-    lives,
     title: `趣味闯关 · ${theme} · ${difficulty === 'easy' ? '简单' : difficulty === 'medium' ? '中等' : '困难'}`,
     onSubmit,
     onFinish,
-    onBack: () => renderGameView(),
-    eventActive,
-    eventUsed,
-    setEventUsed: (used) => { eventUsed = used; },
-    timingMode,
-    difficulty
+    onBack: () => { clearTimer(); renderGameView(); },
+    showPrev: true
   });
 }
 

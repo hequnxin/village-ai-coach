@@ -33,6 +33,7 @@ router.get('/policy-themes', async (req, res) => {
 router.get('/fun-level-questions', async (req, res) => {
   const { theme, difficulty, count = 5 } = req.query;
   if (!theme) return res.status(400).json({ error: '缺少主题参数' });
+
   let questions = await db.all(`
     SELECT id, question, options, answer, explanation, type 
     FROM quiz_questions 
@@ -40,6 +41,13 @@ router.get('/fun-level-questions', async (req, res) => {
     ORDER BY RANDOM() 
     LIMIT $1
   `, [parseInt(count)]);
+
+  // 解析 options 字段（数据库存储的是 JSON 字符串）
+  questions = questions.map(q => ({
+    ...q,
+    options: JSON.parse(q.options)
+  }));
+
   if (questions.length < parseInt(count)) {
     const extra = await db.all(`
       SELECT id, question, options, answer, explanation, type 
@@ -48,7 +56,8 @@ router.get('/fun-level-questions', async (req, res) => {
       ORDER BY RANDOM() 
       LIMIT $1
     `, [parseInt(count) - questions.length]);
-    questions = [...questions, ...extra];
+    const parsedExtra = extra.map(q => ({ ...q, options: JSON.parse(q.options) }));
+    questions = [...questions, ...parsedExtra];
   }
 
   // 随机将部分题目转换为判断题或排序题
@@ -58,7 +67,7 @@ router.get('/fun-level-questions', async (req, res) => {
       let q = questions[i];
       const rand = Math.random();
       if (rand < 0.2 && i % 2 === 0) {
-        // 判断题
+        // 判断题：选项固定为 ['正确', '错误']
         q = {
           ...q,
           question_type: 'judge',
@@ -97,7 +106,7 @@ router.get('/fun-level-questions', async (req, res) => {
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
   res.json({
-    questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })),
+    questions, // 此时 options 已经是数组，无需再次 JSON.parse
     event: randomEvent
   });
 });
@@ -292,6 +301,7 @@ router.get('/weekly/current', async (req, res) => {
     if (questionIds.length) {
       const placeholders = questionIds.map((_,i) => `$${i+1}`).join(',');
       questions = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE id IN (${placeholders})`, questionIds);
+      questions = questions.map(q => ({ ...q, options: JSON.parse(q.options) }));
     }
   }
   if (questions.length === 0) {
@@ -302,6 +312,7 @@ router.get('/weekly/current', async (req, res) => {
       ORDER BY RANDOM() 
       LIMIT 10
     `);
+    fallback = fallback.map(q => ({ ...q, options: JSON.parse(q.options) }));
     if (fallback.length === 0) {
       const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' AND category IN ('政策', '常见问题') ORDER BY RANDOM() LIMIT 10`);
       if (knowledge.length === 0) return res.status(500).json({ error: '无可用题目来源' });
@@ -311,7 +322,7 @@ router.get('/weekly/current', async (req, res) => {
           const qid = `temp_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
           await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
             [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, 1, k.category, new Date().toISOString()]);
-          fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer, explanation: choice.explanation });
+          fallback.push({ id: qid, question: choice.question, options: choice.options, answer: choice.answer, explanation: choice.explanation });
         }
       }
       questions = fallback;
@@ -329,7 +340,7 @@ router.get('/weekly/current', async (req, res) => {
   }
   const attemptsCount = contest ? (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count : 0;
   const attemptNumber = attemptsCount + 1;
-  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })), attemptNumber });
+  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: q.options })), attemptNumber });
 });
 
 router.post('/weekly/submit', async (req, res) => {

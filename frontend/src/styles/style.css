@@ -1343,3 +1343,45 @@ body {
     padding: 12px;
   }
 }
+.knowledge-item {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+  animation: fadeInUp 0.3s ease-out;
+  position: relative;
+}
+
+.knowledge-item .title {
+  font-weight: 600;
+  color: #2e5d34;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.knowledge-item .type {
+  font-size: 0.7rem;
+  background: #4caf50;  /* 绿底 */
+  color: white;         /* 白字 */
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  margin-left: 8px;
+}
+/* 个人中心统计卡片 - 两行两列布局 */
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+@media (max-width: 480px) {
+  .profile-stats {
+    grid-template-columns: 1fr;
+  }
+}
