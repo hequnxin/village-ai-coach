@@ -2298,3 +2298,32 @@ body {
     font-size: 2.5rem;
   }
 }
+/* 放大弹窗 */
+.modal-content {
+  width: 90vw;
+  max-width: 900px;
+  height: 85vh;
+  max-height: 85vh;
+  padding: 24px;
+  overflow-y: auto;
+  border-radius: 32px;
+}
+
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95vw;
+    height: 90vh;
+    padding: 16px;
+  }
+}
+
+/* 动画保留（如有冲突，保留原有） */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+.animate-scale-up {
+  animation: scaleUp 0.3s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleUp { from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; } }

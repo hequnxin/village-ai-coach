@@ -20,7 +20,6 @@ async function getUserTotalPoints(userId) {
 }
 
 // ==================== 趣味闯关（原政策闯关） ====================
-// 获取所有主题
 router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
@@ -31,22 +30,18 @@ router.get('/policy-themes', async (req, res) => {
   res.json(themes);
 });
 
-// 获取趣味闯关题目（支持主题、难度、数量，并随机附带事件）
 router.get('/fun-level-questions', async (req, res) => {
   const { theme, difficulty, count = 5 } = req.query;
   if (!theme) return res.status(400).json({ error: '缺少主题参数' });
-
-  // 从 quiz_questions 中筛选题目，优先按 source_category 或 category 匹配主题
+  // 只从政策/常见问题类别中选题
   let questions = await db.all(`
     SELECT id, question, options, answer, explanation, type 
     FROM quiz_questions 
-    WHERE type = 'choice' AND (source_category = $1 OR category = $1)
+    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
     ORDER BY RANDOM() 
-    LIMIT $2
-  `, [theme, parseInt(count)]);
-
+    LIMIT $1
+  `, [parseInt(count)]);
   if (questions.length < parseInt(count)) {
-    // 补充其他题目
     const extra = await db.all(`
       SELECT id, question, options, answer, explanation, type 
       FROM quiz_questions 
@@ -56,18 +51,14 @@ router.get('/fun-level-questions', async (req, res) => {
     `, [parseInt(count) - questions.length]);
     questions = [...questions, ...extra];
   }
-
-  // 随机事件（20%概率触发）
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
-
   res.json({
     questions: questions.map(q => ({ ...q, options: JSON.parse(q.options) })),
     event: randomEvent
   });
 });
 
-// 提交趣味闯关结果
 router.post('/policy-submit', async (req, res) => {
   const { themeId, score, total } = req.body;
   const userId = req.user.userId;
@@ -85,7 +76,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 每日一练（从政策/常见问题类别取高质量题目） ====================
+// ==================== 每日一练（只从政策/常见问题类别选题） ====================
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -100,34 +91,31 @@ router.get('/daily', async (req, res) => {
   }
 
   let questions = [];
-
-  // 优先从政策类和常见问题类知识对应的题目中选取（通过 source_category 字段）
+  // 只从政策/常见问题类别中取选择题
   const choiceQuestions = await db.all(`
     SELECT id, type, question, options, answer, explanation 
     FROM quiz_questions 
-    WHERE type = 'choice' AND source_category IN ('政策', '常见问题')
+    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
     ORDER BY RANDOM() 
     LIMIT 3
   `);
-
-  // 填空题：从 fill_questions 中随机取（不限类别，作为补充）
-  const fillQuestions = await db.all(`
-    SELECT id, sentence as question, correct_word as answer, hint 
-    FROM fill_questions 
+  // 填空题暂不限类别（但尽量从政策/常见问题中取，如果不足则补充）
+  let fillQuestions = await db.all(`
+    SELECT f.id, f.sentence as question, f.correct_word as answer, f.hint 
+    FROM fill_questions f
+    JOIN knowledge k ON f.id LIKE 'auto_' || k.id || '_fill'
+    WHERE k.category IN ('政策', '常见问题')
     ORDER BY RANDOM() 
     LIMIT 2
   `);
+  if (fillQuestions.length < 2) {
+    const extra = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT $1`, [2 - fillQuestions.length]);
+    fillQuestions = [...fillQuestions, ...extra];
+  }
 
-  // 如果选择题数量不足3，再从所有选择题中补充
   let finalChoice = [...choiceQuestions];
   if (finalChoice.length < 3) {
-    const extra = await db.all(`
-      SELECT id, type, question, options, answer, explanation 
-      FROM quiz_questions 
-      WHERE type = 'choice' 
-      ORDER BY RANDOM() 
-      LIMIT ${3 - finalChoice.length}
-    `);
+    const extra = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT $1`, [3 - finalChoice.length]);
     finalChoice.push(...extra);
   }
 
@@ -201,7 +189,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛 ====================
+// ==================== 每周竞赛（支持多次参赛，题目限制类别） ====================
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
@@ -266,16 +254,23 @@ router.get('/weekly/current', async (req, res) => {
     }
   }
   if (questions.length === 0) {
-    const fallback = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 10`);
+    // 从政策/常见问题类别中选题
+    let fallback = await db.all(`
+      SELECT id, question, options, answer, explanation 
+      FROM quiz_questions 
+      WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
+      ORDER BY RANDOM() 
+      LIMIT 10
+    `);
     if (fallback.length === 0) {
-      const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT 10`);
+      const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' AND category IN ('政策', '常见问题') ORDER BY RANDOM() LIMIT 10`);
       if (knowledge.length === 0) return res.status(500).json({ error: '无可用题目来源' });
       for (const k of knowledge) {
         const choice = await generateChoice(k, true);
         if (choice) {
           const qid = `temp_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
-          await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, new Date().toISOString()]);
+          await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
           fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer, explanation: choice.explanation });
         }
       }
@@ -438,12 +433,20 @@ router.get('/scratch/generate', async (req, res) => {
   const today = new Date().toISOString().slice(0,10);
   const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
   if (count >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
-  const question = await db.get(`SELECT id, question, options, answer FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT 1`);
-  if (!question) return res.status(404).json({ error: '无题目' });
+  // 只从政策/常见问题类别中选题
+  const question = await db.all(`
+    SELECT id, question, options, answer 
+    FROM quiz_questions 
+    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
+    ORDER BY RANDOM() 
+    LIMIT 1
+  `);
+  if (question.length === 0) return res.status(404).json({ error: '无题目' });
+  const q = question[0];
   const cardId = uuidv4();
   await db.run(`INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`,
-    [cardId, userId, question.id, question.answer, new Date().toISOString()]);
-  res.json({ cardId, question: question.question, options: JSON.parse(question.options) });
+    [cardId, userId, q.id, q.answer, new Date().toISOString()]);
+  res.json({ cardId, question: q.question, options: JSON.parse(q.options) });
 });
 
 router.post('/scratch/submit', async (req, res) => {

@@ -45,6 +45,13 @@ let currentFunDifficulty = 'medium';
 let currentFunEvent = null;
 let currentFunEventUsed = false;
 
+// ==================== 辅助函数：将答案索引转换为选项标签 ====================
+function formatAnswerLabel(question, answerIndex) {
+  if (!question.options) return answerIndex;
+  const text = question.options[answerIndex];
+  return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
+}
+
 // ==================== 主渲染 ====================
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
@@ -327,7 +334,7 @@ function showFunQuestion() {
 
   if (hintBtn) {
     hintBtn.onclick = () => {
-      const correctAnswer = q.options[q.answer];
+      const correctAnswer = formatAnswerLabel(q, q.answer);
       alert(`💡 提示：正确答案是 "${correctAnswer}"`);
       currentFunEventUsed = true;
       hintBtn.disabled = true;
@@ -365,7 +372,8 @@ function showFunQuestion() {
       const wrongOpt = opts[selected];
       wrongOpt.classList.add('wrong-shake');
       setTimeout(() => wrongOpt.classList.remove('wrong-shake'), 500);
-      alert(`❌ 回答错误！正确答案是：${q.options[q.answer]}\n${q.explanation || ''}`);
+      const correctLabel = formatAnswerLabel(q, q.answer);
+      alert(`❌ 回答错误！正确答案是：${correctLabel}\n${q.explanation || ''}`);
       if (currentFunLives <= 0) {
         alert(`💀 闯关失败！得分：${currentFunScore}`);
         closeModal();
@@ -398,7 +406,6 @@ function showSuccessModal(message) {
   modal.querySelector('#successCloseBtn').onclick = close;
   modal.onclick = (e) => { if(e.target===modal) close(); };
 }
-
 // ==================== 每日一练 ====================
 async function startDailyQuiz() {
   try {
@@ -528,7 +535,7 @@ async function submitDailyAnswer(index, userAnswer, modal) {
     const correctIndex = parseInt(q.answer);
     const userIndex = parseInt(userAnswer);
     isCorrect = (userIndex === correctIndex);
-    correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + q.options[correctIndex];
+    correctLabel = formatAnswerLabel(q, correctIndex);
 
     if (isCorrect) {
       if (!currentDailyScores[index]) {
@@ -647,7 +654,7 @@ async function finishDailyQuiz() {
     alert(`练习完成！得分 ${dailyScore}/${total}，获得 ${rewardPoints} 积分`);
     addPoints(rewardPoints, '每日一练');
     updateTaskProgress('quiz', 1);
-    await loadModuleStats();
+    await loadModuleStats(); // 刷新卡片状态
   } catch(e) {
     alert('提交失败，但本地得分已记录');
   }
@@ -786,8 +793,7 @@ async function submitContestSingle(index, selected, modal) {
   const correctIndex = parseInt(q.answer);
   const userIndex = parseInt(selected);
   const isCorrect = (userIndex === correctIndex);
-  const correctText = q.options[correctIndex];
-  const correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + correctText;
+  const correctLabel = formatAnswerLabel(q, correctIndex);
   const feedbackDiv = modal.querySelector('#feedbackArea');
   const opts = modal.querySelectorAll('.option-item');
 
@@ -823,7 +829,7 @@ async function finalizeContest(modal, timeUsed) {
   const result = await res.json();
   alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
   addPoints(result.rewardPoints, '每周竞赛');
-  await loadModuleStats();
+  await loadModuleStats(); // 刷新卡片状态
   modal.querySelector('.modal-close').click();
 }
 
@@ -947,8 +953,7 @@ function showWrongQuestion() {
   const skipBtn = modal.querySelector('#skipWrongBtn');
   const feedbackDiv = modal.querySelector('#feedbackArea');
   const correctIndex = parseInt(w.answer);
-  const correctText = w.options[correctIndex];
-  const correctLabel = String.fromCharCode(65 + correctIndex) + '. ' + correctText;
+  const correctLabel = formatAnswerLabel(w, correctIndex);
 
   submitBtn.onclick = async () => {
     if (selected === null) { alert('请选择答案'); return; }
