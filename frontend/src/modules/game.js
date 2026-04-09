@@ -113,36 +113,55 @@ export async function renderGameView() {
 async function loadModuleStats() {
   try {
     const dailyRes = await fetchWithAuth('/api/game/daily/status');
-    const dailyData = await dailyRes.json();
-    const dailyStats = document.getElementById('dailyStats');
-    if (dailyStats) {
-      if (dailyData.completed) dailyStats.innerHTML = `今日已完成 (${dailyData.score}/${dailyData.total})`;
-      else dailyStats.innerHTML = '今日未开始';
+    if (dailyRes.ok) {
+      const dailyData = await dailyRes.json();
+      const dailyStats = document.getElementById('dailyStats');
+      if (dailyStats) {
+        if (dailyData.completed) {
+          dailyStats.innerHTML = `今日已完成 (${dailyData.score}/${dailyData.total})`;
+        } else {
+          dailyStats.innerHTML = '今日未开始';
+        }
+      }
+    } else {
+      console.warn('获取每日一练状态失败');
     }
-  } catch(e) {}
+  } catch(e) {
+    console.error('每日一练状态加载失败', e);
+  }
 
   try {
     const wrongRes = await fetchWithAuth('/api/game/wrong-questions');
-    const wrongs = await wrongRes.json();
-    const wrongStats = document.getElementById('wrongStats');
-    if (wrongStats) wrongStats.innerHTML = `共有 ${wrongs.length} 道错题`;
-  } catch(e) {}
+    if (wrongRes.ok) {
+      const wrongs = await wrongRes.json();
+      const wrongStats = document.getElementById('wrongStats');
+      if (wrongStats) wrongStats.innerHTML = `共有 ${wrongs.length} 道错题`;
+    }
+  } catch(e) {
+    console.error('错题本加载失败', e);
+  }
 
   try {
     const contestRes = await fetchWithAuth('/api/game/weekly/status');
-    const contestData = await contestRes.json();
-    const contestStats = document.getElementById('contestStats');
-    if (contestStats) {
-      if (contestData.participated) {
-        const minutes = Math.floor(contestData.bestTime / 60);
-        const seconds = contestData.bestTime % 60;
-        const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
-        contestStats.innerHTML = `最佳: ${contestData.bestScore}/${contestData.total}题, ${timeStr}<br>剩余次数: ${contestData.attemptsLeft}`;
-      } else {
-        contestStats.innerHTML = '本周未参加 (3次机会)';
+    if (contestRes.ok) {
+      const contestData = await contestRes.json();
+      const contestStats = document.getElementById('contestStats');
+      if (contestStats) {
+        if (contestData.participated) {
+          const minutes = Math.floor(contestData.bestTime / 60);
+          const seconds = contestData.bestTime % 60;
+          const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+          contestStats.innerHTML = `最佳: ${contestData.bestScore}/${contestData.total}题, ${timeStr}<br>剩余次数: ${contestData.attemptsLeft}`;
+        } else {
+          contestStats.innerHTML = '本周未参加 (3次机会)';
+        }
       }
+    } else {
+      console.warn('获取每周竞赛状态失败');
     }
-  } catch(e) {}
+  } catch(e) {
+    console.error('每周竞赛状态加载失败', e);
+  }
 }
 
 // ==================== 政策闯关 ====================
@@ -195,7 +214,6 @@ function renderThemesDetail(container, themes) {
   }
   container.innerHTML = html;
 
-  // 为每个关卡绑定点击事件（卡片整体或按钮）
   document.querySelectorAll('.level-card:not(.locked)').forEach(card => {
     const levelId = card.dataset.levelId;
     const levelName = card.querySelector('.level-name')?.textContent || '关卡';
@@ -566,7 +584,7 @@ async function finishDailyQuiz() {
     alert(`练习完成！得分 ${dailyScore}/${total}，获得 ${rewardPoints} 积分`);
     addPoints(rewardPoints, '每日一练');
     updateTaskProgress('quiz', 1);
-    loadModuleStats();
+    await loadModuleStats(); // 刷新卡片状态
   } catch(e) {
     alert('提交失败，但本地得分已记录');
   }
@@ -590,7 +608,7 @@ async function startWeeklyContest() {
     currentContestId = data.contestId;
     currentContestQuestions = data.questions;
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
-    contestStartTime = Date.now(); // 只初始化一次，切换题目不会重置
+    contestStartTime = Date.now(); // 只初始化一次
     currentAttemptNumber = data.attemptNumber;
     showContestQuestion(0);
   } catch(e) {
@@ -635,9 +653,8 @@ function showContestQuestion(index) {
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
 
-  // 更新倒计时（基于 contestStartTime，不会因换题而重置）
-  if (contestTimerInterval) clearInterval(contestTimerInterval);
-  contestTimerInterval = setInterval(() => {
+  // 更新倒计时（基于固定起始时间）
+  const updateTimerDisplay = () => {
     const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
     const remaining = Math.max(0, contestTotalTime - elapsed);
     const minutes = Math.floor(remaining / 60);
@@ -649,7 +666,10 @@ function showContestQuestion(index) {
       alert('时间到！自动提交竞赛');
       finalizeContest(modal, contestTotalTime);
     }
-  }, 1000);
+  };
+  if (contestTimerInterval) clearInterval(contestTimerInterval);
+  updateTimerDisplay(); // 立即更新一次
+  contestTimerInterval = setInterval(updateTimerDisplay, 1000);
 
   const opts = modal.querySelectorAll('.option-item');
   let selected = null;
@@ -742,23 +762,31 @@ async function finalizeContest(modal, timeUsed) {
   const result = await res.json();
   alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
   addPoints(result.rewardPoints, '每周竞赛');
-  loadModuleStats();
+  await loadModuleStats(); // 刷新卡片状态
   modal.querySelector('.modal-close').click();
 }
 
 async function showContestRanking() {
   try {
+    // 获取当前周竞赛ID
     const now = new Date();
     const day = now.getDay();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
     weekStart.setHours(0,0,0,0);
     const startStr = weekStart.toISOString().slice(0,10);
+
+    // 先获取竞赛信息
     const contestRes = await fetchWithAuth(`/api/game/weekly/current`);
     if (!contestRes.ok) throw new Error('获取竞赛信息失败');
     const contestData = await contestRes.json();
-    const rankRes = await fetchWithAuth(`/api/game/weekly/rank/${contestData.contestId}`);
+    const contestId = contestData.contestId;
+
+    // 获取排行榜
+    const rankRes = await fetchWithAuth(`/api/game/weekly/rank/${contestId}`);
+    if (!rankRes.ok) throw new Error('获取排行榜失败');
     const ranks = await rankRes.json();
+
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.display = 'flex';
@@ -768,14 +796,22 @@ async function showContestRanking() {
         <h3>🏆 本周竞赛排行榜</h3>
         <div style="margin-top:16px;">
           ${ranks.length === 0 ? '<div>暂无排名数据</div>' : `
-            <div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; font-weight:bold; border-bottom:1px solid #ccc; padding-bottom:8px;">
+            <div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; font-weight:bold; border-bottom:1px solid #ccc; padding-bottom:8px; margin-bottom:8px;">
               <div>排名</div><div>用户</div><div>正确率</div><div>用时</div>
             </div>
-            ${ranks.map((r, idx) => `
-              <div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee;">
-                <div>${idx+1}</div><div>${escapeHtml(r.username)}</div><div>${r.accuracy}%</div><div>${Math.floor(r.time_used/60)}:${(r.time_used%60).toString().padStart(2,'0')}</div>
-              </div>
-            `).join('')}
+            ${ranks.map((r, idx) => {
+              const minutes = Math.floor(r.time_used / 60);
+              const seconds = r.time_used % 60;
+              const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+              return `
+                <div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee;">
+                  <div>${idx+1}</div>
+                  <div>${escapeHtml(r.username)}</div>
+                  <div>${r.accuracy}%</div>
+                  <div>${timeStr}</div>
+                </div>
+              `;
+            }).join('')}
           `}
         </div>
       </div>
@@ -784,11 +820,12 @@ async function showContestRanking() {
     modal.querySelector('.modal-close').onclick = () => document.body.removeChild(modal);
     modal.onclick = (e) => { if(e.target===modal) document.body.removeChild(modal); };
   } catch(e) {
+    console.error('排行榜加载失败', e);
     alert('加载排行榜失败');
   }
 }
 
-// ==================== 错题本（退出后刷新错题数） ====================
+// ==================== 错题本（实时更新侧边栏） ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   wrongQuestionsList = await res.json();
@@ -806,7 +843,7 @@ function showWrongQuestion() {
   if (currentWrongIndex >= wrongQuestionsList.length) {
     const remaining = wrongQuestionsList.length - wrongClearCorrectCount;
     alert(`错题闯关结束！本次共处理 ${wrongClearStartCount} 题，其中答对 ${wrongClearCorrectCount} 题，剩余错题 ${remaining} 道。`);
-    loadModuleStats(); // 重新加载错题本数量
+    loadModuleStats(); // 刷新侧边栏错题数
     return;
   }
   const w = wrongQuestionsList[currentWrongIndex];
@@ -879,6 +916,7 @@ function showWrongQuestion() {
         addPoints(result.rewardPoints, '错题闯关');
         wrongClearCorrectCount++;
         wrongQuestionsList.splice(currentWrongIndex, 1);
+        loadModuleStats(); // 实时更新侧边栏错题数
       } else {
         currentWrongIndex++;
       }
@@ -916,10 +954,18 @@ async function updateScratchRemaining() {
     const res = await fetchWithAuth('/api/game/scratch/today-count');
     if (res.ok) {
       const data = await res.json();
-      scratchRemaining = Math.max(0, 5 - data.count);
-      localStorage.setItem('scratch_count', data.count);
-      localStorage.setItem('scratch_date', new Date().toISOString().slice(0,10));
+      const count = data.count;
+      scratchRemaining = Math.max(0, 5 - count);
+      // 同步本地存储
+      const today = new Date().toISOString().slice(0,10);
+      localStorage.setItem('scratch_date', today);
+      localStorage.setItem('scratch_count', count);
+      // 如果后端count为0但本地存储有值，强制覆盖
+      if (count === 0) {
+        localStorage.setItem('scratch_count', '0');
+      }
     } else {
+      // 降级使用本地存储
       const today = new Date().toISOString().slice(0,10);
       const storedDate = localStorage.getItem('scratch_date');
       let count = parseInt(localStorage.getItem('scratch_count')) || 0;
