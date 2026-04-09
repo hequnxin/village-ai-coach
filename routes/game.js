@@ -19,7 +19,7 @@ async function getUserTotalPoints(userId) {
   return basePoints + rewardPoints;
 }
 
-// ==================== 趣味闯关（原政策闯关） ====================
+// ==================== 趣味闯关 ====================
 router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
@@ -50,6 +50,50 @@ router.get('/fun-level-questions', async (req, res) => {
     `, [parseInt(count) - questions.length]);
     questions = [...questions, ...extra];
   }
+
+  // 随机将部分题目转换为判断题或排序题
+  if (questions.length >= 2) {
+    const newQuestions = [];
+    for (let i = 0; i < questions.length; i++) {
+      let q = questions[i];
+      const rand = Math.random();
+      if (rand < 0.2 && i % 2 === 0) {
+        // 判断题
+        q = {
+          ...q,
+          question_type: 'judge',
+          question: `判断：${q.question.replace(/？|？/g, '')}？`,
+          options: ['正确', '错误'],
+          answer: Math.random() < 0.5 ? 0 : 1,
+          explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
+        };
+      } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
+        // 排序题（至少3个选项）
+        const correctOrder = [...Array(q.options.length).keys()];
+        const shuffled = [...correctOrder];
+        for (let j = shuffled.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+        }
+        const shuffledOptions = shuffled.map(idx => q.options[idx]);
+        q = {
+          ...q,
+          question_type: 'sort',
+          question: `请按正确顺序排列：${q.question}`,
+          options: shuffledOptions,
+          answer: correctOrder,
+          explanation: q.explanation || '请按照政策流程顺序排列。'
+        };
+      } else {
+        q.question_type = 'choice';
+      }
+      newQuestions.push(q);
+    }
+    questions = newQuestions;
+  } else {
+    questions = questions.map(q => ({ ...q, question_type: 'choice' }));
+  }
+
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
   res.json({
@@ -265,7 +309,6 @@ router.get('/weekly/current', async (req, res) => {
         const choice = await generateChoice(k, true);
         if (choice) {
           const qid = `temp_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
-          // 移除 theme 字段
           await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9)`,
             [qid, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, 1, k.category, new Date().toISOString()]);
           fallback.push({ id: qid, question: choice.question, options: JSON.stringify(choice.options), answer: choice.answer, explanation: choice.explanation });
