@@ -199,7 +199,7 @@ export async function addPoints(points, reason = '游戏奖励') {
     setTimeout(() => pointDiv.remove(), 1000);
     try {
         const { fetchWithAuth } = await import('./api');
-        await fetchWithAuth('/api/quiz/add-points', {
+        await fetchWithAuth('/api/game/add-points', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ points, reason })
