@@ -42,11 +42,7 @@ router.get('/fun-level-questions', async (req, res) => {
     LIMIT $1
   `, [parseInt(count)]);
 
-  // 解析 options 字段（数据库存储的是 JSON 字符串）
-  questions = questions.map(q => ({
-    ...q,
-    options: JSON.parse(q.options)
-  }));
+  questions = questions.map(q => ({ ...q, options: JSON.parse(q.options) }));
 
   if (questions.length < parseInt(count)) {
     const extra = await db.all(`
@@ -60,14 +56,12 @@ router.get('/fun-level-questions', async (req, res) => {
     questions = [...questions, ...parsedExtra];
   }
 
-  // 随机将部分题目转换为判断题或排序题
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
       let q = questions[i];
       const rand = Math.random();
       if (rand < 0.2 && i % 2 === 0) {
-        // 判断题：选项固定为 ['正确', '错误']
         q = {
           ...q,
           question_type: 'judge',
@@ -77,7 +71,6 @@ router.get('/fun-level-questions', async (req, res) => {
           explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
         };
       } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
-        // 排序题（至少3个选项）
         const correctOrder = [...Array(q.options.length).keys()];
         const shuffled = [...correctOrder];
         for (let j = shuffled.length - 1; j > 0; j--) {
@@ -106,7 +99,7 @@ router.get('/fun-level-questions', async (req, res) => {
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
   res.json({
-    questions, // 此时 options 已经是数组，无需再次 JSON.parse
+    questions,
     event: randomEvent
   });
 });
@@ -126,6 +119,57 @@ router.post('/policy-submit', async (req, res) => {
     }
   }
   res.json({ passed, reward });
+});
+
+// ==================== 连连看游戏 ====================
+router.get('/match-game', async (req, res) => {
+  const { difficulty = 'medium' } = req.query;
+  let pairCount = 4;
+  if (difficulty === 'medium') pairCount = 6;
+  if (difficulty === 'hard') pairCount = 8;
+
+  const knowledge = await db.all(`
+    SELECT id, title, content FROM knowledge 
+    WHERE status = 'approved' AND category IN ('政策', '常见问题')
+    ORDER BY RANDOM() LIMIT $1
+  `, [pairCount]);
+
+  if (knowledge.length < pairCount) {
+    const extra = await db.all(`SELECT id, title, content FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1`, [pairCount - knowledge.length]);
+    knowledge.push(...extra);
+  }
+
+  const pairs = [];
+  knowledge.forEach(k => {
+    pairs.push({
+      id: k.id,
+      type: 'term',
+      text: k.title,
+      pairId: k.id
+    });
+    pairs.push({
+      id: k.id + '_desc',
+      type: 'desc',
+      text: k.content.substring(0, 100) + (k.content.length > 100 ? '...' : ''),
+      pairId: k.id
+    });
+  });
+  for (let i = pairs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+  }
+  res.json({ pairs, pairCount });
+});
+
+router.post('/match-game/submit', async (req, res) => {
+  const { score, total } = req.body;
+  const userId = req.user.userId;
+  const reward = score === total ? 50 : 0;
+  if (reward > 0) {
+    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+      [uuidv4(), userId, reward, '连连看通关奖励']);
+  }
+  res.json({ reward });
 });
 
 // ==================== 每日一练 ====================
