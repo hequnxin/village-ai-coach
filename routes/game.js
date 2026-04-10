@@ -62,7 +62,7 @@ router.get('/fun-level-questions', async (req, res) => {
       const rand = Math.random();
       if (q.type === 'choice') {
         if (rand < 0.2 && i % 2 === 0) {
-          // 修复：使用字符集匹配中英文问号
+          // 修复正则：使用字符集匹配中英文问号
           const cleanQuestion = q.question.replace(/[？?]/g, '');
           q = {
             ...q,
@@ -126,9 +126,9 @@ router.post('/policy-submit', async (req, res) => {
 
 router.get('/match-game', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
-  let pairCount = 4;
-  if (difficulty === 'medium') pairCount = 6;
-  if (difficulty === 'hard') pairCount = 8;
+  let pairCount = 8; // 增加到8对，增强游戏性
+  if (difficulty === 'easy') pairCount = 6;
+  if (difficulty === 'hard') pairCount = 10;
   const knowledge = await db.all(`
     SELECT id, title, content FROM knowledge
     WHERE status = 'approved' AND category IN ('政策', '常见问题')
@@ -140,7 +140,7 @@ router.get('/match-game', async (req, res) => {
   }
   const getShortDesc = (text) => {
     let firstSentence = text.split(/[。\n]/)[0];
-    if (firstSentence.length > 50) firstSentence = firstSentence.substring(0, 50) + '...';
+    if (firstSentence.length > 60) firstSentence = firstSentence.substring(0, 60) + '...';
     return firstSentence;
   };
   const pairs = [];
@@ -251,7 +251,10 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛 ====================
+// ==================== 每周竞赛（带缓存优化） ====================
+
+let cachedWeeklyContest = null;
+let cachedWeekStart = null;
 
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
@@ -280,11 +283,22 @@ router.get('/weekly/current', async (req, res) => {
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
-  let contest = await db.get(`SELECT * FROM weekly_contest WHERE week_start = $1`, [startStr]);
-  if (contest) {
+
+  // 检查缓存
+  if (cachedWeeklyContest && cachedWeekStart === startStr) {
+    const contest = cachedWeeklyContest;
     const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
     if (attemptsCount >= 3) return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
+    const questions = JSON.parse(contest.questions);
+    const parsedQuestions = await Promise.all(questions.map(async qid => {
+      const q = await db.get(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE id = $1`, [qid]);
+      return q ? { ...q, options: JSON.parse(q.options) } : null;
+    }));
+    const attemptNumber = attemptsCount + 1;
+    return res.json({ contestId: contest.id, questions: parsedQuestions.filter(Boolean), attemptNumber });
   }
+
+  let contest = await db.get(`SELECT * FROM weekly_contest WHERE week_start = $1`, [startStr]);
   let questions = [];
   if (contest) {
     const questionIds = JSON.parse(contest.questions);
@@ -321,10 +335,14 @@ router.get('/weekly/current', async (req, res) => {
     await db.run(`INSERT INTO weekly_contest (id, week_start, week_end, questions, status) VALUES ($1, $2, $3, $4, 'active')`,
       [contestId, startStr, endStr, JSON.stringify(questions.map(q => q.id))]);
     contest = { id: contestId };
+    // 更新缓存
+    cachedWeeklyContest = { id: contestId, questions: JSON.stringify(questions.map(q => q.id)) };
+    cachedWeekStart = startStr;
   }
-  const attemptsCount = contest ? (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count : 0;
+  const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
+  if (attemptsCount >= 3) return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
   const attemptNumber = attemptsCount + 1;
-  res.json({ contestId: contest.id, questions: questions.map(q => ({ ...q, options: q.options })), attemptNumber });
+  res.json({ contestId: contest.id, questions, attemptNumber });
 });
 
 router.post('/weekly/submit', async (req, res) => {
@@ -367,7 +385,7 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
   res.json(ranks);
 });
 
-// ==================== 错题本（支持选择题、填空题） ====================
+// ==================== 错题本（支持选择题、填空题，实时清除） ====================
 
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;

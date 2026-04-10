@@ -255,16 +255,6 @@ async function initDb() {
     console.log('✅ quiz_questions 字段迁移完成');
   } catch(e) { console.warn('迁移quiz_questions失败:', e.message); }
 
-  // 为 wrong_questions 表添加 question_type 列（如果不存在）
-  try {
-    const columnCheck = await db.get(`SELECT column_name FROM information_schema.columns WHERE table_name = 'wrong_questions' AND column_name = 'question_type'`);
-    if (!columnCheck) {
-      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
-      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
-      console.log('✅ 为 wrong_questions 表添加 question_type 列');
-    }
-  } catch(e) { console.warn('迁移 wrong_questions 失败:', e.message); }
-
   // 全文搜索支持
   try {
     await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
@@ -273,7 +263,7 @@ async function initDb() {
       CREATE OR REPLACE FUNCTION knowledge_tsv_trigger() RETURNS trigger AS $$
       BEGIN
         NEW.tsv := setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
-                  setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
+                   setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
         RETURN NEW;
       END;
       $$ LANGUAGE plpgsql
@@ -290,12 +280,25 @@ async function initDb() {
     console.error('添加全文搜索失败:', err.message);
   }
 
-  // 插入默认场景数据
+  // ========== 为 wrong_questions 添加 question_type 列（如果不存在） ==========
+  try {
+    const columnCheck = await db.get(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'wrong_questions' AND column_name = 'question_type'
+    `);
+    if (!columnCheck) {
+      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
+      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
+      console.log('✅ 为 wrong_questions 表添加 question_type 列');
+    }
+  } catch(e) { console.warn('迁移 wrong_questions 失败:', e.message); }
+
+  // ========== 插入默认场景数据 ==========
   const insertScenario = async (id, title, description, goal, role, initial_message, eval_dimensions) => {
-    const sql = `INSERT INTO scenarios (id, title, description, goal, role, initial_message, eval_dimensions, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`;
+    const sql = `INSERT INTO scenarios (id, title, description, goal, role, initial_message, eval_dimensions, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`;
     await db.run(sql, [id, title, description, goal, role, initial_message, eval_dimensions, new Date().toISOString()]);
   };
-
   await insertScenario('scenario_001', '调解邻里土地纠纷', '村民张三和李四因宅基地边界发生争执，双方情绪激动，需要你作为村干部进行调解。',
     '成功调解纠纷，促成双方和解，并明确边界。', '村民张三', '村干部同志，你来得正好！李四家占了我家宅基地，还砌了围墙，你得给我评评理！',
     JSON.stringify(['沟通技巧', '政策熟悉度', '情绪管理', '调解能力']));
@@ -312,7 +315,7 @@ async function initDb() {
     '促成双方相互理解，并约定合理的活动时间。', '村民老刘', '天天晚上吵到一两点，我高血压都犯了！你们村干部管不管？',
     JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
 
-  // 初始化游戏主题（趣味闯关）
+  // ========== 初始化游戏主题（趣味闯关） ==========
   const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
   if (themeCount.count === 0) {
     const themes = [
@@ -329,7 +332,7 @@ async function initDb() {
     console.log('✅ 游戏主题初始化完成');
   }
 
-  // 自动生成高质量题目
+  // ========== 自动生成高质量题目 ==========
   const { generateAndStoreQuestions } = require('../services/questionGenerator');
   console.log('开始自动生成高质量题目...');
   await generateAndStoreQuestions(50);

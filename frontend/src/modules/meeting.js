@@ -28,8 +28,8 @@ export async function renderMeetingSetupView() {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
-    <div class="meeting-setup" style="padding:20px; max-width:600px; margin:0 auto;">
-      <h3>🏛️ 会议模式</h3>
+    <div class="meeting-setup" style="max-width:600px; margin:20px auto; padding:20px; background:white; border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+      <h3 style="margin-bottom:20px;">🏛️ 会议模式</h3>
       <div style="margin-bottom:16px;">
         <label style="display:block; margin-bottom:6px;">会议类型：</label>
         <select id="meetingTypeSelect" style="width:100%; padding:8px; border-radius:8px; border:1px solid #ccc;">
@@ -61,11 +61,14 @@ export async function renderMeetingSetupView() {
   const topicSelect = document.getElementById('meetingTopicSelect');
   const customInput = document.getElementById('customTopicInput');
   topicSelect.addEventListener('change', () => {
-    customInput.style.display = topicSelect.value === 'custom' ? 'block' : 'none';
+    const isCustom = topicSelect.value === 'custom';
+    customInput.style.display = isCustom ? 'block' : 'none';
+    if (!isCustom) customInput.value = '';
   });
   document.getElementById('startMeetingBtn').onclick = async () => {
     const meetingType = typeSelect.value;
-    const topic = topicSelect.value === 'custom' ? customInput.value.trim() : topicSelect.value;
+    let topic = topicSelect.value;
+    if (topic === 'custom') topic = customInput.value.trim();
     if (!topic) { alert('请填写会议主题'); return; }
     let roles = [];
     const customRolesText = document.getElementById('customRolesInput').value.trim();
@@ -148,8 +151,18 @@ async function startMeetingPolling(sessionId) {
 
 function updateMeetingUI() {
   if (!currentMeeting) return;
+  // 更新议程高亮
+  const agendaContainer = document.getElementById('meetingAgenda');
+  if (agendaContainer && currentMeeting.agenda) {
+    agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
+      <div class="agenda-item ${idx === currentMeeting.currentAgendaIndex ? 'current' : ''} ${idx < currentMeeting.currentAgendaIndex ? 'completed' : ''}">
+        ${idx+1}. ${escapeHtml(item.name)}
+      </div>
+    `).join('');
+  }
+  // 更新村民卡片
   const villagersContainer = document.getElementById('meetingVillagers');
-  if (villagersContainer) {
+  if (villagersContainer && currentMeeting.villagers) {
     currentMeeting.villagers.forEach(v => {
       const card = villagersContainer.querySelector(`.villager-card[data-id="${v.id}"]`);
       if (card) {
@@ -163,14 +176,7 @@ function updateMeetingUI() {
       }
     });
   }
-  const agendaContainer = document.getElementById('meetingAgenda');
-  if (agendaContainer && currentMeeting.agenda) {
-    agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
-      <div class="meeting-agenda-item ${idx === currentMeeting.currentAgendaIndex ? 'current' : ''} ${idx < currentMeeting.currentAgendaIndex ? 'completed' : ''}" data-idx="${idx}">
-        ${idx+1}. ${escapeHtml(item.name)}
-      </div>
-    `).join('');
-  }
+  // 更新投票结果
   const voteResultContainer = document.getElementById('meetingVoteResult');
   if (voteResultContainer && currentMeeting.votes) {
     const currentVotes = currentMeeting.votes[currentMeeting.currentAgendaIndex] || {};
@@ -178,35 +184,44 @@ function updateMeetingUI() {
     const oppose = Object.values(currentVotes).filter(v => v === '反对').length;
     voteResultContainer.innerHTML = `<div>当前投票：支持 ${support} 人，反对 ${oppose} 人</div>`;
   }
+  // 更新满意度
+  const satisfactionDiv = document.getElementById('meetingSatisfaction');
+  if (satisfactionDiv && currentMeeting.satisfaction !== undefined) {
+    satisfactionDiv.innerHTML = `村民满意度：${currentMeeting.satisfaction}%`;
+  }
 }
 
 function renderMeetingChatArea() {
   if (!currentMeeting) return;
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
-    <div class="meeting-view">
-      <div class="meeting-header">
-        <h2>🏛️ ${escapeHtml(currentMeeting.topic || '会议')}</h2>
-        <p>参会人数：${currentMeeting.villagers.length} 人</p>
-        <button id="exitMeetingBtn" class="summary-btn">退出会议</button>
+    <div class="meeting-layout" style="display:flex; height:100%; gap:16px; padding:16px; background:#f5f7fa;">
+      <!-- 左侧信息栏 -->
+      <div class="meeting-sidebar" style="width:280px; background:white; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:20px; overflow-y:auto;">
+        <div>
+          <h3 style="margin-bottom:8px;">🏛️ ${escapeHtml(currentMeeting.topic || '会议')}</h3>
+          <div id="meetingSatisfaction" style="font-size:0.9rem; color:#2e5d34;">村民满意度：${currentMeeting.satisfaction || 50}%</div>
+        </div>
+        <div>
+          <h4>📋 议程</h4>
+          <div id="meetingAgenda" style="margin-top:8px;"></div>
+          <button id="nextAgendaBtn" class="summary-btn" style="margin-top:12px; background:#ff9800;">下一议程</button>
+          <button id="voteBtn" class="summary-btn" style="margin-top:8px; background:#4caf50;">投票</button>
+        </div>
+        <div id="meetingVoteResult" style="font-size:0.85rem; background:#f0f0f0; padding:8px; border-radius:8px;"></div>
+        <div>
+          <h4>👥 参会人员</h4>
+          <div id="meetingVillagers" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+        </div>
+        <button id="exitMeetingBtn" class="summary-btn" style="background:#f44336; color:white;">退出会议</button>
       </div>
-      <div class="meeting-status-panel">
-        <div>当前议程：<strong id="currentAgendaName">${currentMeeting.agenda[currentMeeting.currentAgendaIndex]?.name || '讨论'}</strong></div>
-        <button id="nextAgendaBtn" class="summary-btn" style="background:#ff9800;">下一议程</button>
-        <button id="voteBtn" class="summary-btn" style="background:#4caf50;">投票</button>
-      </div>
-      <div id="meetingAgenda" class="meeting-agenda">
-        <h4>📋 会议议程</h4>
-        ${currentMeeting.agenda.map((item, idx) => `<div class="meeting-agenda-item ${idx === currentMeeting.currentAgendaIndex ? 'current' : ''} ${idx < currentMeeting.currentAgendaIndex ? 'completed' : ''}">${idx+1}. ${escapeHtml(item.name)}</div>`).join('')}
-      </div>
-      <div id="meetingVoteResult" class="meeting-vote-result" style="display:none;"></div>
-      <div class="meeting-villagers" id="meetingVillagers"></div>
-      <div class="meeting-chat-area">
-        <div class="meeting-messages" id="meetingMessages"></div>
-        <div class="meeting-input-area">
-          <textarea id="meetingInput" placeholder="向与会人员发言..." rows="2"></textarea>
-          <button id="sendMeetingBtn">发送</button>
-          <button id="meetingVoiceBtn" class="voice-btn">🎤</button>
+      <!-- 右侧聊天区 -->
+      <div class="meeting-chat-area" style="flex:1; background:white; border-radius:16px; display:flex; flex-direction:column; overflow:hidden;">
+        <div class="meeting-messages" id="meetingMessages" style="flex:1; overflow-y:auto; padding:16px;"></div>
+        <div class="meeting-input-area" style="border-top:1px solid #eee; padding:12px; display:flex; gap:8px;">
+          <textarea id="meetingInput" placeholder="向与会人员发言..." rows="2" style="flex:1; padding:8px; border-radius:20px; border:1px solid #ccc; resize:none;"></textarea>
+          <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:0 20px;">发送</button>
+          <button id="meetingVoiceBtn" class="voice-btn" style="background:#f0f0f0; border:none; border-radius:30px; padding:0 16px;">🎤</button>
         </div>
       </div>
     </div>
@@ -235,6 +250,29 @@ function renderMeetingChatArea() {
   voteBtn.onclick = () => showVoteModal();
   if (voiceBtn) setupVoiceInput(meetingInput, voiceBtn);
   setActiveNavByView('meeting');
+  // 加载历史消息
+  loadMeetingHistory();
+}
+
+async function loadMeetingHistory() {
+  const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
+  if (session && session.messages) {
+    const container = document.getElementById('meetingMessages');
+    if (container) {
+      container.innerHTML = '';
+      session.messages.forEach(msg => {
+        if (msg.role === 'system') return;
+        const roleClass = msg.role === 'user' ? 'user' : 'assistant';
+        let avatar = msg.role === 'user' ? '👨‍🌾' : '👤';
+        let name = msg.role === 'user' ? '村官' : (currentMeeting.villagers.find(v => msg.content.includes(v.name))?.name || '村民');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `meeting-message ${roleClass}`;
+        msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-bubble"><strong>${escapeHtml(name)}</strong><br>${escapeHtml(msg.content)}</div>`;
+        container.appendChild(msgDiv);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+  }
 }
 
 function renderMeetingVillagers() {
@@ -248,10 +286,14 @@ function renderMeetingVillagers() {
     const stanceIcon = v.stance === '支持' ? '✅' : (v.stance === '反对' ? '❌' : '⚪');
     const stanceClass = `stance-${v.stance === '支持' ? 'support' : (v.stance === '反对' ? 'oppose' : 'neutral')}`;
     card.innerHTML = `
-      <div class="villager-avatar">${v.avatar}</div>
-      <div class="villager-name">${escapeHtml(v.name)}</div>
-      <div class="villager-stance ${stanceClass}">${stanceIcon}</div>
-      <div class="satisfaction-mini"><div class="satisfaction-mini-fill" style="width:${(v.stanceValue || 0.5) * 100}%"></div></div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="villager-avatar" style="font-size:1.5rem;">${v.avatar}</div>
+        <div style="flex:1;">
+          <div class="villager-name" style="font-weight:bold;">${escapeHtml(v.name)}</div>
+          <div class="villager-stance ${stanceClass}" style="font-size:0.8rem;">${stanceIcon} ${v.stance}</div>
+          <div class="satisfaction-mini" style="background:#eee; border-radius:4px; height:4px; margin-top:4px;"><div class="satisfaction-mini-fill" style="width:${(v.stanceValue || 0.5) * 100}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>
+        </div>
+      </div>
     `;
     card.onclick = () => {
       currentMeeting.activeVillagerId = v.id;
@@ -326,7 +368,7 @@ async function sendMeetingMessage() {
     const reply = data.reply || '嗯...我再想想。';
     const replyDiv = document.createElement('div');
     replyDiv.className = 'meeting-message assistant';
-    replyDiv.innerHTML = `<div class="message-avatar">${activeVillager.avatar}</div><div class="message-bubble">${escapeHtml(reply)}</div>`;
+    replyDiv.innerHTML = `<div class="message-avatar">${activeVillager.avatar}</div><div class="message-bubble"><strong>${escapeHtml(activeVillager.name)}</strong><br>${escapeHtml(reply)}</div>`;
     messagesContainer.appendChild(replyDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     playSound('send');
@@ -364,7 +406,6 @@ function showMeetingResolution(resolution) {
   modal.onclick = e => { if (e.target === modal) document.body.removeChild(modal); };
 }
 
-// 新增：恢复已有会议会话
 export async function renderMeetingChat(session) {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
   let config = {};
@@ -390,27 +431,5 @@ export async function renderMeetingChat(session) {
     activeVillagerId: villagers[0]?.id
   };
   renderMeetingChatArea();
-  // 加载历史消息
-  const messagesContainer = document.getElementById('meetingMessages');
-  if (messagesContainer && session.messages) {
-    messagesContainer.innerHTML = '';
-    session.messages.forEach(msg => {
-      const role = msg.role === 'user' ? 'user' : (msg.role === 'assistant' ? 'assistant' : 'system');
-      if (role === 'system') return;
-      let avatar = '';
-      let name = '';
-      if (role === 'user') { avatar = '👨‍🌾'; name = '村官'; }
-      else {
-        const vill = villagers.find(v => msg.content.includes(v.name));
-        avatar = vill ? vill.avatar : '👤';
-        name = vill ? vill.name : '村民';
-      }
-      const msgDiv = document.createElement('div');
-      msgDiv.className = `meeting-message ${role}`;
-      msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-bubble"><strong>${escapeHtml(name)}</strong><br>${escapeHtml(msg.content)}</div>`;
-      messagesContainer.appendChild(msgDiv);
-    });
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
   startMeetingPolling(session.id);
 }

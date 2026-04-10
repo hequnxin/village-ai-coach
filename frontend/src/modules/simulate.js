@@ -1,3 +1,4 @@
+// frontend/src/modules/simulate.js
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
@@ -31,73 +32,14 @@ function createSimulateMessageElement(role, content, avatar, emotion, satisfacti
   if (messageId) msgDiv.dataset.messageId = messageId;
   const emotionIcon = getEmotionIcon(emotion);
   msgDiv.innerHTML = `
-    <div class="message-avatar">
-      ${avatar}
-      <div class="emotion-icon">${emotionIcon}</div>
-    </div>
-    <div class="message-bubble">
+    <div class="message-avatar" style="display:inline-block; margin-right:8px;">${avatar}</div>
+    <div class="message-bubble" style="display:inline-block; max-width:80%; vertical-align:top;">
       <div class="message-content">${escapeHtml(content)}</div>
       ${satisfaction !== undefined ? `<div class="satisfaction-bar" style="margin-top:6px; background:#eee; border-radius:4px; height:4px;"><div style="width:${satisfaction}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>` : ''}
+      <div class="emotion-icon" style="font-size:0.7rem; color:#999;">${emotionIcon}</div>
     </div>
   `;
   return msgDiv;
-}
-
-async function sendSimulateMessage(sessionId, text, container, typingIndicator, roleName, currentSatisfaction) {
-  const userMsg = createSimulateMessageElement('user', text, '👨‍🌾', 'neutral');
-  container.appendChild(userMsg);
-  scrollSimulate();
-  isTyping = true;
-  typingIndicator.classList.remove('hidden');
-  setInputEnabled(false);
-  try {
-    const res = await fetchWithAuth('/api/simulate/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, message: text })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    typingIndicator.classList.add('hidden');
-    const avatar = roleName.includes('村民') ? '👵' : '🤖';
-    const assistantMsg = createSimulateMessageElement('assistant', data.reply, avatar, data.emotion || 'neutral', data.satisfaction, data.messageId);
-    container.appendChild(assistantMsg);
-    if (data.strategyTip) showTip(data.strategyTip);
-    updateSidebarStatus(data);
-    scrollSimulate();
-    if (data.timeExpired) {
-      alert('时间到！模拟结束。');
-      document.getElementById('finishSimulateBtn')?.click();
-    }
-  } catch(err) { alert('发送失败：' + err.message); }
-  finally { isTyping = false; setInputEnabled(true); }
-}
-
-async function sendMultiSimulateMessage(sessionId, text, container, typingIndicator, scenario) {
-  const userMsg = createSimulateMessageElement('user', text, '👨‍🌾', 'neutral');
-  container.appendChild(userMsg);
-  scrollSimulate();
-  isTyping = true;
-  typingIndicator.classList.remove('hidden');
-  setInputEnabled(false);
-  try {
-    for (let i = 0; i < currentMultiVillagers.length; i++) {
-      const villager = currentMultiVillagers[i];
-      typingIndicator.innerHTML = `${villager.name} 正在思考...`;
-      const res = await fetchWithAuth('/api/simulate/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message: text, villager: { name: villager.name, personality: villager.personality } })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      const assistantMsg = createSimulateMessageElement('assistant', data.reply, villager.avatar, data.emotion || 'neutral', data.satisfaction, data.messageId);
-      container.appendChild(assistantMsg);
-      scrollSimulate();
-      if (data.strategyTip) showTip(data.strategyTip);
-      await new Promise(r => setTimeout(r, 500));
-    }
-    typingIndicator.classList.add('hidden');
-  } catch(err) { alert('发送失败：' + err.message); }
-  finally { isTyping = false; setInputEnabled(true); typingIndicator.innerHTML = '对方正在思考...'; typingIndicator.classList.add('hidden'); }
 }
 
 function scrollSimulate() {
@@ -142,7 +84,7 @@ function updateSidebarStatus(data) {
   }
   let stagesHtml = '';
   if (stages && stages.length) {
-    stagesHtml = '<div class="stages">阶段进度：' + stages.map(s => `<span class="${s.completed ? 'completed' : ''}">${s.name}</span>`).join(' → ') + '</div>';
+    stagesHtml = `<div class="stages">阶段进度：${stages.map(s => `<span class="${s.completed ? 'completed' : ''}">${s.name}</span>`).join(' → ')}</div>`;
   }
   statusDiv.innerHTML = `
     <div class="satisfaction">满意度：<progress value="${satisfaction || 50}" max="100"></progress> ${satisfaction || 50}%</div>
@@ -150,6 +92,75 @@ function updateSidebarStatus(data) {
     ${timeRemaining !== null ? `<div class="timer">⏰ 剩余时间：${Math.floor(timeRemaining/60)}:${(timeRemaining%60).toString().padStart(2,'0')}</div>` : ''}
     ${stagesHtml}
   `;
+}
+
+async function sendSimulateMessage(sessionId, text, container, typingIndicator, roleName, currentSatisfaction) {
+  const userMsg = createSimulateMessageElement('user', text, '👨‍🌾', 'neutral');
+  container.appendChild(userMsg);
+  scrollSimulate();
+  isTyping = true;
+  typingIndicator.classList.remove('hidden');
+  setInputEnabled(false);
+  try {
+    const res = await fetchWithAuth('/api/simulate/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message: text })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    typingIndicator.classList.add('hidden');
+    const avatar = roleName.includes('村民') ? '👵' : '🤖';
+    const assistantMsg = createSimulateMessageElement('assistant', data.reply, avatar, data.emotion || 'neutral', data.satisfaction, data.messageId);
+    container.appendChild(assistantMsg);
+    if (data.strategyTip) showTip(data.strategyTip);
+    updateSidebarStatus(data);
+    scrollSimulate();
+    if (data.timeExpired) {
+      alert('时间到！模拟结束。');
+      document.getElementById('finishSimulateBtn')?.click();
+    }
+  } catch(err) {
+    alert('发送失败：' + err.message);
+  } finally {
+    isTyping = false;
+    setInputEnabled(true);
+  }
+}
+
+async function sendMultiSimulateMessage(sessionId, text, container, typingIndicator, scenario) {
+  const userMsg = createSimulateMessageElement('user', text, '👨‍🌾', 'neutral');
+  container.appendChild(userMsg);
+  scrollSimulate();
+  isTyping = true;
+  typingIndicator.classList.remove('hidden');
+  setInputEnabled(false);
+  try {
+    for (let i = 0; i < currentMultiVillagers.length; i++) {
+      const villager = currentMultiVillagers[i];
+      typingIndicator.innerHTML = `${villager.name} 正在思考...`;
+      const res = await fetchWithAuth('/api/simulate/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, message: text, villager: { name: villager.name, personality: villager.personality } })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const assistantMsg = createSimulateMessageElement('assistant', data.reply, villager.avatar, data.emotion || 'neutral', data.satisfaction, data.messageId);
+      container.appendChild(assistantMsg);
+      scrollSimulate();
+      if (data.strategyTip) showTip(data.strategyTip);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    typingIndicator.classList.add('hidden');
+  } catch(err) {
+    alert('发送失败：' + err.message);
+  } finally {
+    isTyping = false;
+    setInputEnabled(true);
+    typingIndicator.innerHTML = '对方正在思考...';
+    typingIndicator.classList.add('hidden');
+  }
 }
 
 async function startPollingStatus(sessionId) {
@@ -172,15 +183,15 @@ export async function renderSimulateView(forceList = false) {
       setActiveNavByView('simulate');
       return;
     }
-    let html = `<div class="scenarios-list"><h2>选择场景</h2>`;
+    let html = `<div class="scenarios-list" style="padding:20px;"><h2>选择场景</h2>`;
     scenarios.forEach(s => {
       html += `
-        <div class="scenario-card" data-id="${s.id}">
+        <div class="scenario-card" data-id="${s.id}" style="background:white; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
           <h3>${escapeHtml(s.title)}</h3>
           <p>${escapeHtml(s.description)}</p>
           <p><strong>目标：</strong>${escapeHtml(s.goal)}</p>
           <p><strong>角色：</strong>${escapeHtml(s.role)}</p>
-          <div class="difficulty-selector">
+          <div class="difficulty-selector" style="margin:8px 0;">
             <label>难度：</label>
             <select class="difficulty-select">
               <option value="easy">🌟简单</option>
@@ -188,18 +199,18 @@ export async function renderSimulateView(forceList = false) {
               <option value="hard">🔥困难</option>
             </select>
           </div>
-          <div class="time-limit-selector">
+          <div class="time-limit-selector" style="margin:8px 0;">
             <label>时间限制（秒）：</label>
             <input type="number" class="time-limit-input" value="0" placeholder="0表示无限制" style="width:80px;">
           </div>
-          <div class="mode-selector" style="margin: 8px 0;">
+          <div class="mode-selector" style="margin:8px 0;">
             <label>模式：</label>
             <select class="mode-select">
               <option value="single">👤 单人模式</option>
               <option value="multi">👥 多人模式（3位村民）</option>
             </select>
           </div>
-          <button class="start-simulate" data-id="${s.id}">开始对练</button>
+          <button class="start-simulate" data-id="${s.id}" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:8px 20px; cursor:pointer;">开始对练</button>
         </div>
       `;
     });
@@ -227,7 +238,8 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
   try {
     simulateMode = mode;
     const res = await fetchWithAuth('/api/simulate/session', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scenarioId, difficulty, timeLimit })
     });
     const data = await res.json();
@@ -262,7 +274,9 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
     }
     renderSimulateChat(session);
     startPollingStatus(data.sessionId);
-  } catch(err) { alert('启动失败：' + err.message); }
+  } catch(err) {
+    alert('启动失败：' + err.message);
+  }
 }
 
 export async function renderSimulateChat(session) {
@@ -290,7 +304,7 @@ export async function renderSimulateChat(session) {
     const examplesHtml = (report.examples || []).map(ex => `<div class="example-item ${ex.verdict === '优点' ? 'good' : 'bad'}"><strong>${ex.verdict}</strong>：${escapeHtml(ex.quote)}<br><span class="comment">${escapeHtml(ex.comment)}</span></div>`).join('');
     const bestHtml = (report.bestPractices || []).map(p => `<div class="best-practice">💡 ${escapeHtml(p)}</div>`).join('');
     reportHtml = `
-      <div class="report-section">
+      <div class="report-section" style="margin-top:20px; padding:16px; background:#f9f9f9; border-radius:12px;">
         <h4>评估报告</h4>
         <div class="scores">${scoresHtml}</div>
         <div class="examples"><strong>逐句点评</strong>${examplesHtml}</div>
@@ -304,29 +318,29 @@ export async function renderSimulateChat(session) {
   const modeText = simulateMode === 'multi' ? '👥 多人模式' : '👤 单人模式';
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
-    <div class="simulate-view">
-      <div class="simulate-header">
-        <div style="display:flex;justify-content:space-between;">
-          <h2>${escapeHtml(scenario.title)} <span class="difficulty-badge">难度:${difficultyText}</span> <span class="difficulty-badge">${modeText}</span></h2>
+    <div class="simulate-view" style="display:flex; flex-direction:column; height:100%;">
+      <div class="simulate-header" style="background:white; padding:12px 16px; border-bottom:1px solid #ddd;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="margin:0;">${escapeHtml(scenario.title)} <span class="difficulty-badge" style="font-size:0.8rem; background:#eee; padding:2px 8px; border-radius:20px;">难度:${difficultyText}</span> <span class="difficulty-badge" style="font-size:0.8rem; background:#eee; padding:2px 8px; border-radius:20px;">${modeText}</span></h2>
           <button id="backToListBtn" class="summary-btn">←返回</button>
         </div>
         <p><strong>目标：</strong>${escapeHtml(scenario.goal)}</p>
         <p><strong>角色：</strong>${escapeHtml(scenario.role)}</p>
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex; gap:10px; margin-top:8px;">
           <button id="hintBtn" class="summary-btn" ${report ? 'disabled' : ''}>💡提示</button>
           <button id="finishSimulateBtn" class="summary-btn" ${report ? 'disabled' : ''}>结束并查看报告</button>
         </div>
       </div>
-      <div class="chat-container" id="simulateMessagesContainer">
+      <div class="chat-container" id="simulateMessagesContainer" style="flex:1; overflow-y:auto; padding:16px;">
         <div id="simulateMessages"></div>
-        <div id="simulateTyping" class="hidden">对方正在思考...</div>
+        <div id="simulateTyping" class="hidden" style="padding:8px; color:#999;">对方正在思考...</div>
       </div>
       ${reportHtml}
-      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''}>
-        <div class="input-area">
-          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2"></textarea>
-          <button id="simulateVoiceBtn" class="voice-btn">🎤</button>
-          <button id="simulateSendBtn">发送</button>
+      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''} style="background:white; border-top:1px solid #ddd; padding:12px;">
+        <div class="input-area" style="display:flex; gap:8px;">
+          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2" style="flex:1; padding:8px; border-radius:20px; border:1px solid #ccc; resize:none;"></textarea>
+          <button id="simulateVoiceBtn" class="voice-btn" style="background:#f0f0f0; border:none; border-radius:30px; padding:0 16px;">🎤</button>
+          <button id="simulateSendBtn" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:0 20px;">发送</button>
         </div>
       </footer>
     </div>
@@ -364,7 +378,7 @@ export async function renderSimulateChat(session) {
       }
     };
   }
-  setupSimulateVoiceInput(simulateInput);
+  setupVoiceInput(simulateInput, document.getElementById('simulateVoiceBtn'));
   if (finishBtn && !report) {
     const newFinish = finishBtn.cloneNode(true);
     finishBtn.parentNode.replaceChild(newFinish, finishBtn);
@@ -373,7 +387,8 @@ export async function renderSimulateChat(session) {
       newFinish.disabled = true;
       try {
         const res = await fetchWithAuth('/api/simulate/finish', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: session.id })
         });
         const reportData = await res.json();
@@ -386,7 +401,10 @@ export async function renderSimulateChat(session) {
         renderSessionList();
         renderSimulateChat(updated);
         updateTaskProgress('simulate', 1);
-      } catch(err) { alert('生成报告失败：' + err.message); newFinish.disabled = false; }
+      } catch(err) {
+        alert('生成报告失败：' + err.message);
+        newFinish.disabled = false;
+      }
     };
   }
   if (hintBtn && !report) {
@@ -400,7 +418,8 @@ export async function renderSimulateChat(session) {
       scrollSimulate();
       try {
         const res = await fetchWithAuth('/api/chat/summarize', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: session.id })
         });
         const data = await res.json();
@@ -409,8 +428,12 @@ export async function renderSimulateChat(session) {
         if (summary.suggestions && summary.suggestions.length) hint += summary.suggestions.map(s => `- ${s}`).join('\n');
         else hint += '尝试更耐心地沟通。';
         loading.innerHTML = `<div class="message-content">${escapeHtml(hint)}</div>`;
-      } catch(e) { loading.innerHTML = '<div class="message-content">⚠️提示失败</div>'; }
-      finally { hintBtn.disabled = false; scrollSimulate(); }
+      } catch(e) {
+        loading.innerHTML = '<div class="message-content">⚠️提示失败</div>';
+      } finally {
+        hintBtn.disabled = false;
+        scrollSimulate();
+      }
     };
   }
   setActiveNavByView('simulate');
@@ -430,7 +453,46 @@ function analyzeEmotion(text) {
   return 'neutral';
 }
 
-function setupSimulateVoiceInput(inputEl) {
-  const voiceBtn = document.getElementById('simulateVoiceBtn');
-  if (voiceBtn) setupVoiceInput(inputEl, voiceBtn);
+function setupVoiceInput(inputEl, voiceBtn) {
+  if (!inputEl || !voiceBtn) return;
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    voiceBtn.disabled = true;
+    voiceBtn.title = '浏览器不支持语音识别';
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  let isRecording = false;
+  const startRecording = () => {
+    if (isRecording) return;
+    try {
+      recognition.start();
+      isRecording = true;
+      voiceBtn.style.background = '#d32f2f';
+      voiceBtn.textContent = '🔴';
+    } catch(e) { console.warn('语音启动失败', e); }
+  };
+  const stopRecording = () => {
+    if (isRecording) recognition.stop();
+  };
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
+    inputEl.value = transcript;
+  };
+  recognition.onerror = () => {
+    isRecording = false;
+    voiceBtn.style.background = '';
+    voiceBtn.textContent = '🎤';
+  };
+  recognition.onend = () => {
+    isRecording = false;
+    voiceBtn.style.background = '';
+    voiceBtn.textContent = '🎤';
+  };
+  voiceBtn.addEventListener('mousedown', startRecording);
+  voiceBtn.addEventListener('mouseup', stopRecording);
+  voiceBtn.addEventListener('mouseleave', stopRecording);
 }
