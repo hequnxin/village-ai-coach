@@ -62,10 +62,12 @@ router.get('/fun-level-questions', async (req, res) => {
       const rand = Math.random();
       if (q.type === 'choice') {
         if (rand < 0.2 && i % 2 === 0) {
+          // 修复：使用字符集匹配中英文问号
+          const cleanQuestion = q.question.replace(/[？?]/g, '');
           q = {
             ...q,
             question_type: 'judge',
-            question: `判断：${q.question.replace(/？|?/g, '')}？`,
+            question: `判断：${cleanQuestion}？`,
             options: ['正确', '错误'],
             answer: Math.random() < 0.5 ? 0 : 1,
             explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
