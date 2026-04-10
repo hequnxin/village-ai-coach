@@ -54,6 +54,7 @@ router.get('/fun-level-questions', async (req, res) => {
     const parsedExtra = extra.map(q => ({ ...q, options: JSON.parse(q.options) }));
     questions = [...questions, ...parsedExtra];
   }
+  // 随机将部分题目转换为判断题或排序题（优化逻辑）
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
@@ -62,13 +63,18 @@ router.get('/fun-level-questions', async (req, res) => {
       if (q.type === 'choice') {
         if (rand < 0.2 && i % 2 === 0) {
           const cleanQuestion = q.question.replace(/[？?]/g, '');
+          let isTrue = true;
+          const positiveKeywords = ['可以', '应该', '需要', '必须', '鼓励', '支持'];
+          const negativeKeywords = ['不能', '禁止', '不得', '严禁', '不准'];
+          for (const kw of positiveKeywords) if (cleanQuestion.includes(kw)) { isTrue = true; break; }
+          for (const kw of negativeKeywords) if (cleanQuestion.includes(kw)) { isTrue = false; break; }
           q = {
             ...q,
             question_type: 'judge',
             question: `判断：${cleanQuestion}？`,
             options: ['正确', '错误'],
-            answer: Math.random() < 0.5 ? 0 : 1,
-            explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
+            answer: isTrue ? 0 : 1,
+            explanation: q.explanation || (isTrue ? '该说法符合政策规定。' : '该说法与政策不符。')
           };
         } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
           const correctOrder = [...Array(q.options.length).keys()];
@@ -120,48 +126,92 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 连连看游戏 ====================
+// ==================== 翻牌配对（记忆匹配） ====================
 
-router.get('/match-game', async (req, res) => {
+// 获取随机卡片配对（根据难度）
+router.get('/memory-pairs', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
-  let pairCount = 8;
-  if (difficulty === 'easy') pairCount = 6;
-  if (difficulty === 'hard') pairCount = 10;
-  const knowledge = await db.all(`
-    SELECT id, title, content FROM knowledge
+  let pairCount = 8;      // 简单
+  let gridCols = 4;
+  if (difficulty === 'medium') { pairCount = 12; gridCols = 4; }
+  if (difficulty === 'hard') { pairCount = 18; gridCols = 6; }
+
+  // 从知识库获取术语-描述对
+  let pairs = await db.all(`
+    SELECT id, title as term, content as description
+    FROM knowledge
     WHERE status = 'approved' AND category IN ('政策', '常见问题')
     ORDER BY RANDOM() LIMIT $1
   `, [pairCount]);
-  if (knowledge.length < pairCount) {
-    const extra = await db.all(`SELECT id, title, content FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1`, [pairCount - knowledge.length]);
-    knowledge.push(...extra);
+
+  if (pairs.length < pairCount) {
+    const extra = await db.all(`
+      SELECT id, title as term, content as description
+      FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1
+    `, [pairCount - pairs.length]);
+    pairs.push(...extra);
   }
-  const getShortDesc = (text) => {
-    let firstSentence = text.split(/[。\n]/)[0];
-    if (firstSentence.length > 60) firstSentence = firstSentence.substring(0, 60) + '...';
-    return firstSentence;
-  };
-  const pairs = [];
-  knowledge.forEach(k => {
-    pairs.push({ id: k.id, type: 'term', text: k.title.length > 30 ? k.title.substring(0,30)+'...' : k.title, pairId: k.id });
-    pairs.push({ id: k.id + '_desc', type: 'desc', text: getShortDesc(k.content), pairId: k.id });
+
+  // 构建卡片数组：每对生成两张卡片（术语和描述）
+  let cards = [];
+  pairs.forEach((pair, idx) => {
+    cards.push({
+      id: `${pair.id}_term`,
+      pairId: idx,
+      type: 'term',
+      text: pair.term.length > 40 ? pair.term.substring(0,40)+'...' : pair.term,
+      description: pair.description
+    });
+    cards.push({
+      id: `${pair.id}_desc`,
+      pairId: idx,
+      type: 'desc',
+      text: pair.description.length > 60 ? pair.description.substring(0,60)+'...' : pair.description,
+      description: pair.description
+    });
   });
-  for (let i = pairs.length - 1; i > 0; i--) {
+
+  // 随机打乱卡片顺序
+  for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+    [cards[i], cards[j]] = [cards[j], cards[i]];
   }
-  res.json({ pairs, pairCount });
+
+  res.json({ cards, pairCount, gridCols });
 });
 
-router.post('/match-game/submit', async (req, res) => {
-  const { score, total } = req.body;
+// 保存游戏结果
+router.post('/memory-submit', async (req, res) => {
+  const { difficulty, score, timeUsed, moves, matchedCount, totalPairs } = req.body;
   const userId = req.user.userId;
-  const reward = score === total ? 50 : 0;
-  if (reward > 0) {
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, NOW())`,
-      [uuidv4(), userId, reward, '连连看通关奖励']);
+  const recordId = uuidv4();
+  await db.run(`
+    INSERT INTO memory_game_records (id, user_id, difficulty, score, time_used, moves, matched_count, total_pairs, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+  `, [recordId, userId, difficulty, score, timeUsed, moves, matchedCount, totalPairs]);
+
+  // 奖励积分
+  const rewardPoints = Math.floor(score / 10);
+  if (rewardPoints > 0) {
+    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
+      [uuidv4(), userId, rewardPoints, `翻牌配对得分${score}`, new Date().toISOString()]);
   }
-  res.json({ reward });
+  res.json({ success: true, rewardPoints });
+});
+
+// 排行榜（按得分）
+router.get('/memory-rank', async (req, res) => {
+  const { difficulty = 'medium' } = req.query;
+  const ranks = await db.all(`
+    SELECT u.username, MAX(r.score) as best_score, MIN(r.time_used) as best_time, MIN(r.moves) as best_moves
+    FROM memory_game_records r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.difficulty = $1
+    GROUP BY r.user_id
+    ORDER BY best_score DESC, best_time ASC, best_moves ASC
+    LIMIT 10
+  `, [difficulty]);
+  res.json(ranks);
 });
 
 // ==================== 每日一练 ====================
@@ -258,51 +308,33 @@ router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
   if (!tableExists.exists) return res.json({ participated: false, attemptsLeft: 3 });
-
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
-
   const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
   if (!contest) return res.json({ participated: false, attemptsLeft: 3 });
-
-  // 查询用户本周的参赛记录
   const attempts = await db.all(`SELECT * FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 ORDER BY submitted_at DESC`, [contest.id, userId]);
   const attemptsCount = attempts.length;
   const attemptsLeft = Math.max(0, 3 - attemptsCount);
-
-  if (attemptsCount === 0) {
-    return res.json({ participated: false, attemptsLeft: 3 });
-  }
-
-  // 获取最佳成绩（最高正确率，相同时用时最短）
+  if (attemptsCount === 0) return res.json({ participated: false, attemptsLeft: 3 });
   let best = null;
   let bestScore = 0;
   let bestTotal = 0;
   let bestTime = Infinity;
   for (const att of attempts) {
-    const score = att.score;
-    const total = att.total_questions;
-    const accuracy = score / total;
+    const accuracy = att.score / att.total_questions;
     const currentBestAccuracy = best ? best.score / best.total_questions : -1;
     if (accuracy > currentBestAccuracy || (accuracy === currentBestAccuracy && att.time_used < bestTime)) {
       best = att;
-      bestScore = score;
-      bestTotal = total;
+      bestScore = att.score;
+      bestTotal = att.total_questions;
       bestTime = att.time_used;
     }
   }
-
-  res.json({
-    participated: true,
-    bestScore: bestScore,
-    total: bestTotal,
-    bestTime: bestTime,
-    attemptsLeft: attemptsLeft
-  });
+  res.json({ participated: true, bestScore, total: bestTotal, bestTime, attemptsLeft });
 });
 
 router.get('/weekly/current', async (req, res) => {
@@ -478,65 +510,6 @@ router.post('/wrong-questions/record', async (req, res) => {
     else await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, question_type, wrong_count, last_wrong_date) VALUES ($1, $2, $3, $4, 1, $5)`, [uuidv4(), userId, questionId, questionType, today]);
   }
   res.json({ recorded: true, correct: isCorrect, correctAnswer });
-});
-
-// ==================== 刮刮乐 ====================
-
-router.get('/scratch/today-count', async (req, res) => {
-  const userId = req.user.userId;
-  const today = new Date().toISOString().slice(0,10);
-  const result = await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND DATE(created_at) = $2`, [userId, today]);
-  const count = result ? result.c : 0;
-  res.json({ count });
-});
-
-router.get('/scratch/generate', async (req, res) => {
-  const userId = req.user.userId;
-  const today = new Date().toISOString().slice(0,10);
-  const countResult = await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND DATE(created_at) = $2`, [userId, today]);
-  if (countResult.c >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
-
-  const question = await db.get(`
-    SELECT id, question, options, answer FROM quiz_questions 
-    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
-    ORDER BY RANDOM() LIMIT 1
-  `);
-  if (!question) return res.status(404).json({ error: '无题目' });
-
-  const cardId = uuidv4();
-  await db.run(
-    `INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`,
-    [cardId, userId, question.id, question.answer, new Date().toISOString()]
-  );
-  res.json({ cardId, question: question.question, options: JSON.parse(question.options) });
-});
-
-router.post('/scratch/submit', async (req, res) => {
-  const { cardId, selected } = req.body;
-  const userId = req.user.userId;
-  const card = await db.get(`SELECT * FROM scratch_cards WHERE id = $1 AND user_id = $2 AND is_used = 0`, [cardId, userId]);
-  if (!card) return res.status(400).json({ error: '无效刮刮卡' });
-  const isCorrect = (parseInt(card.answer) === parseInt(selected));
-  let reward = 0;
-  if (isCorrect) {
-    reward = Math.floor(Math.random() * 20) + 10;
-    await db.run(`UPDATE scratch_cards SET is_used = 1, reward_points = $1, used_at = $2 WHERE id = $3`, [reward, new Date().toISOString(), cardId]);
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, reward, '刮刮乐奖励', new Date().toISOString()]);
-  } else {
-    await db.run(`UPDATE scratch_cards SET is_used = 1, used_at = $1 WHERE id = $2`, [new Date().toISOString(), cardId]);
-  }
-  res.json({ correct: isCorrect, rewardPoints: reward });
-});
-
-// ==================== 模拟失误点（可选） ====================
-
-router.get('/simulate-mistakes', async (req, res) => {
-  const userId = req.user.userId;
-  const mistakes = await db.all(
-    `SELECT id, mistake_text, scenario_id, created_at FROM simulate_mistakes WHERE user_id = $1 ORDER BY created_at DESC`,
-    [userId]
-  );
-  res.json(mistakes);
 });
 
 // ==================== 其他 ====================

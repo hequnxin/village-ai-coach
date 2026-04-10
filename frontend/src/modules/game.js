@@ -32,9 +32,6 @@ let currentWrongIndex = 0;
 let wrongClearStartCount = 0;
 let wrongClearCorrectCount = 0;
 
-// 刮刮乐
-let scratchRemaining = 0;
-
 // 趣味闯关
 let currentFunQuestions = [];
 let currentFunIndex = 0;
@@ -45,6 +42,20 @@ let currentFunDifficulty = 'medium';
 let currentFunEvent = null;
 let currentFunEventUsed = false;
 
+// 翻牌配对
+let memoryGameActive = false;
+let memoryGameDifficulty = 'medium';
+let memoryGameCards = [];
+let memoryGameOpenedCards = [];
+let memoryGameMatchedPairs = 0;
+let memoryGameMoves = 0;
+let memoryGameStartTime = null;
+let memoryGameTimer = null;
+let memoryGameGridCols = 4;
+let memoryGameLockBoard = false;
+let memoryGameTotalPairs = 0;
+let memoryGameScore = 0;
+
 // ==================== 辅助函数 ====================
 
 function formatAnswerLabel(question, answerIndex) {
@@ -53,7 +64,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件（修复正确/错误高亮、生命值显示） ====================
+// ==================== 通用全屏答题组件（修复高亮、排序题下一题） ====================
 
 function renderGenericQuiz(config) {
   const {
@@ -141,10 +152,10 @@ function renderGenericQuiz(config) {
       </div>
       <div class="quiz-footer">
         <div class="action-buttons">
-          ${showPrev && !isFirst ? `<button id="quizPrevBtn" class="action-btn">← 上一题</button>` : ''}
-          ${showSubmit && !alreadyAnswered ? `<button id="quizSubmitBtn" class="action-btn submit">提交答案</button>` : ''}
-          ${alreadyAnswered && !isLast ? `<button id="quizNextBtn" class="action-btn">下一题 →</button>` : ''}
-          ${alreadyAnswered && isLast ? `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>` : ''}
+          <button id="quizPrevBtn" class="action-btn" style="display: ${!isFirst ? 'inline-block' : 'none'}">← 上一题</button>
+          <button id="quizSubmitBtn" class="action-btn submit" style="display: ${!alreadyAnswered ? 'inline-block' : 'none'}">提交答案</button>
+          <button id="quizNextBtn" class="action-btn" style="display: ${alreadyAnswered && !isLast ? 'inline-block' : 'none'}">下一题 →</button>
+          <button id="quizFinishBtn" class="action-btn finish" style="display: ${alreadyAnswered && isLast ? 'inline-block' : 'none'}">完成闯关</button>
         </div>
       </div>
     </div>
@@ -231,6 +242,7 @@ function renderGenericQuiz(config) {
       if (isSort) {
         const items = Array.from(document.querySelectorAll('.sort-item'));
         userAnswer = items.map(item => parseInt(item.dataset.idx));
+        userAnswers[currentIndex] = userAnswer;
       } else if (isFill) {
         const fillInput = document.getElementById('fillInput');
         userAnswer = fillInput.value.trim();
@@ -280,26 +292,15 @@ function renderGenericQuiz(config) {
         } else if (isSort && correctLabel) {
           feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctLabel)}</div>`;
         }
-        // 重新渲染底部按钮
-        const footer = document.querySelector('.quiz-footer .action-buttons');
-        if (footer) {
-          footer.innerHTML = '';
-          if (showPrev && !isFirst) footer.innerHTML += `<button id="quizPrevBtn" class="action-btn">← 上一题</button>`;
-          if (userAnswers[currentIndex] !== null && !isLast) footer.innerHTML += `<button id="quizNextBtn" class="action-btn">下一题 →</button>`;
-          if (userAnswers[currentIndex] !== null && isLast) footer.innerHTML += `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>`;
-          const newPrev = document.getElementById('quizPrevBtn');
-          if (newPrev) newPrev.onclick = () => {
-            renderGenericQuiz({ ...config, currentIndex: currentIndex - 1, userAnswers, userScores, totalScore: config.totalScore });
-          };
-          const newNext = document.getElementById('quizNextBtn');
-          if (newNext) newNext.onclick = () => {
-            renderGenericQuiz({ ...config, currentIndex: currentIndex + 1, userAnswers, userScores, totalScore: config.totalScore });
-          };
-          const newFinish = document.getElementById('quizFinishBtn');
-          if (newFinish) newFinish.onclick = () => {
-            if (onFinish) onFinish(config.totalScore);
-          };
-        }
+        // 更新按钮显示（不重新渲染）
+        const prevBtn = document.getElementById('quizPrevBtn');
+        const nextBtn = document.getElementById('quizNextBtn');
+        const finishBtn = document.getElementById('quizFinishBtn');
+        const submitButton = document.getElementById('quizSubmitBtn');
+        if (submitButton) submitButton.style.display = 'none';
+        if (!isLast && nextBtn) nextBtn.style.display = 'inline-block';
+        if (isLast && finishBtn) finishBtn.style.display = 'inline-block';
+        if (prevBtn) prevBtn.style.display = !isFirst ? 'inline-block' : 'none';
       }
     };
   }
@@ -307,13 +308,13 @@ function renderGenericQuiz(config) {
   const prevBtn = document.getElementById('quizPrevBtn');
   if (prevBtn) {
     prevBtn.onclick = () => {
-      renderGenericQuiz({ ...config, currentIndex: currentIndex - 1, userAnswers, userScores, totalScore });
+      renderGenericQuiz({ ...config, currentIndex: currentIndex - 1, userAnswers, userScores, totalScore: config.totalScore });
     };
   }
   const nextBtn = document.getElementById('quizNextBtn');
   if (nextBtn) {
     nextBtn.onclick = () => {
-      renderGenericQuiz({ ...config, currentIndex: currentIndex + 1, userAnswers, userScores, totalScore });
+      renderGenericQuiz({ ...config, currentIndex: currentIndex + 1, userAnswers, userScores, totalScore: config.totalScore });
     };
   }
   const finishBtn = document.getElementById('quizFinishBtn');
@@ -323,6 +324,7 @@ function renderGenericQuiz(config) {
     };
   }
 }
+
 // ==================== 每日一练 ====================
 
 async function startDailyQuiz() {
@@ -410,7 +412,6 @@ async function startDailyQuiz() {
     }
   }
 }
-
 // ==================== 每周竞赛（修复倒计时清除、排行榜刷新） ====================
 
 async function startWeeklyContest() {
@@ -461,7 +462,6 @@ async function startWeeklyContest() {
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
     const onFinish = async (finalScore) => {
-      // 清除倒计时定时器
       if (contestTimerInterval) {
         clearInterval(contestTimerInterval);
         contestTimerInterval = null;
@@ -477,12 +477,9 @@ async function startWeeklyContest() {
       if (result.score !== undefined) {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒，获得 ${result.rewardPoints} 积分`);
         addPoints(result.rewardPoints, '每周竞赛');
-        // 刷新模块统计（更新卡片显示）
         await loadModuleStats();
-        // 如果排行榜模态框打开，自动刷新内容
         const rankModal = document.querySelector('.modal');
         if (rankModal && rankModal.style.display === 'flex') {
-          // 关闭再重新打开排行榜
           rankModal.remove();
           await showContestRanking();
         }
@@ -531,140 +528,6 @@ async function startWeeklyContest() {
   }
 }
 
-// ==================== 政策连连看（增加限时60秒） ====================
-
-async function startMatchGame() {
-  const difficulty = 'medium';
-  const res = await fetchWithAuth(`/api/game/match-game?difficulty=${difficulty}`);
-  const data = await res.json();
-  let pairs = data.pairs;
-  const totalPairs = data.pairCount;
-  let selectedCard = null;
-  let matchedPairs = 0;
-  let lock = false;
-  let matchedIndices = new Set();
-  let timeLeft = 60;
-  let timerInterval = null;
-
-  function updateTimerDisplay() {
-    const timerSpan = document.getElementById('matchTimer');
-    if (timerSpan) timerSpan.textContent = `⏰ ${timeLeft}秒`;
-    if (timeLeft <= 0 && timerInterval) {
-      clearInterval(timerInterval);
-      alert('时间到！连连看失败');
-      renderGameView();
-    }
-  }
-
-  function startTimer() {
-    if (timerInterval) clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-      timeLeft--;
-      updateTimerDisplay();
-      if (timeLeft <= 0) {
-        clearInterval(timerInterval);
-        alert('时间到！连连看失败');
-        renderGameView();
-      }
-    }, 1000);
-  }
-
-  function renderMatchGame() {
-    const dynamicContent = document.getElementById('dynamicContent');
-    dynamicContent.innerHTML = `
-      <div class="fullscreen-match">
-        <div class="match-header">
-          <button class="back-btn" id="matchBackBtn">← 返回</button>
-          <h2>🔗 政策连连看</h2>
-          <div class="match-progress">配对进度: ${matchedPairs} / ${totalPairs}</div>
-          <div class="match-timer" id="matchTimer">⏰ ${timeLeft}秒</div>
-        </div>
-        <div class="match-grid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:20px;">
-          ${pairs.map((card, idx) => `
-            <div class="match-card ${matchedIndices.has(idx) ? 'matched-hidden' : ''}" data-idx="${idx}" data-pair="${card.pairId}" data-type="${card.type}" style="background:white; border-radius:12px; padding:16px; text-align:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s; ${matchedIndices.has(idx) ? 'display:none;' : ''}">
-              <div class="match-card-content">${escapeHtml(card.text)}</div>
-            </div>
-          `).join('')}
-        </div>
-        <div class="match-footer" style="text-align:center; margin-top:20px;">
-          ${matchedPairs === totalPairs ? '<button id="matchFinishBtn" class="submit-btn">领取奖励</button>' : ''}
-        </div>
-      </div>
-    `;
-    document.getElementById('matchBackBtn').onclick = () => {
-      if (timerInterval) clearInterval(timerInterval);
-      renderGameView();
-    };
-    const cards = document.querySelectorAll('.match-card:not([style*="display:none"])');
-    cards.forEach(card => {
-      card.onclick = () => {
-        if (lock) return;
-        const idx = parseInt(card.dataset.idx);
-        if (matchedIndices.has(idx)) return;
-        if (selectedCard === null) {
-          selectedCard = card;
-          card.classList.add('selected');
-          card.style.transform = 'scale(1.05)';
-        } else {
-          if (selectedCard === card) {
-            selectedCard.classList.remove('selected');
-            selectedCard.style.transform = '';
-            selectedCard = null;
-            return;
-          }
-          lock = true;
-          const firstPair = selectedCard.dataset.pair;
-          const secondPair = card.dataset.pair;
-          const firstType = selectedCard.dataset.type;
-          const secondType = card.dataset.type;
-          if (firstPair === secondPair && firstType !== secondType) {
-            const firstIdx = parseInt(selectedCard.dataset.idx);
-            const secondIdx = parseInt(card.dataset.idx);
-            matchedIndices.add(firstIdx);
-            matchedIndices.add(secondIdx);
-            selectedCard.style.display = 'none';
-            card.style.display = 'none';
-            matchedPairs++;
-            const progressDiv = document.querySelector('.match-progress');
-            if (progressDiv) progressDiv.textContent = `配对进度: ${matchedPairs} / ${totalPairs}`;
-            if (matchedPairs === totalPairs) {
-              if (timerInterval) clearInterval(timerInterval);
-              const footer = document.querySelector('.match-footer');
-              footer.innerHTML = '<button id="matchFinishBtn" class="submit-btn">领取奖励</button>';
-              document.getElementById('matchFinishBtn').onclick = finishMatch;
-            }
-            playSound('complete');
-          } else {
-            selectedCard.classList.add('error');
-            card.classList.add('error');
-            setTimeout(() => {
-              selectedCard.classList.remove('error', 'selected');
-              card.classList.remove('error');
-              selectedCard.style.transform = '';
-            }, 500);
-            playSound('error');
-          }
-          selectedCard = null;
-          setTimeout(() => { lock = false; }, 500);
-        }
-      };
-    });
-    startTimer();
-  }
-  async function finishMatch() {
-    if (timerInterval) clearInterval(timerInterval);
-    const res = await fetchWithAuth('/api/game/match-game/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ score: matchedPairs, total: totalPairs })
-    });
-    const result = await res.json();
-    alert(`恭喜完成连连看！获得 ${result.reward} 积分`);
-    addPoints(result.reward, '连连看');
-    renderGameView();
-  }
-  renderMatchGame();
-}
 // ==================== 错题本（修复结束按钮、实时更新错题数） ====================
 
 async function startWrongClear() {
@@ -763,7 +626,6 @@ async function startWrongClear() {
     renderGameView();
   };
 
-  // 添加结束按钮
   const originalRender = renderGenericQuiz;
   const customRender = (cfg) => {
     const extra = `<button id="exitWrongClearBtn" class="summary-btn" style="background:#f44336; color:white; margin-left:10px;">结束闯关</button>`;
@@ -800,122 +662,222 @@ async function startWrongClear() {
   }, 100);
 }
 
-// ==================== 刮刮乐（重写，使用更可靠的实现） ====================
+// ==================== 翻牌配对（记忆匹配） ====================
 
-async function updateScratchRemaining() {
+async function startMemoryGame() {
+  const difficulty = await new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+      <div class="modal-content" style="width:300px;">
+        <h3>🎮 选择难度</h3>
+        <div style="display:flex; flex-direction:column; gap:12px; margin:20px 0;">
+          <button id="diffEasy" class="action-btn" style="background:#4caf50;">🌱 简单 (8对)</button>
+          <button id="diffMedium" class="action-btn" style="background:#ff9800;">⚡ 中等 (12对)</button>
+          <button id="diffHard" class="action-btn" style="background:#f44336;">🔥 困难 (18对)</button>
+        </div>
+        <button id="cancelBtn" class="summary-btn">取消</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeModal = () => modal.remove();
+    modal.querySelector('#diffEasy').onclick = () => { closeModal(); resolve('easy'); };
+    modal.querySelector('#diffMedium').onclick = () => { closeModal(); resolve('medium'); };
+    modal.querySelector('#diffHard').onclick = () => { closeModal(); resolve('hard'); };
+    modal.querySelector('#cancelBtn').onclick = closeModal;
+    modal.onclick = (e) => { if(e.target === modal) closeModal(); };
+  });
+  if (!difficulty) return;
+
+  memoryGameActive = true;
+  memoryGameDifficulty = difficulty;
+  memoryGameOpenedCards = [];
+  memoryGameMatchedPairs = 0;
+  memoryGameMoves = 0;
+  memoryGameScore = 0;
+  memoryGameLockBoard = false;
+  if (memoryGameTimer) clearInterval(memoryGameTimer);
+  memoryGameStartTime = Date.now();
+
   try {
-    const res = await fetchWithAuth('/api/game/scratch/today-count');
-    if (res.ok) {
-      const data = await res.json();
-      scratchRemaining = Math.max(0, 5 - (data.count || 0));
-    } else {
-      const today = new Date().toISOString().slice(0,10);
-      let count = parseInt(localStorage.getItem('scratch_count')) || 0;
-      if (localStorage.getItem('scratch_date') !== today) {
-        count = 0;
-        localStorage.setItem('scratch_date', today);
-        localStorage.setItem('scratch_count', '0');
-      }
-      scratchRemaining = Math.max(0, 5 - count);
-    }
+    const res = await fetchWithAuth(`/api/game/memory-pairs?difficulty=${difficulty}`);
+    const data = await res.json();
+    memoryGameCards = data.cards;
+    memoryGameTotalPairs = data.pairCount;
+    memoryGameGridCols = data.gridCols;
+    renderMemoryGame();
+    startMemoryGameTimer();
   } catch(e) {
-    console.warn('获取刮刮乐次数失败', e);
-    scratchRemaining = 5;
+    alert('加载失败');
+    memoryGameActive = false;
   }
-  const statsSpan = document.getElementById('scratchStats');
-  if (statsSpan) statsSpan.innerHTML = `剩余次数: ${scratchRemaining}`;
-  const btn = document.getElementById('getScratchBtn');
-  if (btn) btn.disabled = scratchRemaining <= 0;
 }
 
-async function getScratchCard() {
-  if (scratchRemaining <= 0) {
-    alert('今日刮刮卡次数已用完');
-    return;
-  }
-  try {
-    const res = await fetchWithAuth('/api/game/scratch/generate');
-    if (!res.ok) {
-      if (res.status === 429) {
-        alert('今日次数已用完');
-        await updateScratchRemaining();
-        return;
-      }
-      throw new Error('生成失败');
-    }
-    const card = await res.json();
-    renderScratchCard(card);
-  } catch(e) {
-    alert(e.message);
-  }
+function startMemoryGameTimer() {
+  if (memoryGameTimer) clearInterval(memoryGameTimer);
+  memoryGameTimer = setInterval(() => {
+    if (!memoryGameActive) return;
+    const elapsed = Math.floor((Date.now() - memoryGameStartTime) / 1000);
+    const timerSpan = document.getElementById('memoryGameTimer');
+    if (timerSpan) timerSpan.textContent = `⏰ ${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}`;
+  }, 1000);
 }
 
-function renderScratchCard(card) {
-  const existingModal = document.querySelector('.scratch-modal');
-  if (existingModal) existingModal.remove();
+function renderMemoryGame() {
+  const dynamicContent = document.getElementById('dynamicContent');
+  dynamicContent.innerHTML = `
+    <div class="memory-game-container" style="padding:20px; background:#f5f7fa; min-height:100%;">
+      <div class="memory-game-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; background:white; padding:12px 20px; border-radius:16px;">
+        <button class="back-btn" id="memoryBackBtn">← 返回</button>
+        <h2>🧠 翻牌配对 · ${memoryGameDifficulty === 'easy' ? '简单' : memoryGameDifficulty === 'medium' ? '中等' : '困难'}</h2>
+        <div style="display:flex; gap:20px;">
+          <div>配对: ${memoryGameMatchedPairs} / ${memoryGameTotalPairs}</div>
+          <div>步数: ${memoryGameMoves}</div>
+          <div id="memoryGameTimer">⏰ 00:00</div>
+          <div>得分: <span id="memoryGameScore">0</span></div>
+        </div>
+      </div>
+      <div class="memory-game-grid" style="display:grid; grid-template-columns:repeat(${memoryGameGridCols},1fr); gap:12px; max-width:800px; margin:0 auto;">
+        ${memoryGameCards.map((card, idx) => `
+          <div class="memory-card ${card.matched ? 'matched' : ''} ${memoryGameOpenedCards.includes(idx) ? 'open' : ''}" data-idx="${idx}" data-pair="${card.pairId}" data-type="${card.type}" style="background:white; border-radius:12px; padding:12px; text-align:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s; min-height:80px; display:flex; align-items:center; justify-content:center;">
+            <div class="memory-card-front" style="display:${memoryGameOpenedCards.includes(idx) || card.matched ? 'block' : 'none'}">
+              ${escapeHtml(card.text)}
+            </div>
+            <div class="memory-card-back" style="display:${memoryGameOpenedCards.includes(idx) || card.matched ? 'none' : 'block'}; font-size:2rem;">❓</div>
+          </div>
+        `).join('')}
+      </div>
+      ${memoryGameMatchedPairs === memoryGameTotalPairs ? '<div class="memory-game-complete" style="text-align:center; margin-top:20px;"><button id="memoryFinishBtn" class="submit-btn">领取奖励</button></div>' : ''}
+    </div>
+  `;
+  document.getElementById('memoryBackBtn').onclick = () => {
+    memoryGameActive = false;
+    if (memoryGameTimer) clearInterval(memoryGameTimer);
+    renderGameView();
+  };
+  const cards = document.querySelectorAll('.memory-card');
+  cards.forEach(card => {
+    card.onclick = () => {
+      if (memoryGameLockBoard) return;
+      const idx = parseInt(card.dataset.idx);
+      const cardData = memoryGameCards[idx];
+      if (cardData.matched) return;
+      if (memoryGameOpenedCards.includes(idx)) return;
+      if (memoryGameOpenedCards.length === 2) return;
+      memoryGameOpenedCards.push(idx);
+      renderMemoryGame();
+      if (memoryGameOpenedCards.length === 2) {
+        memoryGameLockBoard = true;
+        memoryGameMoves++;
+        const [idx1, idx2] = memoryGameOpenedCards;
+        const card1 = memoryGameCards[idx1];
+        const card2 = memoryGameCards[idx2];
+        if (card1.pairId === card2.pairId && card1.type !== card2.type) {
+          memoryGameCards[idx1].matched = true;
+          memoryGameCards[idx2].matched = true;
+          memoryGameMatchedPairs++;
+          const elapsed = Math.floor((Date.now() - memoryGameStartTime) / 1000);
+          const timeBonus = Math.max(0, 60 - elapsed) * 2;
+          const moveBonus = Math.max(0, 30 - memoryGameMoves) * 5;
+          memoryGameScore = memoryGameMatchedPairs * 100 + timeBonus + moveBonus;
+          document.getElementById('memoryGameScore').innerText = memoryGameScore;
+          playSound('complete');
+          memoryGameOpenedCards = [];
+          memoryGameLockBoard = false;
+          if (memoryGameMatchedPairs === memoryGameTotalPairs) {
+            clearInterval(memoryGameTimer);
+            const finishBtn = document.getElementById('memoryFinishBtn');
+            if (finishBtn) finishBtn.onclick = finishMemoryGame;
+          }
+          renderMemoryGame();
+        } else {
+          playSound('error');
+          setTimeout(() => {
+            memoryGameOpenedCards = [];
+            memoryGameLockBoard = false;
+            renderMemoryGame();
+          }, 800);
+        }
+      }
+    };
+  });
+  const finishBtn = document.getElementById('memoryFinishBtn');
+  if (finishBtn) finishBtn.onclick = finishMemoryGame;
+}
+
+async function finishMemoryGame() {
+  const elapsed = Math.floor((Date.now() - memoryGameStartTime) / 1000);
+  const res = await fetchWithAuth('/api/game/memory-submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      difficulty: memoryGameDifficulty,
+      score: memoryGameScore,
+      timeUsed: elapsed,
+      moves: memoryGameMoves,
+      matchedCount: memoryGameMatchedPairs,
+      totalPairs: memoryGameTotalPairs
+    })
+  });
+  const data = await res.json();
+  alert(`🎉 游戏完成！得分：${memoryGameScore}，步数：${memoryGameMoves}，用时：${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}，获得 ${data.rewardPoints} 积分`);
+  addPoints(data.rewardPoints, '翻牌配对');
+  memoryGameActive = false;
+  renderGameView();
+}
+
+async function showMemoryRanking() {
+  const difficulty = await new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+      <div class="modal-content" style="width:300px;">
+        <h3>🏆 排行榜</h3>
+        <div style="display:flex; flex-direction:column; gap:12px; margin:20px 0;">
+          <button id="rankEasy" class="action-btn">简单模式</button>
+          <button id="rankMedium" class="action-btn">中等模式</button>
+          <button id="rankHard" class="action-btn">困难模式</button>
+        </div>
+        <button id="cancelBtn" class="summary-btn">取消</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const closeModal = () => modal.remove();
+    modal.querySelector('#rankEasy').onclick = () => { closeModal(); resolve('easy'); };
+    modal.querySelector('#rankMedium').onclick = () => { closeModal(); resolve('medium'); };
+    modal.querySelector('#rankHard').onclick = () => { closeModal(); resolve('hard'); };
+    modal.querySelector('#cancelBtn').onclick = closeModal;
+    modal.onclick = (e) => { if(e.target === modal) closeModal(); };
+  });
+  if (!difficulty) return;
+  const res = await fetchWithAuth(`/api/game/memory-rank?difficulty=${difficulty}`);
+  const ranks = await res.json();
   const modal = document.createElement('div');
-  modal.className = 'modal scratch-modal';
+  modal.className = 'modal';
   modal.style.display = 'flex';
   modal.innerHTML = `
-    <div class="modal-content" style="width:500px;">
+    <div class="modal-content" style="width:400px;">
       <button class="modal-close">&times;</button>
-      <div id="scratchSurface" class="scratch-card">
-        <div class="scratch-cover">🎫 点击刮开涂层 🎫</div>
+      <h3>🏆 ${difficulty === 'easy' ? '简单' : difficulty === 'medium' ? '中等' : '困难'} 模式排行榜</h3>
+      <div style="margin-top:16px;">
+        ${ranks.length === 0 ? '<div>暂无数据</div>' : `
+          <div style="display:grid; grid-template-columns: 50px 1fr 80px 80px; gap:8px; font-weight:bold; border-bottom:1px solid #ccc; padding-bottom:8px;">
+            <div>排名</div><div>用户</div><div>最高分</div><div>最佳时间</div>
+          </div>
+          ${ranks.map((r, idx) => `
+            <div style="display:grid; grid-template-columns: 50px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee;">
+              <div>${idx+1}</div><div>${escapeHtml(r.username)}</div><div>${r.best_score}</div><div>${Math.floor(r.best_time/60)}:${(r.best_time%60).toString().padStart(2,'0')}</div>
+            </div>
+          `).join('')}
+        `}
       </div>
-      <div id="scratchAgainBtn" class="submit-btn" style="margin-top:12px; display:none;">再刮一张</div>
     </div>
   `;
   document.body.appendChild(modal);
-  const closeModal = () => { if (modal && modal.parentNode) modal.remove(); };
-  const closeBtn = modal.querySelector('.modal-close');
-  if (closeBtn) closeBtn.onclick = closeModal;
-  modal.onclick = (e) => { if(e.target === modal) closeModal(); };
-  const surface = modal.querySelector('#scratchSurface');
-  const againBtn = modal.querySelector('#scratchAgainBtn');
-  if (!surface) return;
-  surface.onclick = () => {
-    surface.innerHTML = `
-      <div class="scratch-question">
-        <div class="question-text">${escapeHtml(card.question)}</div>
-        <div class="scratch-options">
-          ${card.options.map((opt, idx) => `<div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>`).join('')}
-        </div>
-      </div>
-    `;
-    const opts = surface.querySelectorAll('.scratch-option');
-    opts.forEach(opt => {
-      opt.onclick = async () => {
-        const selected = parseInt(opt.dataset.opt);
-        const res = await fetchWithAuth('/api/game/scratch/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId: card.cardId, selected })
-        });
-        const result = await res.json();
-        if (result.correct) {
-          surface.innerHTML = `<div class="scratch-reward">🎉 刮中奖励！获得 ${result.rewardPoints} 积分 🎉</div>`;
-          addPoints(result.rewardPoints, '刮刮乐');
-        } else {
-          surface.innerHTML = `<div class="scratch-reward">😢 很遗憾，答案错误，下次再试试吧</div>`;
-        }
-        const today = new Date().toISOString().slice(0,10);
-        let count = parseInt(localStorage.getItem('scratch_count')) || 0;
-        count++;
-        localStorage.setItem('scratch_count', count);
-        localStorage.setItem('scratch_date', today);
-        await updateScratchRemaining();
-        if (scratchRemaining > 0 && againBtn) againBtn.style.display = 'block';
-        else if (againBtn) againBtn.style.display = 'none';
-      };
-    });
-  };
-  if (againBtn) {
-    againBtn.onclick = () => {
-      closeModal();
-      getScratchCard();
-    };
-  }
-  updateScratchRemaining();
+  modal.querySelector('.modal-close').onclick = () => modal.remove();
+  modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
 }
 
 // ==================== 排行榜 ====================
@@ -935,6 +897,7 @@ async function showContestRanking() {
     const rankRes = await fetchWithAuth(`/api/game/weekly/rank/${contestId}`);
     if (!rankRes.ok) throw new Error('获取排行榜失败');
     const ranks = await rankRes.json();
+    const currentUsername = appState.username;
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.display = 'flex';
@@ -951,7 +914,8 @@ async function showContestRanking() {
               const minutes = Math.floor(r.time_used / 60);
               const seconds = r.time_used % 60;
               const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
-              return `<div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee;">
+              const isCurrentUser = (r.username === currentUsername);
+              return `<div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee; ${isCurrentUser ? 'background:#e8f5e9; font-weight:bold;' : ''}">
                 <div>${idx+1}</div><div>${escapeHtml(r.username)}</div><div>${r.accuracy}%</div><div>${timeStr}</div>
               </div>`;
             }).join('')}
@@ -988,26 +952,22 @@ export async function renderGameView() {
         <div class="game-module module-contest animate-scale-up" style="animation-delay:0.2s">
           <div class="module-icon">🏅</div><div class="module-title">每周竞赛</div><div class="module-desc">限时2分钟，每周3次</div><div class="module-stats" id="contestStats">本周未参加</div><div style="display: flex; gap: 8px;"><button class="module-btn" id="startContestBtn">参加竞赛 →</button><button class="module-btn" id="rankContestBtn" style="background: #ff9800;">🏆 排行榜</button></div>
         </div>
-        <div class="game-module module-match animate-scale-up" style="animation-delay:0.3s">
-          <div class="module-icon">🔗</div><div class="module-title">政策连连看</div><div class="module-desc">配对政策名词与描述</div><div class="module-stats" id="matchStats">匹配记忆，赢积分</div><button class="module-btn" id="startMatchBtn">开始游戏 →</button>
+        <div class="game-module module-memory animate-scale-up" style="animation-delay:0.3s">
+          <div class="module-icon">🧠</div><div class="module-title">翻牌配对</div><div class="module-desc">记忆挑战，配对术语与描述</div><div class="module-stats" id="memoryStats">点击开始</div><button class="module-btn" id="startMemoryBtn">开始游戏 →</button><button class="module-btn" id="memoryRankBtn" style="margin-top:8px; background:#ff9800;">🏆 排行榜</button>
         </div>
         <div class="game-module module-wrong animate-scale-up" style="animation-delay:0.4s">
           <div class="module-icon">❌</div><div class="module-title">错题本</div><div class="module-desc">消灭错题，查漏补缺</div><div class="module-stats" id="wrongStats">加载中...</div><button class="module-btn" id="startWrongClearBtn">错题闯关 →</button>
-        </div>
-        <div class="game-module module-scratch animate-scale-up" style="animation-delay:0.5s">
-          <div class="module-icon">🎫</div><div class="module-title">刮刮乐</div><div class="module-desc">每日5次，刮出惊喜</div><div class="module-stats" id="scratchStats">剩余次数: --</div><button class="module-btn" id="getScratchBtn">刮一张 →</button>
         </div>
       </div>
     </div>
   `;
   await loadModuleStats();
-  await updateScratchRemaining();
   document.getElementById('openFunBtn').onclick = () => showFunLevelsModal();
   document.getElementById('startDailyBtn').onclick = startDailyQuiz;
   document.getElementById('startContestBtn').onclick = startWeeklyContest;
-  document.getElementById('startMatchBtn').onclick = startMatchGame;
+  document.getElementById('startMemoryBtn').onclick = startMemoryGame;
+  document.getElementById('memoryRankBtn').onclick = showMemoryRanking;
   document.getElementById('startWrongClearBtn').onclick = startWrongClear;
-  document.getElementById('getScratchBtn').onclick = getScratchCard;
   const rankBtn = document.getElementById('rankContestBtn');
   if (rankBtn) rankBtn.onclick = showContestRanking;
   setActiveNavByView('game');
@@ -1114,7 +1074,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
   let lives = 3;
   let eventActive = data.event;
   let eventUsed = false;
-  let isFinishing = false;  // 防止重复弹窗
+  let isFinishing = false;
 
   const onSubmit = async (index, userAnswer) => {
     const q = questions[index];

@@ -234,6 +234,18 @@ async function initDb() {
       completed INTEGER DEFAULT 0,
       completed_at TIMESTAMPTZ,
       UNIQUE(user_id, theme_id)
+    )`,
+    // 新增翻牌配对记录表
+    `CREATE TABLE IF NOT EXISTS memory_game_records (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      difficulty TEXT NOT NULL,
+      score INTEGER NOT NULL,
+      time_used INTEGER NOT NULL,
+      moves INTEGER NOT NULL,
+      matched_count INTEGER NOT NULL,
+      total_pairs INTEGER NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL
     )`
   ];
 
@@ -280,18 +292,12 @@ async function initDb() {
     console.error('添加全文搜索失败:', err.message);
   }
 
-  // ========== 为 wrong_questions 添加 question_type 列（如果不存在） ==========
+  // 添加索引
   try {
-    const columnCheck = await db.get(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_name = 'wrong_questions' AND column_name = 'question_type'
-    `);
-    if (!columnCheck) {
-      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
-      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
-      console.log('✅ 为 wrong_questions 表添加 question_type 列');
-    }
-  } catch(e) { console.warn('迁移 wrong_questions 失败:', e.message); }
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_user ON memory_game_records(user_id)`);
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_difficulty ON memory_game_records(difficulty)`);
+    console.log('✅ memory_game_records 索引创建成功');
+  } catch(e) { console.warn('创建索引失败:', e.message); }
 
   // ========== 插入默认场景数据 ==========
   const insertScenario = async (id, title, description, goal, role, initial_message, eval_dimensions) => {

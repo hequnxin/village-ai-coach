@@ -1625,3 +1625,170 @@ body {
   margin-top: 4px;
   text-align: right;
 }
+/* ========== 会议模式移动端适配 ========== */
+@media (max-width: 768px) {
+  .meeting-layout {
+    flex-direction: column;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .meeting-sidebar {
+    position: fixed;
+    left: -300px;
+    top: 0;
+    width: 280px;
+    height: 100%;
+    z-index: 1000;
+    border-radius: 0;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.2);
+    transition: left 0.3s ease;
+    overflow-y: auto;
+  }
+
+  .meeting-sidebar.open {
+    left: 0;
+  }
+
+  .mobile-sidebar-toggle {
+    display: block !important;
+  }
+
+  .meeting-chat-area {
+    margin-top: 0;
+    height: calc(100vh - 80px);
+  }
+
+  .meeting-messages {
+    height: calc(100vh - 160px);
+  }
+
+  .villager-card {
+    padding: 6px;
+  }
+
+  .villager-avatar {
+    font-size: 1.2rem;
+  }
+
+  .villager-name {
+    font-size: 0.8rem;
+  }
+}
+
+/* ========== 模拟对练移动端适配 ========== */
+@media (max-width: 768px) {
+  .simulate-view {
+    flex-direction: column;
+  }
+
+  .simulate-sidebar {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid #ddd;
+    max-height: 200px;
+    overflow-x: auto;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    padding: 8px !important;
+  }
+
+  .simulate-sidebar h4 {
+    display: none;
+  }
+
+  .villager-card {
+    min-width: 120px;
+    flex-shrink: 0;
+  }
+
+  .simulate-message-avatar {
+    font-size: 1.5rem;
+    width: 36px;
+  }
+
+  .simulate-message-bubble {
+    max-width: 85%;
+  }
+
+  .simulate-message-content {
+    font-size: 0.85rem;
+  }
+
+  .action-buttons {
+    gap: 8px;
+  }
+
+  .action-btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+}
+
+/* ========== 游戏中心移动端适配 ========== */
+@media (max-width: 768px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .game-module {
+    padding: 12px;
+  }
+
+  .module-icon {
+    font-size: 2rem;
+  }
+
+  .module-title {
+    font-size: 1rem;
+  }
+
+  .fullscreen-quiz {
+    padding: 12px;
+  }
+
+  .quiz-header {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .question-text {
+    font-size: 1rem;
+  }
+
+  .quiz-option-item {
+    padding: 8px 12px;
+  }
+
+  .match-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .fun-theme-card {
+    width: 160px;
+    padding: 12px;
+  }
+}
+
+/* ========== 通用模态框移动端 ========== */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 90vw;
+    max-height: 80vh;
+    padding: 12px;
+  }
+
+  .modal-content h3 {
+    font-size: 1.2rem;
+  }
+
+  .modal-close {
+    top: 8px;
+    right: 8px;
+    font-size: 1.2rem;
+  }
+}
