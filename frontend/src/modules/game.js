@@ -64,7 +64,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件（修复高亮、排序题下一题） ====================
+// ==================== 通用全屏答题组件 ====================
 
 function renderGenericQuiz(config) {
   const {

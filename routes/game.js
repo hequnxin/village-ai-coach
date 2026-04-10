@@ -8,7 +8,6 @@ const { generateChoice, generateFill } = require('../services/questionGenerator'
 const router = express.Router();
 
 // ==================== 辅助函数 ====================
-
 async function getUserTotalPoints(userId) {
   const sessionCount = (await db.get(`SELECT COUNT(*) as c FROM sessions WHERE user_id = $1`, [userId])).c;
   const favoriteCount = (await db.get(`SELECT COUNT(*) as c FROM favorites WHERE user_id = $1`, [userId])).c;
@@ -21,7 +20,6 @@ async function getUserTotalPoints(userId) {
 }
 
 // ==================== 趣味闯关 ====================
-
 router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
@@ -76,7 +74,9 @@ router.get('/fun-level-questions', async (req, res) => {
             answer: isTrue ? 0 : 1,
             explanation: q.explanation || (isTrue ? '该说法符合政策规定。' : '该说法与政策不符。')
           };
-        } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
+        } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3 &&
+                   (q.question.includes('顺序') || q.question.includes('流程') || q.question.includes('步骤') || q.category === '流程')) {
+          // 仅当题目包含顺序关键词时才转换为排序题
           const correctOrder = [...Array(q.options.length).keys()];
           const shuffled = [...correctOrder];
           for (let j = shuffled.length - 1; j > 0; j--) {
@@ -128,15 +128,13 @@ router.post('/policy-submit', async (req, res) => {
 
 // ==================== 翻牌配对（记忆匹配） ====================
 
-// 获取随机卡片配对（根据难度）
 router.get('/memory-pairs', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
-  let pairCount = 8;      // 简单
+  let pairCount = 8;
   let gridCols = 4;
   if (difficulty === 'medium') { pairCount = 12; gridCols = 4; }
   if (difficulty === 'hard') { pairCount = 18; gridCols = 6; }
 
-  // 从知识库获取术语-描述对
   let pairs = await db.all(`
     SELECT id, title as term, content as description
     FROM knowledge
@@ -152,7 +150,6 @@ router.get('/memory-pairs', async (req, res) => {
     pairs.push(...extra);
   }
 
-  // 构建卡片数组：每对生成两张卡片（术语和描述）
   let cards = [];
   pairs.forEach((pair, idx) => {
     cards.push({
@@ -171,7 +168,6 @@ router.get('/memory-pairs', async (req, res) => {
     });
   });
 
-  // 随机打乱卡片顺序
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [cards[i], cards[j]] = [cards[j], cards[i]];
@@ -180,7 +176,6 @@ router.get('/memory-pairs', async (req, res) => {
   res.json({ cards, pairCount, gridCols });
 });
 
-// 保存游戏结果
 router.post('/memory-submit', async (req, res) => {
   const { difficulty, score, timeUsed, moves, matchedCount, totalPairs } = req.body;
   const userId = req.user.userId;
@@ -190,7 +185,6 @@ router.post('/memory-submit', async (req, res) => {
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
   `, [recordId, userId, difficulty, score, timeUsed, moves, matchedCount, totalPairs]);
 
-  // 奖励积分
   const rewardPoints = Math.floor(score / 10);
   if (rewardPoints > 0) {
     await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
@@ -199,7 +193,6 @@ router.post('/memory-submit', async (req, res) => {
   res.json({ success: true, rewardPoints });
 });
 
-// 排行榜（按得分）
 router.get('/memory-rank', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   const ranks = await db.all(`
@@ -215,7 +208,6 @@ router.get('/memory-rank', async (req, res) => {
 });
 
 // ==================== 每日一练 ====================
-
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -300,7 +292,6 @@ router.get('/daily/status', async (req, res) => {
 });
 
 // ==================== 每周竞赛（带缓存） ====================
-
 let cachedWeeklyContest = null;
 let cachedWeekStart = null;
 
@@ -446,7 +437,6 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
 });
 
 // ==================== 错题本 ====================
-
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;
   const wrongs = await db.all(`
@@ -513,7 +503,6 @@ router.post('/wrong-questions/record', async (req, res) => {
 });
 
 // ==================== 其他 ====================
-
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;
