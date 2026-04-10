@@ -56,7 +56,7 @@ app.use('/api/knowledge', authenticate, knowledgeRoutes);
 app.use('/api/user', authenticate, userRoutes);
 app.use('/api/meeting', authenticate, meetingRoutes);
 app.use('/api/game', authenticate, gameRoutes);  // 新增，替代原 quiz
-
+console.log('✅ gameRoutes loaded, routes:', gameRoutes.stack?.map(r => r.route?.path).filter(Boolean));
 // 错误处理中间件
 app.use(errorHandler);
 

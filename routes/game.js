@@ -258,19 +258,51 @@ router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
   if (!tableExists.exists) return res.json({ participated: false, attemptsLeft: 3 });
+
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
+
   const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
   if (!contest) return res.json({ participated: false, attemptsLeft: 3 });
-  const attemptsCount = await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
-  const attemptsLeft = Math.max(0, 3 - (attemptsCount.count || 0));
-  const best = await db.get(`SELECT score, total_questions, time_used FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 ORDER BY (score * 1.0 / total_questions) DESC, time_used ASC LIMIT 1`, [contest.id, userId]);
-  if (best) res.json({ participated: true, bestScore: best.score, total: best.total_questions, bestTime: best.time_used, attemptsLeft });
-  else res.json({ participated: false, attemptsLeft: 3 });
+
+  // 查询用户本周的参赛记录
+  const attempts = await db.all(`SELECT * FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 ORDER BY submitted_at DESC`, [contest.id, userId]);
+  const attemptsCount = attempts.length;
+  const attemptsLeft = Math.max(0, 3 - attemptsCount);
+
+  if (attemptsCount === 0) {
+    return res.json({ participated: false, attemptsLeft: 3 });
+  }
+
+  // 获取最佳成绩（最高正确率，相同时用时最短）
+  let best = null;
+  let bestScore = 0;
+  let bestTotal = 0;
+  let bestTime = Infinity;
+  for (const att of attempts) {
+    const score = att.score;
+    const total = att.total_questions;
+    const accuracy = score / total;
+    const currentBestAccuracy = best ? best.score / best.total_questions : -1;
+    if (accuracy > currentBestAccuracy || (accuracy === currentBestAccuracy && att.time_used < bestTime)) {
+      best = att;
+      bestScore = score;
+      bestTotal = total;
+      bestTime = att.time_used;
+    }
+  }
+
+  res.json({
+    participated: true,
+    bestScore: bestScore,
+    total: bestTotal,
+    bestTime: bestTime,
+    attemptsLeft: attemptsLeft
+  });
 });
 
 router.get('/weekly/current', async (req, res) => {

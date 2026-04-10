@@ -136,13 +136,18 @@ async function sendMultiSimulateMessage(sessionId, text, container, typingIndica
   typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
   try {
+    // 依次让每个村民回复
     for (let i = 0; i < currentMultiVillagers.length; i++) {
       const villager = currentMultiVillagers[i];
       typingIndicator.innerHTML = `${villager.name} 正在思考...`;
       const res = await fetchWithAuth('/api/simulate/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, message: text, villager: { name: villager.name, personality: villager.personality } })
+        body: JSON.stringify({
+          sessionId,
+          message: text,
+          villager: { name: villager.name, personality: villager.personality }
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -150,6 +155,7 @@ async function sendMultiSimulateMessage(sessionId, text, container, typingIndica
       container.appendChild(assistantMsg);
       scrollSimulate();
       if (data.strategyTip) showTip(data.strategyTip);
+      // 村民之间间隔500ms，避免请求过快
       await new Promise(r => setTimeout(r, 500));
     }
     typingIndicator.classList.add('hidden');
@@ -162,7 +168,6 @@ async function sendMultiSimulateMessage(sessionId, text, container, typingIndica
     typingIndicator.classList.add('hidden');
   }
 }
-
 async function startPollingStatus(sessionId) {
   if (statusPollInterval) clearInterval(statusPollInterval);
   statusPollInterval = setInterval(async () => {

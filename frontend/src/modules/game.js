@@ -53,7 +53,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件 ====================
+// ==================== 通用全屏答题组件（修复正确/错误高亮、生命值显示） ====================
 
 function renderGenericQuiz(config) {
   const {
@@ -268,7 +268,7 @@ function renderGenericQuiz(config) {
             return;
           }
         }
-        // 高亮正确/错误选项（仅选择题）
+        // 高亮正确/错误选项（仅选择题和判断题）
         if (!isSort && !isFill) {
           const opts = document.querySelectorAll('.quiz-option-item');
           const correctIndex = q.answer;
@@ -411,9 +411,7 @@ async function startDailyQuiz() {
   }
 }
 
-// ==================== 每周竞赛 ====================
-
-let cachedWeeklyQuestions = null;
+// ==================== 每周竞赛（修复倒计时清除、排行榜刷新） ====================
 
 async function startWeeklyContest() {
   const startBtn = document.getElementById('startContestBtn');
@@ -463,6 +461,11 @@ async function startWeeklyContest() {
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
     const onFinish = async (finalScore) => {
+      // 清除倒计时定时器
+      if (contestTimerInterval) {
+        clearInterval(contestTimerInterval);
+        contestTimerInterval = null;
+      }
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
       const answers = currentContestQuestions.map((_, i) => ({ questionId: currentContestQuestions[i].id, selected: userAnswers[i] }));
       const res = await fetchWithAuth('/api/game/weekly/submit', {
@@ -474,12 +477,14 @@ async function startWeeklyContest() {
       if (result.score !== undefined) {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒，获得 ${result.rewardPoints} 积分`);
         addPoints(result.rewardPoints, '每周竞赛');
+        // 刷新模块统计（更新卡片显示）
         await loadModuleStats();
-        // 刷新排行榜如果打开
+        // 如果排行榜模态框打开，自动刷新内容
         const rankModal = document.querySelector('.modal');
         if (rankModal && rankModal.style.display === 'flex') {
-          const rankBtn = document.getElementById('rankContestBtn');
-          if (rankBtn) rankBtn.click();
+          // 关闭再重新打开排行榜
+          rankModal.remove();
+          await showContestRanking();
         }
       } else {
         alert('竞赛提交失败，请重试');
@@ -501,6 +506,7 @@ async function startWeeklyContest() {
       }
     }
     interval = setInterval(updateTimerDisplay, 1000);
+    contestTimerInterval = interval;
     updateTimerDisplay();
     renderGenericQuiz({
       questions: currentContestQuestions,
@@ -524,7 +530,8 @@ async function startWeeklyContest() {
     }
   }
 }
-// ==================== 政策连连看（增强版：配对成功隐藏，错误变红） ====================
+
+// ==================== 政策连连看（增加限时60秒） ====================
 
 async function startMatchGame() {
   const difficulty = 'medium';
@@ -536,6 +543,31 @@ async function startMatchGame() {
   let matchedPairs = 0;
   let lock = false;
   let matchedIndices = new Set();
+  let timeLeft = 60;
+  let timerInterval = null;
+
+  function updateTimerDisplay() {
+    const timerSpan = document.getElementById('matchTimer');
+    if (timerSpan) timerSpan.textContent = `⏰ ${timeLeft}秒`;
+    if (timeLeft <= 0 && timerInterval) {
+      clearInterval(timerInterval);
+      alert('时间到！连连看失败');
+      renderGameView();
+    }
+  }
+
+  function startTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      updateTimerDisplay();
+      if (timeLeft <= 0) {
+        clearInterval(timerInterval);
+        alert('时间到！连连看失败');
+        renderGameView();
+      }
+    }, 1000);
+  }
 
   function renderMatchGame() {
     const dynamicContent = document.getElementById('dynamicContent');
@@ -545,6 +577,7 @@ async function startMatchGame() {
           <button class="back-btn" id="matchBackBtn">← 返回</button>
           <h2>🔗 政策连连看</h2>
           <div class="match-progress">配对进度: ${matchedPairs} / ${totalPairs}</div>
+          <div class="match-timer" id="matchTimer">⏰ ${timeLeft}秒</div>
         </div>
         <div class="match-grid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:20px;">
           ${pairs.map((card, idx) => `
@@ -558,7 +591,10 @@ async function startMatchGame() {
         </div>
       </div>
     `;
-    document.getElementById('matchBackBtn').onclick = () => renderGameView();
+    document.getElementById('matchBackBtn').onclick = () => {
+      if (timerInterval) clearInterval(timerInterval);
+      renderGameView();
+    };
     const cards = document.querySelectorAll('.match-card:not([style*="display:none"])');
     cards.forEach(card => {
       card.onclick = () => {
@@ -582,7 +618,6 @@ async function startMatchGame() {
           const firstType = selectedCard.dataset.type;
           const secondType = card.dataset.type;
           if (firstPair === secondPair && firstType !== secondType) {
-            // 配对成功：隐藏两张卡片
             const firstIdx = parseInt(selectedCard.dataset.idx);
             const secondIdx = parseInt(card.dataset.idx);
             matchedIndices.add(firstIdx);
@@ -593,13 +628,13 @@ async function startMatchGame() {
             const progressDiv = document.querySelector('.match-progress');
             if (progressDiv) progressDiv.textContent = `配对进度: ${matchedPairs} / ${totalPairs}`;
             if (matchedPairs === totalPairs) {
+              if (timerInterval) clearInterval(timerInterval);
               const footer = document.querySelector('.match-footer');
               footer.innerHTML = '<button id="matchFinishBtn" class="submit-btn">领取奖励</button>';
               document.getElementById('matchFinishBtn').onclick = finishMatch;
             }
             playSound('complete');
           } else {
-            // 配对失败：变红，延迟后恢复
             selectedCard.classList.add('error');
             card.classList.add('error');
             setTimeout(() => {
@@ -614,8 +649,10 @@ async function startMatchGame() {
         }
       };
     });
+    startTimer();
   }
   async function finishMatch() {
+    if (timerInterval) clearInterval(timerInterval);
     const res = await fetchWithAuth('/api/game/match-game/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -628,8 +665,7 @@ async function startMatchGame() {
   }
   renderMatchGame();
 }
-
-// ==================== 错题本（实时清除，增加结束按钮） ====================
+// ==================== 错题本（修复结束按钮、实时更新错题数） ====================
 
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
@@ -651,6 +687,7 @@ async function startWrongClear() {
     const newCount = newData.questions?.length || 0;
     const wrongStats = document.getElementById('wrongStats');
     if (wrongStats) wrongStats.innerHTML = `共有 ${newCount} 道错题`;
+    remainingCount = newCount;
   }
 
   const onSubmit = async (index, userAnswer) => {
@@ -763,7 +800,7 @@ async function startWrongClear() {
   }, 100);
 }
 
-// ==================== 刮刮乐 ====================
+// ==================== 刮刮乐（重写，使用更可靠的实现） ====================
 
 async function updateScratchRemaining() {
   try {
@@ -814,10 +851,10 @@ async function getScratchCard() {
 }
 
 function renderScratchCard(card) {
-  const existingModal = document.querySelector('.modal');
+  const existingModal = document.querySelector('.scratch-modal');
   if (existingModal) existingModal.remove();
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal scratch-modal';
   modal.style.display = 'flex';
   modal.innerHTML = `
     <div class="modal-content" style="width:500px;">
@@ -1004,13 +1041,15 @@ async function loadModuleStats() {
           const seconds = contestData.bestTime % 60;
           const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
           contestStats.innerHTML = `最佳: ${contestData.bestScore}/${contestData.total}题, ${timeStr}<br>剩余次数: ${contestData.attemptsLeft}`;
-        } else contestStats.innerHTML = '本周未参加 (3次机会)';
+        } else {
+          contestStats.innerHTML = '本周未参加 (3次机会)';
+        }
       }
     }
   } catch(e) { console.error('每周竞赛状态加载失败', e); }
 }
 
-// 趣味闯关主题选择（需要补充）
+// 趣味闯关主题选择
 async function showFunLevelsModal() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -1075,6 +1114,8 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
   let lives = 3;
   let eventActive = data.event;
   let eventUsed = false;
+  let isFinishing = false;  // 防止重复弹窗
+
   const onSubmit = async (index, userAnswer) => {
     const q = questions[index];
     let isCorrect = false;
@@ -1107,7 +1148,8 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ questionId: q.id, userAnswer: String(userAnswer), questionType: q.type || 'choice' })
       });
-      if (lives <= 0) {
+      if (lives <= 0 && !isFinishing) {
+        isFinishing = true;
         alert('💀 生命值归零，闯关失败！');
         onFinish(totalScore);
         return { correct: false, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
@@ -1116,6 +1158,8 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     return { correct: isCorrect, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
   };
   const onFinish = async (finalScore) => {
+    if (isFinishing) return;
+    isFinishing = true;
     const total = questions.length;
     const passingScore = Math.ceil(total * 0.6);
     const passed = (totalScore / 10) >= passingScore;
