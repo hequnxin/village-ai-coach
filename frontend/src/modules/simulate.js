@@ -32,11 +32,11 @@ function createSimulateMessageElement(role, content, avatar, emotion, satisfacti
   if (messageId) msgDiv.dataset.messageId = messageId;
   const emotionIcon = getEmotionIcon(emotion);
   msgDiv.innerHTML = `
-    <div class="message-avatar" style="display:inline-block; margin-right:8px;">${avatar}</div>
-    <div class="message-bubble" style="display:inline-block; max-width:80%; vertical-align:top;">
+    <div class="message-avatar">${avatar}</div>
+    <div class="message-bubble">
       <div class="message-content">${escapeHtml(content)}</div>
       ${satisfaction !== undefined ? `<div class="satisfaction-bar" style="margin-top:6px; background:#eee; border-radius:4px; height:4px;"><div style="width:${satisfaction}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>` : ''}
-      <div class="emotion-icon" style="font-size:0.7rem; color:#999;">${emotionIcon}</div>
+      <div class="emotion-icon" style="font-size:0.8rem; margin-top:4px;">${emotionIcon}</div>
     </div>
   `;
   return msgDiv;
@@ -84,7 +84,7 @@ function updateSidebarStatus(data) {
   }
   let stagesHtml = '';
   if (stages && stages.length) {
-    stagesHtml = `<div class="stages">阶段进度：${stages.map(s => `<span class="${s.completed ? 'completed' : ''}">${s.name}</span>`).join(' → ')}</div>`;
+    stagesHtml = '<div class="stages">阶段进度：' + stages.map(s => `<span class="${s.completed ? 'completed' : ''}">${s.name}</span>`).join(' → ') + '</div>';
   }
   statusDiv.innerHTML = `
     <div class="satisfaction">满意度：<progress value="${satisfaction || 50}" max="100"></progress> ${satisfaction || 50}%</div>
@@ -183,15 +183,15 @@ export async function renderSimulateView(forceList = false) {
       setActiveNavByView('simulate');
       return;
     }
-    let html = `<div class="scenarios-list" style="padding:20px;"><h2>选择场景</h2>`;
+    let html = `<div class="scenarios-list"><h2>选择场景</h2>`;
     scenarios.forEach(s => {
       html += `
-        <div class="scenario-card" data-id="${s.id}" style="background:white; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+        <div class="scenario-card" data-id="${s.id}">
           <h3>${escapeHtml(s.title)}</h3>
           <p>${escapeHtml(s.description)}</p>
           <p><strong>目标：</strong>${escapeHtml(s.goal)}</p>
           <p><strong>角色：</strong>${escapeHtml(s.role)}</p>
-          <div class="difficulty-selector" style="margin:8px 0;">
+          <div class="difficulty-selector">
             <label>难度：</label>
             <select class="difficulty-select">
               <option value="easy">🌟简单</option>
@@ -199,18 +199,18 @@ export async function renderSimulateView(forceList = false) {
               <option value="hard">🔥困难</option>
             </select>
           </div>
-          <div class="time-limit-selector" style="margin:8px 0;">
+          <div class="time-limit-selector">
             <label>时间限制（秒）：</label>
             <input type="number" class="time-limit-input" value="0" placeholder="0表示无限制" style="width:80px;">
           </div>
-          <div class="mode-selector" style="margin:8px 0;">
+          <div class="mode-selector" style="margin: 8px 0;">
             <label>模式：</label>
             <select class="mode-select">
               <option value="single">👤 单人模式</option>
               <option value="multi">👥 多人模式（3位村民）</option>
             </select>
           </div>
-          <button class="start-simulate" data-id="${s.id}" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:8px 20px; cursor:pointer;">开始对练</button>
+          <button class="start-simulate" data-id="${s.id}">开始对练</button>
         </div>
       `;
     });
@@ -304,7 +304,7 @@ export async function renderSimulateChat(session) {
     const examplesHtml = (report.examples || []).map(ex => `<div class="example-item ${ex.verdict === '优点' ? 'good' : 'bad'}"><strong>${ex.verdict}</strong>：${escapeHtml(ex.quote)}<br><span class="comment">${escapeHtml(ex.comment)}</span></div>`).join('');
     const bestHtml = (report.bestPractices || []).map(p => `<div class="best-practice">💡 ${escapeHtml(p)}</div>`).join('');
     reportHtml = `
-      <div class="report-section" style="margin-top:20px; padding:16px; background:#f9f9f9; border-radius:12px;">
+      <div class="report-section">
         <h4>评估报告</h4>
         <div class="scores">${scoresHtml}</div>
         <div class="examples"><strong>逐句点评</strong>${examplesHtml}</div>
@@ -318,29 +318,29 @@ export async function renderSimulateChat(session) {
   const modeText = simulateMode === 'multi' ? '👥 多人模式' : '👤 单人模式';
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
-    <div class="simulate-view" style="display:flex; flex-direction:column; height:100%;">
-      <div class="simulate-header" style="background:white; padding:12px 16px; border-bottom:1px solid #ddd;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h2 style="margin:0;">${escapeHtml(scenario.title)} <span class="difficulty-badge" style="font-size:0.8rem; background:#eee; padding:2px 8px; border-radius:20px;">难度:${difficultyText}</span> <span class="difficulty-badge" style="font-size:0.8rem; background:#eee; padding:2px 8px; border-radius:20px;">${modeText}</span></h2>
+    <div class="simulate-view">
+      <div class="simulate-header">
+        <div style="display:flex;justify-content:space-between;">
+          <h2>${escapeHtml(scenario.title)} <span class="difficulty-badge">难度:${difficultyText}</span> <span class="difficulty-badge">${modeText}</span></h2>
           <button id="backToListBtn" class="summary-btn">←返回</button>
         </div>
         <p><strong>目标：</strong>${escapeHtml(scenario.goal)}</p>
         <p><strong>角色：</strong>${escapeHtml(scenario.role)}</p>
-        <div style="display:flex; gap:10px; margin-top:8px;">
+        <div style="display:flex;gap:10px;">
           <button id="hintBtn" class="summary-btn" ${report ? 'disabled' : ''}>💡提示</button>
           <button id="finishSimulateBtn" class="summary-btn" ${report ? 'disabled' : ''}>结束并查看报告</button>
         </div>
       </div>
-      <div class="chat-container" id="simulateMessagesContainer" style="flex:1; overflow-y:auto; padding:16px;">
+      <div class="chat-container" id="simulateMessagesContainer">
         <div id="simulateMessages"></div>
-        <div id="simulateTyping" class="hidden" style="padding:8px; color:#999;">对方正在思考...</div>
+        <div id="simulateTyping" class="hidden">对方正在思考...</div>
       </div>
       ${reportHtml}
-      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''} style="background:white; border-top:1px solid #ddd; padding:12px;">
-        <div class="input-area" style="display:flex; gap:8px;">
-          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2" style="flex:1; padding:8px; border-radius:20px; border:1px solid #ccc; resize:none;"></textarea>
-          <button id="simulateVoiceBtn" class="voice-btn" style="background:#f0f0f0; border:none; border-radius:30px; padding:0 16px;">🎤</button>
-          <button id="simulateSendBtn" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:0 20px;">发送</button>
+      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''}>
+        <div class="input-area">
+          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2"></textarea>
+          <button id="simulateVoiceBtn" class="voice-btn">🎤</button>
+          <button id="simulateSendBtn">发送</button>
         </div>
       </footer>
     </div>
@@ -355,11 +355,18 @@ export async function renderSimulateChat(session) {
   const finishBtn = document.getElementById('finishSimulateBtn');
   const hintBtn = document.getElementById('hintBtn');
   const simulateTyping = document.getElementById('simulateTyping');
+  // 显示历史消息
   session.messages.forEach(msg => {
     if (msg.role === 'system') return;
     let avatar = msg.role === 'user' ? '👨‍🌾' : '🤖';
     let emotion = 'neutral';
-    if (msg.role === 'assistant' && msg.content) emotion = analyzeEmotion(msg.content);
+    if (msg.role === 'assistant' && msg.content) {
+      if (msg.content.includes('谢谢') || msg.content.includes('感谢')) emotion = 'happy';
+      else if (msg.content.includes('生气') || msg.content.includes('凭什么')) emotion = 'angry';
+      else if (msg.content.includes('难过') || msg.content.includes('失望')) emotion = 'sad';
+      else if (msg.content.includes('担心') || msg.content.includes('怕')) emotion = 'worry';
+      else if (msg.content.includes('真的吗') || msg.content.includes('竟然')) emotion = 'surprise';
+    }
     const msgDiv = createSimulateMessageElement(msg.role === 'user' ? 'user' : 'assistant', msg.content, avatar, emotion, undefined, msg.messageId);
     simulateMessagesDiv.appendChild(msgDiv);
   });
@@ -378,7 +385,9 @@ export async function renderSimulateChat(session) {
       }
     };
   }
-  setupVoiceInput(simulateInput, document.getElementById('simulateVoiceBtn'));
+  // 使用从 helpers 导入的 setupVoiceInput
+  const voiceBtn = document.getElementById('simulateVoiceBtn');
+  if (voiceBtn) setupVoiceInput(simulateInput, voiceBtn);
   if (finishBtn && !report) {
     const newFinish = finishBtn.cloneNode(true);
     finishBtn.parentNode.replaceChild(newFinish, finishBtn);
@@ -437,62 +446,4 @@ export async function renderSimulateChat(session) {
     };
   }
   setActiveNavByView('simulate');
-}
-
-function analyzeEmotion(text) {
-  const happy = ['谢谢', '感谢', '好', '不错', '满意', '开心', '棒'];
-  const sad = ['难过', '伤心', '失望', '唉', '遗憾'];
-  const angry = ['生气', '愤怒', '不满', '凭什么', '不行', '反对'];
-  const worry = ['担心', '怕', '忧虑', '愁', '难'];
-  const surprise = ['真的吗', '竟然', '没想到', '哇'];
-  for (let w of happy) if (text.includes(w)) return 'happy';
-  for (let w of sad) if (text.includes(w)) return 'sad';
-  for (let w of angry) if (text.includes(w)) return 'angry';
-  for (let w of worry) if (text.includes(w)) return 'worry';
-  for (let w of surprise) if (text.includes(w)) return 'surprise';
-  return 'neutral';
-}
-
-function setupVoiceInput(inputEl, voiceBtn) {
-  if (!inputEl || !voiceBtn) return;
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    voiceBtn.disabled = true;
-    voiceBtn.title = '浏览器不支持语音识别';
-    return;
-  }
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'zh-CN';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-  let isRecording = false;
-  const startRecording = () => {
-    if (isRecording) return;
-    try {
-      recognition.start();
-      isRecording = true;
-      voiceBtn.style.background = '#d32f2f';
-      voiceBtn.textContent = '🔴';
-    } catch(e) { console.warn('语音启动失败', e); }
-  };
-  const stopRecording = () => {
-    if (isRecording) recognition.stop();
-  };
-  recognition.onresult = (event) => {
-    const transcript = Array.from(event.results).map(r => r[0].transcript).join('');
-    inputEl.value = transcript;
-  };
-  recognition.onerror = () => {
-    isRecording = false;
-    voiceBtn.style.background = '';
-    voiceBtn.textContent = '🎤';
-  };
-  recognition.onend = () => {
-    isRecording = false;
-    voiceBtn.style.background = '';
-    voiceBtn.textContent = '🎤';
-  };
-  voiceBtn.addEventListener('mousedown', startRecording);
-  voiceBtn.addEventListener('mouseup', stopRecording);
-  voiceBtn.addEventListener('mouseleave', stopRecording);
 }
