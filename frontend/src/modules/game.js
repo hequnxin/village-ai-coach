@@ -52,7 +52,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件 ====================
+// ==================== 通用全屏答题组件（修复下一题按钮、得分累加、正确/错误高亮） ====================
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -118,7 +118,7 @@ function renderGenericQuiz(config) {
         <button class="back-btn" id="quizBackBtn">← 返回</button>
         <div class="quiz-title">${escapeHtml(title)}</div>
         <div class="quiz-progress">第 ${currentIndex+1} / ${questions.length} 题</div>
-        <div class="quiz-score">得分: ${totalScore}</div>
+        <div class="quiz-score" id="quizScoreDisplay">得分: ${totalScore}</div>
         ${extraHeader ? extraHeader : ''}
       </div>
       <div class="quiz-body">
@@ -154,6 +154,7 @@ function renderGenericQuiz(config) {
       };
     });
   } else {
+    // 排序题交互（略，保持原有）
     let sortItems = document.querySelectorAll('.sort-item');
     let selectedSortItem = null;
     function updateSortOrder() {
@@ -232,6 +233,9 @@ function renderGenericQuiz(config) {
           if (!userScores[currentIndex]) {
             userScores[currentIndex] = true;
             config.totalScore = (config.totalScore || 0) + (pointsGain || 10);
+            // 更新得分显示
+            const scoreDisplay = document.getElementById('quizScoreDisplay');
+            if (scoreDisplay) scoreDisplay.textContent = `得分: ${config.totalScore}`;
           }
           feedbackDiv.innerHTML = `<div class="feedback-correct">✅ 回答正确！${pointsGain ? ` +${pointsGain} 积分` : ''}<br>${explanation ? '解析：'+escapeHtml(explanation) : ''}</div>`;
           playSound('complete');
@@ -327,7 +331,6 @@ function renderGenericQuiz(config) {
     };
   }
 }
-
 // ==================== 每日一练 ====================
 async function startDailyQuiz() {
   const startBtn = document.getElementById('startDailyBtn');
@@ -479,7 +482,7 @@ async function startWeeklyContest() {
       });
       const result = await res.json();
       if (result.score !== undefined) {
-        alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
+        alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒，获得 ${result.rewardPoints} 积分`);
         addPoints(result.rewardPoints, '每周竞赛');
       } else {
         alert('竞赛提交失败，请重试');
@@ -526,6 +529,7 @@ async function startWeeklyContest() {
     }
   }
 }
+
 // ==================== 趣味闯关 ====================
 async function showFunLevelsModal() {
   const dynamicContent = document.getElementById('dynamicContent');
@@ -766,10 +770,9 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     showPrev: true
   });
 }
-
-// ==================== 政策连连看 ====================
+// ==================== 政策连连看（改进配对内容、增加视觉反馈） ====================
 async function startMatchGame() {
-  const difficulty = 'medium'; // 可让用户选择
+  const difficulty = 'medium';
   const res = await fetchWithAuth(`/api/game/match-game?difficulty=${difficulty}`);
   const data = await res.json();
   const pairs = data.pairs;

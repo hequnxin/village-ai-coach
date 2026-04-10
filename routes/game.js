@@ -56,37 +56,42 @@ router.get('/fun-level-questions', async (req, res) => {
     questions = [...questions, ...parsedExtra];
   }
 
-  // 随机转换判断题/排序题
+  // 随机将部分题目转换为判断题或排序题（只对选择题操作）
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
       let q = questions[i];
       const rand = Math.random();
-      if (rand < 0.2 && i % 2 === 0) {
-        q = {
-          ...q,
-          question_type: 'judge',
-          question: `判断：${q.question.replace(/？|？/g, '')}？`,
-          options: ['正确', '错误'],
-          answer: Math.random() < 0.5 ? 0 : 1,
-          explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
-        };
-      } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
-        const correctOrder = [...Array(q.options.length).keys()];
-        const shuffled = [...correctOrder];
-        for (let j = shuffled.length - 1; j > 0; j--) {
-          const k = Math.floor(Math.random() * (j + 1));
-          [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+      // 只对非填空题进行转换，且确保原题为选择题
+      if (q.type === 'choice') {
+        if (rand < 0.2 && i % 2 === 0) {
+          q = {
+            ...q,
+            question_type: 'judge',
+            question: `判断：${q.question.replace(/？|？/g, '')}？`,
+            options: ['正确', '错误'],
+            answer: Math.random() < 0.5 ? 0 : 1,
+            explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
+          };
+        } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3) {
+          const correctOrder = [...Array(q.options.length).keys()];
+          const shuffled = [...correctOrder];
+          for (let j = shuffled.length - 1; j > 0; j--) {
+            const k = Math.floor(Math.random() * (j + 1));
+            [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+          }
+          const shuffledOptions = shuffled.map(idx => q.options[idx]);
+          q = {
+            ...q,
+            question_type: 'sort',
+            question: `请按正确顺序排列：${q.question}`,
+            options: shuffledOptions,
+            answer: correctOrder,
+            explanation: q.explanation || '请按照政策流程顺序排列。'
+          };
+        } else {
+          q.question_type = 'choice';
         }
-        const shuffledOptions = shuffled.map(idx => q.options[idx]);
-        q = {
-          ...q,
-          question_type: 'sort',
-          question: `请按正确顺序排列：${q.question}`,
-          options: shuffledOptions,
-          answer: correctOrder,
-          explanation: q.explanation || '请按照政策流程顺序排列。'
-        };
       } else {
         q.question_type = 'choice';
       }
@@ -122,7 +127,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 政策连连看 ====================
+// ==================== 连连看游戏（改进配对内容） ====================
 router.get('/match-game', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 4;
@@ -141,8 +146,10 @@ router.get('/match-game', async (req, res) => {
   }
 
   const getShortDesc = (text) => {
-    const firstSentence = text.split(/[。\n]/)[0];
-    return firstSentence.length > 80 ? firstSentence.substring(0, 80) + '...' : firstSentence;
+    // 提取第一句话，限制长度
+    let firstSentence = text.split(/[。\n]/)[0];
+    if (firstSentence.length > 50) firstSentence = firstSentence.substring(0, 50) + '...';
+    return firstSentence;
   };
 
   const pairs = [];
@@ -150,7 +157,7 @@ router.get('/match-game', async (req, res) => {
     pairs.push({
       id: k.id,
       type: 'term',
-      text: k.title,
+      text: k.title.length > 30 ? k.title.substring(0,30)+'...' : k.title,
       pairId: k.id
     });
     pairs.push({
@@ -160,7 +167,6 @@ router.get('/match-game', async (req, res) => {
       pairId: k.id
     });
   });
-  // 打乱顺序
   for (let i = pairs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
@@ -400,9 +406,10 @@ router.post('/weekly/submit', async (req, res) => {
   const contest = await db.get(`SELECT * FROM weekly_contest WHERE id = $1 AND status = 'active'`, [contestId]);
   if (!contest) return res.status(400).json({ error: '竞赛已结束' });
 
-  const existingAttempts = await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contestId, userId]);
-  if (existingAttempts.count >= 3) {
-    return res.status(403).json({ error: '本周参赛次数已达上限' });
+  // 检查是否已存在相同 attempt_number（避免重复提交）
+  const existing = await db.get(`SELECT id FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 AND attempt_number = $3`, [contestId, userId, attemptNumber]);
+  if (existing) {
+    return res.status(400).json({ error: '已提交过本次竞赛' });
   }
 
   let correct = 0;
@@ -421,6 +428,7 @@ router.post('/weekly/submit', async (req, res) => {
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, `每周竞赛得分${correct}/${totalQuestions}`, new Date().toISOString()]);
 
+  // 记录错题
   for (let i = 0; i < answers.length; i++) {
     const ans = answers[i];
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
