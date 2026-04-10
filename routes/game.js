@@ -8,6 +8,7 @@ const { generateChoice, generateFill } = require('../services/questionGenerator'
 const router = express.Router();
 
 // ==================== 辅助函数 ====================
+
 async function getUserTotalPoints(userId) {
   const sessionCount = (await db.get(`SELECT COUNT(*) as c FROM sessions WHERE user_id = $1`, [userId])).c;
   const favoriteCount = (await db.get(`SELECT COUNT(*) as c FROM favorites WHERE user_id = $1`, [userId])).c;
@@ -20,6 +21,7 @@ async function getUserTotalPoints(userId) {
 }
 
 // ==================== 趣味闯关 ====================
+
 router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
@@ -33,42 +35,37 @@ router.get('/policy-themes', async (req, res) => {
 router.get('/fun-level-questions', async (req, res) => {
   const { theme, difficulty, count = 5 } = req.query;
   if (!theme) return res.status(400).json({ error: '缺少主题参数' });
-
   let questions = await db.all(`
-    SELECT id, question, options, answer, explanation, type 
-    FROM quiz_questions 
+    SELECT id, question, options, answer, explanation, type
+    FROM quiz_questions
     WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
-    ORDER BY RANDOM() 
+    ORDER BY RANDOM()
     LIMIT $1
   `, [parseInt(count)]);
-
   questions = questions.map(q => ({ ...q, options: JSON.parse(q.options) }));
-
   if (questions.length < parseInt(count)) {
     const extra = await db.all(`
-      SELECT id, question, options, answer, explanation, type 
-      FROM quiz_questions 
+      SELECT id, question, options, answer, explanation, type
+      FROM quiz_questions
       WHERE type = 'choice'
-      ORDER BY RANDOM() 
+      ORDER BY RANDOM()
       LIMIT $1
     `, [parseInt(count) - questions.length]);
     const parsedExtra = extra.map(q => ({ ...q, options: JSON.parse(q.options) }));
     questions = [...questions, ...parsedExtra];
   }
-
-  // 随机将部分题目转换为判断题或排序题（只对选择题操作）
+  // 随机将部分题目转换为判断题或排序题（仅对选择题操作）
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
       let q = questions[i];
       const rand = Math.random();
-      // 只对非填空题进行转换，且确保原题为选择题
       if (q.type === 'choice') {
         if (rand < 0.2 && i % 2 === 0) {
           q = {
             ...q,
             question_type: 'judge',
-            question: `判断：${q.question.replace(/？|？/g, '')}？`,
+            question: `判断：${q.question.replace(/？|?/g, '')}？`,
             options: ['正确', '错误'],
             answer: Math.random() < 0.5 ? 0 : 1,
             explanation: q.explanation || (q.answer === 0 ? '该说法正确。' : '该说法错误。')
@@ -101,13 +98,9 @@ router.get('/fun-level-questions', async (req, res) => {
   } else {
     questions = questions.map(q => ({ ...q, question_type: 'choice' }));
   }
-
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
-  res.json({
-    questions,
-    event: randomEvent
-  });
+  res.json({ questions, event: randomEvent });
 });
 
 router.post('/policy-submit', async (req, res) => {
@@ -127,45 +120,31 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 连连看游戏（改进配对内容） ====================
+// ==================== 连连看游戏 ====================
+
 router.get('/match-game', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 4;
   if (difficulty === 'medium') pairCount = 6;
   if (difficulty === 'hard') pairCount = 8;
-
   const knowledge = await db.all(`
-    SELECT id, title, content FROM knowledge 
+    SELECT id, title, content FROM knowledge
     WHERE status = 'approved' AND category IN ('政策', '常见问题')
     ORDER BY RANDOM() LIMIT $1
   `, [pairCount]);
-
   if (knowledge.length < pairCount) {
     const extra = await db.all(`SELECT id, title, content FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1`, [pairCount - knowledge.length]);
     knowledge.push(...extra);
   }
-
   const getShortDesc = (text) => {
-    // 提取第一句话，限制长度
     let firstSentence = text.split(/[。\n]/)[0];
     if (firstSentence.length > 50) firstSentence = firstSentence.substring(0, 50) + '...';
     return firstSentence;
   };
-
   const pairs = [];
   knowledge.forEach(k => {
-    pairs.push({
-      id: k.id,
-      type: 'term',
-      text: k.title.length > 30 ? k.title.substring(0,30)+'...' : k.title,
-      pairId: k.id
-    });
-    pairs.push({
-      id: k.id + '_desc',
-      type: 'desc',
-      text: getShortDesc(k.content),
-      pairId: k.id
-    });
+    pairs.push({ id: k.id, type: 'term', text: k.title.length > 30 ? k.title.substring(0,30)+'...' : k.title, pairId: k.id });
+    pairs.push({ id: k.id + '_desc', type: 'desc', text: getShortDesc(k.content), pairId: k.id });
   });
   for (let i = pairs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -186,6 +165,7 @@ router.post('/match-game/submit', async (req, res) => {
 });
 
 // ==================== 每日一练 ====================
+
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -193,74 +173,50 @@ router.get('/daily', async (req, res) => {
   if (daily && daily.completed) {
     const questions = await db.all(`
       SELECT q.id, q.type, q.question, q.options, q.answer, q.explanation, NULL as hint
-      FROM daily_quiz_questions dq 
-      JOIN quiz_questions q ON dq.question_id = q.id 
+      FROM daily_quiz_questions dq
+      JOIN quiz_questions q ON dq.question_id = q.id
       WHERE dq.quiz_id = $1`, [daily.id]);
     return res.json({ quizId: daily.id, questions: questions.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) : [] })), completed: true, score: daily.score });
   }
-
   let questions = [];
   const choiceQuestions = await db.all(`
-    SELECT id, type, question, options, answer, explanation 
-    FROM quiz_questions 
+    SELECT id, type, question, options, answer, explanation
+    FROM quiz_questions
     WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
-    ORDER BY RANDOM() 
+    ORDER BY RANDOM()
     LIMIT 3
   `);
   let fillQuestions = await db.all(`
-    SELECT f.id, f.sentence as question, f.correct_word as answer, f.hint 
+    SELECT f.id, f.sentence as question, f.correct_word as answer, f.hint
     FROM fill_questions f
     JOIN knowledge k ON f.id LIKE 'auto_' || k.id || '_fill'
     WHERE k.category IN ('政策', '常见问题')
-    ORDER BY RANDOM() 
+    ORDER BY RANDOM()
     LIMIT 2
   `);
   if (fillQuestions.length < 2) {
     const extra = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT $1`, [2 - fillQuestions.length]);
     fillQuestions = [...fillQuestions, ...extra];
   }
-
   let finalChoice = [...choiceQuestions];
   if (finalChoice.length < 3) {
     const extra = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT $1`, [3 - finalChoice.length]);
     finalChoice.push(...extra);
   }
-
   for (let q of finalChoice) {
-    questions.push({
-      id: q.id,
-      type: 'choice',
-      question: q.question,
-      options: JSON.parse(q.options),
-      answer: q.answer,
-      explanation: q.explanation
-    });
+    questions.push({ id: q.id, type: 'choice', question: q.question, options: JSON.parse(q.options), answer: q.answer, explanation: q.explanation });
   }
   for (let f of fillQuestions) {
-    questions.push({
-      id: f.id,
-      type: 'fill',
-      question: f.question,
-      answer: f.answer,
-      hint: f.hint,
-      explanation: `正确答案是“${f.answer}”`
-    });
+    questions.push({ id: f.id, type: 'fill', question: f.question, answer: f.answer, hint: f.hint, explanation: `正确答案是"${f.answer}"` });
   }
-
-  if (questions.length === 0) {
-    return res.status(404).json({ error: '无可用题目' });
-  }
-
+  if (questions.length === 0) return res.status(404).json({ error: '无可用题目' });
   const quizId = uuidv4();
   await db.run(`INSERT INTO daily_quiz (id, user_id, quiz_date, score, completed, created_at) VALUES ($1, $2, $3, 0, 0, $4)`, [quizId, userId, today, new Date().toISOString()]);
   for (const q of questions) {
     if (q.type === 'fill') {
       let existing = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [q.id]);
       if (!existing) {
-        await db.run(`
-          INSERT INTO quiz_questions (id, type, question, options, answer, explanation, created_at)
-          VALUES ($1, 'fill', $2, NULL, $3, $4, NOW())
-        `, [q.id, q.question, q.answer, q.explanation]);
+        await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, created_at) VALUES ($1, 'fill', $2, NULL, $3, $4, NOW())`, [q.id, q.question, q.answer, q.explanation]);
       }
     }
     await db.run(`INSERT INTO daily_quiz_questions (id, quiz_id, question_id) VALUES ($1, $2, $3)`, [uuidv4(), quizId, q.id]);
@@ -285,10 +241,7 @@ router.get('/daily/status', async (req, res) => {
   const today = new Date().toISOString().slice(0,10);
   const daily = await db.get(`SELECT score, completed FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2`, [userId, today]);
   if (daily && daily.completed) {
-    const countRes = await db.get(`
-      SELECT COUNT(*) as total FROM daily_quiz_questions 
-      WHERE quiz_id IN (SELECT id FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2)
-    `, [userId, today]);
+    const countRes = await db.get(`SELECT COUNT(*) as total FROM daily_quiz_questions WHERE quiz_id IN (SELECT id FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2)`, [userId, today]);
     const total = countRes ? countRes.total : 5;
     res.json({ completed: true, score: daily.score, total });
   } else {
@@ -297,12 +250,11 @@ router.get('/daily/status', async (req, res) => {
 });
 
 // ==================== 每周竞赛 ====================
+
 router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
-  if (!tableExists.exists) {
-    return res.json({ participated: false, attemptsLeft: 3 });
-  }
+  if (!tableExists.exists) return res.json({ participated: false, attemptsLeft: 3 });
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);
@@ -310,29 +262,12 @@ router.get('/weekly/status', async (req, res) => {
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
   const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
-  if (!contest) {
-    return res.json({ participated: false, attemptsLeft: 3 });
-  }
+  if (!contest) return res.json({ participated: false, attemptsLeft: 3 });
   const attemptsCount = await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId]);
   const attemptsLeft = Math.max(0, 3 - (attemptsCount.count || 0));
-  const best = await db.get(`
-    SELECT score, total_questions, time_used 
-    FROM weekly_contest_attempts 
-    WHERE contest_id = $1 AND user_id = $2 
-    ORDER BY (score * 1.0 / total_questions) DESC, time_used ASC 
-    LIMIT 1
-  `, [contest.id, userId]);
-  if (best) {
-    res.json({
-      participated: true,
-      bestScore: best.score,
-      total: best.total_questions,
-      bestTime: best.time_used,
-      attemptsLeft
-    });
-  } else {
-    res.json({ participated: false, attemptsLeft: 3 });
-  }
+  const best = await db.get(`SELECT score, total_questions, time_used FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 ORDER BY (score * 1.0 / total_questions) DESC, time_used ASC LIMIT 1`, [contest.id, userId]);
+  if (best) res.json({ participated: true, bestScore: best.score, total: best.total_questions, bestTime: best.time_used, attemptsLeft });
+  else res.json({ participated: false, attemptsLeft: 3 });
 });
 
 router.get('/weekly/current', async (req, res) => {
@@ -344,14 +279,10 @@ router.get('/weekly/current', async (req, res) => {
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
   let contest = await db.get(`SELECT * FROM weekly_contest WHERE week_start = $1`, [startStr]);
-
   if (contest) {
     const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
-    if (attemptsCount >= 3) {
-      return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
-    }
+    if (attemptsCount >= 3) return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
   }
-
   let questions = [];
   if (contest) {
     const questionIds = JSON.parse(contest.questions);
@@ -362,13 +293,7 @@ router.get('/weekly/current', async (req, res) => {
     }
   }
   if (questions.length === 0) {
-    let fallback = await db.all(`
-      SELECT id, question, options, answer, explanation 
-      FROM quiz_questions 
-      WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
-      ORDER BY RANDOM() 
-      LIMIT 10
-    `);
+    let fallback = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题')) ORDER BY RANDOM() LIMIT 10`);
     fallback = fallback.map(q => ({ ...q, options: JSON.parse(q.options) }));
     if (fallback.length === 0) {
       const knowledge = await db.all(`SELECT id, title, content, type FROM knowledge WHERE status = 'approved' AND category IN ('政策', '常见问题') ORDER BY RANDOM() LIMIT 10`);
@@ -405,13 +330,8 @@ router.post('/weekly/submit', async (req, res) => {
   const userId = req.user.userId;
   const contest = await db.get(`SELECT * FROM weekly_contest WHERE id = $1 AND status = 'active'`, [contestId]);
   if (!contest) return res.status(400).json({ error: '竞赛已结束' });
-
-  // 检查是否已存在相同 attempt_number（避免重复提交）
   const existing = await db.get(`SELECT id FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 AND attempt_number = $3`, [contestId, userId, attemptNumber]);
-  if (existing) {
-    return res.status(400).json({ error: '已提交过本次竞赛' });
-  }
-
+  if (existing) return res.status(400).json({ error: '已提交过本次竞赛' });
   let correct = 0;
   const totalQuestions = answers.length;
   for (const ans of answers) {
@@ -419,28 +339,19 @@ router.post('/weekly/submit', async (req, res) => {
     if (q && q.answer == ans.selected) correct++;
   }
   const attemptId = uuidv4();
-  await db.run(`
-    INSERT INTO weekly_contest_attempts (id, contest_id, user_id, attempt_number, score, total_questions, time_used, submitted_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-  `, [attemptId, contestId, userId, attemptNumber, correct, totalQuestions, timeUsed]);
-
+  await db.run(`INSERT INTO weekly_contest_attempts (id, contest_id, user_id, attempt_number, score, total_questions, time_used, submitted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+    [attemptId, contestId, userId, attemptNumber, correct, totalQuestions, timeUsed]);
   const points = correct * 5;
   await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, `每周竞赛得分${correct}/${totalQuestions}`, new Date().toISOString()]);
-
-  // 记录错题
   for (let i = 0; i < answers.length; i++) {
     const ans = answers[i];
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
     if (q && q.answer != ans.selected) {
       const today = new Date().toISOString().slice(0,10);
-      const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2`, [userId, ans.questionId]);
-      if (existing) {
-        await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
-      } else {
-        await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, wrong_count, last_wrong_date) VALUES ($1, $2, $3, 1, $4)`,
-          [uuidv4(), userId, ans.questionId, today]);
-      }
+      const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2 AND question_type = 'choice'`, [userId, ans.questionId]);
+      if (existing) await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
+      else await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, question_type, wrong_count, last_wrong_date) VALUES ($1, $2, $3, 'choice', 1, $4)`, [uuidv4(), userId, ans.questionId, today]);
     }
   }
   res.json({ score: correct, total: totalQuestions, rewardPoints: points });
@@ -448,28 +359,30 @@ router.post('/weekly/submit', async (req, res) => {
 
 router.get('/weekly/rank/:contestId', async (req, res) => {
   const ranks = await db.all(`
-    SELECT u.username, a.score, a.total_questions, a.time_used,
-           ROUND(CAST(a.score AS DECIMAL) / a.total_questions * 100, 1) as accuracy
-    FROM weekly_contest_attempts a
-    JOIN users u ON a.user_id = u.id
-    WHERE a.contest_id = $1
-    ORDER BY (a.score * 1.0 / a.total_questions) DESC, a.time_used ASC
-    LIMIT 10
-  `, [req.params.contestId]);
+    SELECT u.username, a.score, a.total_questions, a.time_used, ROUND(CAST(a.score AS DECIMAL) / a.total_questions * 100, 1) as accuracy
+    FROM weekly_contest_attempts a JOIN users u ON a.user_id = u.id WHERE a.contest_id = $1
+    ORDER BY (a.score * 1.0 / a.total_questions) DESC, a.time_used ASC LIMIT 10`, [req.params.contestId]);
   res.json(ranks);
 });
 
-// ==================== 错题本 ====================
+// ==================== 错题本（支持选择题、填空题） ====================
+
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;
-  const wrongs = await db.all(
-    `SELECT w.question_id, w.wrong_count, q.question, q.options, q.answer, q.explanation 
-     FROM wrong_questions w 
-     JOIN quiz_questions q ON w.question_id = q.id 
-     WHERE w.user_id = $1`,
-    [userId]
-  );
-  res.json(wrongs.map(w => ({ ...w, options: JSON.parse(w.options) })));
+  const wrongs = await db.all(`
+    SELECT w.id, w.question_id, w.question_type, w.wrong_count, 
+           q.question, q.options, q.answer, q.explanation,
+           f.sentence as fill_question, f.correct_word as fill_answer, f.hint as fill_hint
+    FROM wrong_questions w
+    LEFT JOIN quiz_questions q ON w.question_id = q.id AND w.question_type = 'choice'
+    LEFT JOIN fill_questions f ON w.question_id = f.id AND w.question_type = 'fill'
+    WHERE w.user_id = $1 AND w.question_type IN ('choice', 'fill')
+    ORDER BY w.last_wrong_date DESC`, [userId]);
+  const formatted = wrongs.map(w => {
+    if (w.question_type === 'choice') return { id: w.id, question_id: w.question_id, type: 'choice', question: w.question, options: w.options ? JSON.parse(w.options) : [], answer: w.answer, explanation: w.explanation, wrong_count: w.wrong_count };
+    else return { id: w.id, question_id: w.question_id, type: 'fill', question: w.fill_question, answer: w.fill_answer, hint: w.fill_hint, wrong_count: w.wrong_count };
+  });
+  res.json({ questions: formatted });
 });
 
 router.post('/wrong-questions/clear', async (req, res) => {
@@ -477,60 +390,50 @@ router.post('/wrong-questions/clear', async (req, res) => {
   const userId = req.user.userId;
   let clearedCount = 0;
   for (const ans of answers) {
-    const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
-    if (q && q.answer == ans.selected) {
-      await db.run(`DELETE FROM wrong_questions WHERE user_id = $1 AND question_id = $2`, [userId, ans.questionId]);
-      clearedCount++;
+    if (ans.questionType === 'choice') {
+      const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
+      if (q && q.answer == ans.selected) {
+        await db.run(`DELETE FROM wrong_questions WHERE user_id = $1 AND question_id = $2 AND question_type = 'choice'`, [userId, ans.questionId]);
+        clearedCount++;
+      }
+    } else if (ans.questionType === 'fill') {
+      const f = await db.get(`SELECT correct_word FROM fill_questions WHERE id = $1`, [ans.questionId]);
+      if (f && f.correct_word.trim().toLowerCase() === String(ans.userAnswer).trim().toLowerCase()) {
+        await db.run(`DELETE FROM wrong_questions WHERE user_id = $1 AND question_id = $2 AND question_type = 'fill'`, [userId, ans.questionId]);
+        clearedCount++;
+      }
     }
   }
   const reward = clearedCount * 10;
   if (reward > 0) {
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), userId, reward, `错题闯关答对${clearedCount}题`, new Date().toISOString()]);
+    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, reward, `错题闯关答对${clearedCount}题`, new Date().toISOString()]);
   }
   res.json({ clearedCount, rewardPoints: reward });
 });
 
 router.post('/wrong-questions/record', async (req, res) => {
-  const { questionId, userAnswer } = req.body;
+  const { questionId, userAnswer, questionType = 'choice' } = req.body;
   const userId = req.user.userId;
-  let q = await db.get(`SELECT type, answer FROM quiz_questions WHERE id = $1`, [questionId]);
-  if (!q) {
-    const fill = await db.get(`SELECT correct_word as answer FROM fill_questions WHERE id = $1`, [questionId]);
-    if (!fill) return res.status(404).json({ error: '题目不存在' });
-    const isCorrect = (fill.answer.trim().toLowerCase() === String(userAnswer).trim().toLowerCase());
-    if (!isCorrect) {
-      const today = new Date().toISOString().slice(0,10);
-      const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2`, [userId, questionId]);
-      if (existing) {
-        await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
-      } else {
-        await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, wrong_count, last_wrong_date) VALUES ($1, $2, $3, 1, $4)`,
-          [uuidv4(), userId, questionId, today]);
-      }
-    }
-    return res.json({ recorded: true });
-  }
   let isCorrect = false;
-  if (q.type === 'choice') {
-    isCorrect = (parseInt(q.answer) === parseInt(userAnswer));
-  } else {
-    isCorrect = (String(q.answer).trim().toLowerCase() === String(userAnswer).trim().toLowerCase());
+  let correctAnswer = '';
+  if (questionType === 'choice') {
+    const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [questionId]);
+    if (q) { correctAnswer = q.answer; isCorrect = (parseInt(q.answer) === parseInt(userAnswer)); }
+  } else if (questionType === 'fill') {
+    const f = await db.get(`SELECT correct_word FROM fill_questions WHERE id = $1`, [questionId]);
+    if (f) { correctAnswer = f.correct_word; isCorrect = (f.correct_word.trim().toLowerCase() === String(userAnswer).trim().toLowerCase()); }
   }
   if (!isCorrect) {
     const today = new Date().toISOString().slice(0,10);
-    const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2`, [userId, questionId]);
-    if (existing) {
-      await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
-    } else {
-      await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, wrong_count, last_wrong_date) VALUES ($1, $2, $3, 1, $4)`,
-        [uuidv4(), userId, questionId, today]);
-    }
+    const existing = await db.get(`SELECT * FROM wrong_questions WHERE user_id = $1 AND question_id = $2 AND question_type = $3`, [userId, questionId, questionType]);
+    if (existing) await db.run(`UPDATE wrong_questions SET wrong_count = wrong_count + 1, last_wrong_date = $1 WHERE id = $2`, [today, existing.id]);
+    else await db.run(`INSERT INTO wrong_questions (id, user_id, question_id, question_type, wrong_count, last_wrong_date) VALUES ($1, $2, $3, $4, 1, $5)`, [uuidv4(), userId, questionId, questionType, today]);
   }
-  res.json({ recorded: true });
+  res.json({ recorded: true, correct: isCorrect, correctAnswer });
 });
 
 // ==================== 刮刮乐 ====================
+
 router.get('/scratch/today-count', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
@@ -543,18 +446,11 @@ router.get('/scratch/generate', async (req, res) => {
   const today = new Date().toISOString().slice(0,10);
   const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
   if (count >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
-  const question = await db.all(`
-    SELECT id, question, options, answer 
-    FROM quiz_questions 
-    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
-    ORDER BY RANDOM() 
-    LIMIT 1
-  `);
+  const question = await db.all(`SELECT id, question, options, answer FROM quiz_questions WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题')) ORDER BY RANDOM() LIMIT 1`);
   if (question.length === 0) return res.status(404).json({ error: '无题目' });
   const q = question[0];
   const cardId = uuidv4();
-  await db.run(`INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`,
-    [cardId, userId, q.id, q.answer, new Date().toISOString()]);
+  await db.run(`INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`, [cardId, userId, q.id, q.answer, new Date().toISOString()]);
   res.json({ cardId, question: q.question, options: JSON.parse(q.options) });
 });
 
@@ -568,8 +464,7 @@ router.post('/scratch/submit', async (req, res) => {
   if (isCorrect) {
     reward = Math.floor(Math.random() * 20) + 10;
     await db.run(`UPDATE scratch_cards SET is_used = 1, reward_points = $1, used_at = $2 WHERE id = $3`, [reward, new Date().toISOString(), cardId]);
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), userId, reward, '刮刮乐奖励', new Date().toISOString()]);
+    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, reward, '刮刮乐奖励', new Date().toISOString()]);
   } else {
     await db.run(`UPDATE scratch_cards SET is_used = 1, used_at = $1 WHERE id = $2`, [new Date().toISOString(), cardId]);
   }
@@ -577,11 +472,11 @@ router.post('/scratch/submit', async (req, res) => {
 });
 
 // ==================== 其他接口 ====================
+
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;
-  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-    [uuidv4(), userId, points, reason, new Date().toISOString()]);
+  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, points, reason, new Date().toISOString()]);
   res.json({ success: true });
 });
 

@@ -50,9 +50,7 @@ async function generateChoiceByAI(knowledge) {
     const match = response.match(/\{[\s\S]*\}/);
     if (match) {
       const obj = JSON.parse(match[0]);
-      if (obj.question && obj.options?.length === 4 && typeof obj.answer === 'number') {
-        return obj;
-      }
+      if (obj.question && obj.options?.length === 4 && typeof obj.answer === 'number') return obj;
     }
     return null;
   } catch (err) {
@@ -71,21 +69,17 @@ async function generateChoice(knowledge, useAI = true) {
 
 async function generateFillByRule(knowledge) {
   const keyword = extractKeyword(knowledge.content, knowledge.title);
-  let sentence = knowledge.content.replace(new RegExp(keyword, 'g'), '______');
+  let sentence = knowledge.content.replace(new RegExp(keyword, 'g'), '________');
   if (sentence.length > 200) sentence = sentence.substring(0, 200) + '......';
-  let hint = `提示：这个关键词出现在“${knowledge.title}”中，属于“${knowledge.type}”领域。`;
-  if (knowledge.category === '政策') hint = `提示：这是关于“${knowledge.title}”的一个核心政策术语。`;
-  else if (knowledge.category === '案例') hint = `提示：这是案例“${knowledge.title}”中的一个关键措施或结果。`;
-  else hint = `提示：根据“${knowledge.title}”的相关内容填写。`;
-  return {
-    sentence: sentence,
-    correct_word: keyword,
-    hint: hint
-  };
+  let hint = `提示：这个关键词出现在"${knowledge.title}"中，属于"${knowledge.type}"领域。`;
+  if (knowledge.category === '政策') hint = `提示：这是关于"${knowledge.title}"的一个核心政策术语。`;
+  else if (knowledge.category === '案例') hint = `提示：这是案例"${knowledge.title}"中的一个关键措施或结果。`;
+  else hint = `提示：根据"${knowledge.title}"的相关内容填写。`;
+  return { sentence: sentence, correct_word: keyword, hint: hint };
 }
 
 async function generateFillByAI(knowledge) {
-  const prompt = `根据以下知识，生成一道填空题。挖去一个关键词，用______代替，并给出正确答案和简短提示。
+  const prompt = `根据以下知识，生成一道填空题。挖去一个关键词，用________代替，并给出正确答案和简短提示。
 要求：提示不能直接说出答案，只能提供上下文线索（如所属类别、知识标题等），让用户思考。
 知识标题：${knowledge.title}
 知识内容：${knowledge.content.substring(0, 800)}
@@ -112,29 +106,40 @@ async function generateFill(knowledge, useAI = true) {
   return await generateFillByRule(knowledge);
 }
 
-async function generateAndStoreQuestions(limit = 50) {
+async function generateAndStoreQuestions(limit = 50, force = false) {
   const existingCount = await db.get(`SELECT COUNT(*) as count FROM quiz_questions`);
-  if (existingCount.count > 0) {
-    console.log(`已有 ${existingCount.count} 道选择题，跳过自动生成`);
-    return;
+  if (!force && existingCount.count > 0) {
+    if (existingCount.count >= limit) {
+      console.log(`已有 ${existingCount.count} 道选择题，跳过自动生成`);
+      return;
+    } else {
+      console.log(`现有 ${existingCount.count} 道选择题，需要补充 ${limit - existingCount.count} 道`);
+    }
   }
-  const knowledge = await db.all(`SELECT id, title, content, type, category FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1`, [limit]);
+  const usedKnowledgeIds = await db.all(
+    `SELECT DISTINCT SUBSTRING(question_id FROM 'auto_(.*)_choice') as k_id FROM quiz_questions WHERE question_id LIKE 'auto_%_choice'`
+  );
+  const usedIdsSet = new Set(usedKnowledgeIds.map(r => r.k_id).filter(Boolean));
+  let knowledge = await db.all(
+    `SELECT id, title, content, type, category FROM knowledge WHERE status = 'approved' ORDER BY RANDOM() LIMIT $1`,
+    [limit * 2]
+  );
+  knowledge = knowledge.filter(k => !usedIdsSet.has(k.id));
   let choiceCount = 0, fillCount = 0;
   for (const k of knowledge) {
-    // 生成选择题
-    const choice = await generateChoice(k, true); // 使用AI生成高质量题目
+    const choice = await generateChoice(k, true);
     if (choice) {
-      await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      await db.run(`INSERT INTO quiz_questions (id, type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at) VALUES ($1, 'choice', $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`,
         [`auto_${k.id}_choice`, choice.question, JSON.stringify(choice.options), choice.answer, choice.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
       choiceCount++;
     }
-    // 生成填空题
     const fill = await generateFill(k, true);
     if (fill) {
-      await db.run(`INSERT INTO fill_questions (id, sentence, correct_word, hint, category) VALUES ($1, $2, $3, $4, $5)`,
+      await db.run(`INSERT INTO fill_questions (id, sentence, correct_word, hint, category) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`,
         [`auto_${k.id}_fill`, fill.sentence, fill.correct_word, fill.hint, k.type]);
       fillCount++;
     }
+    if (choiceCount + fillCount >= limit) break;
     await new Promise(r => setTimeout(r, 100));
   }
   console.log(`✅ 生成并存储选择题 ${choiceCount} 道，填空题 ${fillCount} 道`);

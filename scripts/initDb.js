@@ -148,10 +148,19 @@ async function initDb() {
     )`,
     `CREATE TABLE IF NOT EXISTS wrong_questions (
       id TEXT PRIMARY KEY,
-      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-      question_id TEXT REFERENCES quiz_questions(id) ON DELETE CASCADE,
-      wrong_count INTEGER,
-      last_wrong_date DATE
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      question_id TEXT NOT NULL,
+      question_type TEXT NOT NULL DEFAULT 'choice',
+      wrong_count INTEGER NOT NULL,
+      last_wrong_date DATE NOT NULL,
+      UNIQUE(user_id, question_id, question_type)
+    )`,
+    `CREATE TABLE IF NOT EXISTS simulate_mistakes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      mistake_text TEXT NOT NULL,
+      scenario_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS user_points (
       id TEXT PRIMARY KEY,
@@ -197,24 +206,6 @@ async function initDb() {
       questions TEXT,
       status TEXT
     )`,
-    `CREATE TABLE IF NOT EXISTS weekly_contest_scores (
-      id TEXT PRIMARY KEY,
-      contest_id TEXT REFERENCES weekly_contest(id),
-      user_id TEXT REFERENCES users(id),
-      score INTEGER,
-      time_used INTEGER,
-      submitted_at TIMESTAMPTZ
-    )`,
-    `CREATE TABLE IF NOT EXISTS scratch_cards (
-      id TEXT PRIMARY KEY,
-      user_id TEXT REFERENCES users(id),
-      question_id TEXT REFERENCES quiz_questions(id),
-      answer TEXT,
-      reward_points INTEGER,
-      is_used INTEGER DEFAULT 0,
-      created_at TIMESTAMPTZ,
-      used_at TIMESTAMPTZ
-    )`,
     `CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
       contest_id TEXT REFERENCES weekly_contest(id) ON DELETE CASCADE,
@@ -225,6 +216,16 @@ async function initDb() {
       time_used INTEGER NOT NULL,
       submitted_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(contest_id, user_id, attempt_number)
+    )`,
+    `CREATE TABLE IF NOT EXISTS scratch_cards (
+      id TEXT PRIMARY KEY,
+      user_id TEXT REFERENCES users(id),
+      question_id TEXT REFERENCES quiz_questions(id),
+      answer TEXT,
+      reward_points INTEGER,
+      is_used INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ,
+      used_at TIMESTAMPTZ
     )`,
     `CREATE TABLE IF NOT EXISTS user_theme_progress (
       id TEXT PRIMARY KEY,
@@ -254,6 +255,16 @@ async function initDb() {
     console.log('✅ quiz_questions 字段迁移完成');
   } catch(e) { console.warn('迁移quiz_questions失败:', e.message); }
 
+  // 为 wrong_questions 表添加 question_type 列（如果不存在）
+  try {
+    const columnCheck = await db.get(`SELECT column_name FROM information_schema.columns WHERE table_name = 'wrong_questions' AND column_name = 'question_type'`);
+    if (!columnCheck) {
+      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
+      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
+      console.log('✅ 为 wrong_questions 表添加 question_type 列');
+    }
+  } catch(e) { console.warn('迁移 wrong_questions 失败:', e.message); }
+
   // 全文搜索支持
   try {
     await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
@@ -262,7 +273,7 @@ async function initDb() {
       CREATE OR REPLACE FUNCTION knowledge_tsv_trigger() RETURNS trigger AS $$
       BEGIN
         NEW.tsv := setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
-                   setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
+                  setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
         RETURN NEW;
       END;
       $$ LANGUAGE plpgsql
@@ -281,10 +292,10 @@ async function initDb() {
 
   // 插入默认场景数据
   const insertScenario = async (id, title, description, goal, role, initial_message, eval_dimensions) => {
-    const sql = `INSERT INTO scenarios (id, title, description, goal, role, initial_message, eval_dimensions, created_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`;
+    const sql = `INSERT INTO scenarios (id, title, description, goal, role, initial_message, eval_dimensions, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`;
     await db.run(sql, [id, title, description, goal, role, initial_message, eval_dimensions, new Date().toISOString()]);
   };
+
   await insertScenario('scenario_001', '调解邻里土地纠纷', '村民张三和李四因宅基地边界发生争执，双方情绪激动，需要你作为村干部进行调解。',
     '成功调解纠纷，促成双方和解，并明确边界。', '村民张三', '村干部同志，你来得正好！李四家占了我家宅基地，还砌了围墙，你得给我评评理！',
     JSON.stringify(['沟通技巧', '政策熟悉度', '情绪管理', '调解能力']));

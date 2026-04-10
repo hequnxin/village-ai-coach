@@ -46,13 +46,15 @@ let currentFunEvent = null;
 let currentFunEventUsed = false;
 
 // ==================== 辅助函数 ====================
+
 function formatAnswerLabel(question, answerIndex) {
   if (!question.options) return answerIndex;
   const text = question.options[answerIndex];
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件（修复下一题按钮、得分累加、正确/错误高亮） ====================
+// ==================== 通用全屏答题组件（修复：支持填空题输入框） ====================
+
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -72,6 +74,7 @@ function renderGenericQuiz(config) {
   const dynamicContent = document.getElementById('dynamicContent');
   const q = questions[currentIndex];
   const isChoice = q.type === 'choice' || q.question_type === 'choice' || q.question_type === 'judge';
+  const isFill = q.type === 'fill';
   const isSort = q.question_type === 'sort';
   const isLast = currentIndex === questions.length - 1;
   const isFirst = currentIndex === 0;
@@ -79,6 +82,8 @@ function renderGenericQuiz(config) {
   const alreadyCorrect = userScores[currentIndex] === true;
 
   let optionsHtml = '';
+  let fillValue = alreadyAnswered && isFill ? userAnswers[currentIndex] : '';
+
   if (isSort) {
     const items = q.options.map((opt, idx) => ({ text: opt, originalIdx: idx }));
     const shuffled = [...items];
@@ -97,6 +102,15 @@ function renderGenericQuiz(config) {
       <div class="sort-controls">
         <button id="sortUpBtn" class="summary-btn">↑ 上移</button>
         <button id="sortDownBtn" class="summary-btn">↓ 下移</button>
+      </div>
+    `;
+  } else if (isFill) {
+    // 修复：填空题显示输入框
+    optionsHtml = `
+      <div class="fill-answer-area">
+        <label>答案：</label>
+        <input type="text" id="fillInput" class="fill-input" placeholder="请输入答案" value="${escapeHtml(fillValue)}" ${alreadyAnswered ? 'disabled' : ''} style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; margin-top:8px;">
+        ${q.hint ? `<div class="fill-hint" style="color:#666; font-size:0.8rem; margin-top:4px;">💡 ${escapeHtml(q.hint)}</div>` : ''}
       </div>
     `;
   } else {
@@ -142,7 +156,7 @@ function renderGenericQuiz(config) {
     else renderGameView();
   };
 
-  if (!isSort) {
+  if (!isSort && !isFill) {
     const opts = document.querySelectorAll('.quiz-option-item');
     opts.forEach(opt => {
       opt.onclick = () => {
@@ -153,8 +167,7 @@ function renderGenericQuiz(config) {
         opt.classList.add('selected');
       };
     });
-  } else {
-    // 排序题交互（略，保持原有）
+  } else if (isSort) {
     let sortItems = document.querySelectorAll('.sort-item');
     let selectedSortItem = null;
     function updateSortOrder() {
@@ -218,6 +231,13 @@ function renderGenericQuiz(config) {
       if (isSort) {
         const items = Array.from(document.querySelectorAll('.sort-item'));
         userAnswer = items.map(item => parseInt(item.dataset.idx));
+      } else if (isFill) {
+        const fillInput = document.getElementById('fillInput');
+        userAnswer = fillInput.value.trim();
+        if (!userAnswer) {
+          alert('请输入答案');
+          return;
+        }
       } else {
         if (userAnswers[currentIndex] === undefined || userAnswers[currentIndex] === null) {
           alert('请选择答案');
@@ -233,7 +253,6 @@ function renderGenericQuiz(config) {
           if (!userScores[currentIndex]) {
             userScores[currentIndex] = true;
             config.totalScore = (config.totalScore || 0) + (pointsGain || 10);
-            // 更新得分显示
             const scoreDisplay = document.getElementById('quizScoreDisplay');
             if (scoreDisplay) scoreDisplay.textContent = `得分: ${config.totalScore}`;
           }
@@ -248,7 +267,7 @@ function renderGenericQuiz(config) {
             return;
           }
         }
-        if (!isSort) {
+        if (!isSort && !isFill) {
           const opts = document.querySelectorAll('.quiz-option-item');
           const correctIndex = q.answer;
           opts.forEach(opt => {
@@ -256,38 +275,22 @@ function renderGenericQuiz(config) {
             if (optVal === correctIndex) opt.classList.add('correct');
             if (optVal === userAnswer && !correct) opt.classList.add('wrong');
           });
-        } else {
-          const correctOrder = q.answer;
-          const correctOrderText = correctOrder.map(idx => q.options[idx]).join(' → ');
-          feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctOrderText)}</div>`;
+        } else if (isSort && correctLabel) {
+          feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctLabel)}</div>`;
         }
-        // 更新底部按钮
         const footer = document.querySelector('.quiz-footer .action-buttons');
         if (footer) {
           footer.innerHTML = '';
           if (showPrev && !isFirst) footer.innerHTML += `<button id="quizPrevBtn" class="action-btn">← 上一题</button>`;
           if (userAnswers[currentIndex] !== null && !isLast) footer.innerHTML += `<button id="quizNextBtn" class="action-btn">下一题 →</button>`;
           if (userAnswers[currentIndex] !== null && isLast) footer.innerHTML += `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>`;
-          // 重新绑定事件
           const newPrev = document.getElementById('quizPrevBtn');
           if (newPrev) newPrev.onclick = () => {
-            renderGenericQuiz({
-              ...config,
-              currentIndex: currentIndex - 1,
-              userAnswers,
-              userScores,
-              totalScore: config.totalScore
-            });
+            renderGenericQuiz({ ...config, currentIndex: currentIndex - 1, userAnswers, userScores, totalScore: config.totalScore });
           };
           const newNext = document.getElementById('quizNextBtn');
           if (newNext) newNext.onclick = () => {
-            renderGenericQuiz({
-              ...config,
-              currentIndex: currentIndex + 1,
-              userAnswers,
-              userScores,
-              totalScore: config.totalScore
-            });
+            renderGenericQuiz({ ...config, currentIndex: currentIndex + 1, userAnswers, userScores, totalScore: config.totalScore });
           };
           const newFinish = document.getElementById('quizFinishBtn');
           if (newFinish) newFinish.onclick = () => {
@@ -301,29 +304,15 @@ function renderGenericQuiz(config) {
   const prevBtn = document.getElementById('quizPrevBtn');
   if (prevBtn) {
     prevBtn.onclick = () => {
-      renderGenericQuiz({
-        ...config,
-        currentIndex: currentIndex - 1,
-        userAnswers,
-        userScores,
-        totalScore
-      });
+      renderGenericQuiz({ ...config, currentIndex: currentIndex - 1, userAnswers, userScores, totalScore });
     };
   }
-
   const nextBtn = document.getElementById('quizNextBtn');
   if (nextBtn) {
     nextBtn.onclick = () => {
-      renderGenericQuiz({
-        ...config,
-        currentIndex: currentIndex + 1,
-        userAnswers,
-        userScores,
-        totalScore
-      });
+      renderGenericQuiz({ ...config, currentIndex: currentIndex + 1, userAnswers, userScores, totalScore });
     };
   }
-
   const finishBtn = document.getElementById('quizFinishBtn');
   if (finishBtn) {
     finishBtn.onclick = () => {
@@ -331,7 +320,9 @@ function renderGenericQuiz(config) {
     };
   }
 }
-// ==================== 每日一练 ====================
+
+// ==================== 每日一练（修复：支持填空题） ====================
+
 async function startDailyQuiz() {
   const startBtn = document.getElementById('startDailyBtn');
   if (startBtn) {
@@ -354,7 +345,6 @@ async function startDailyQuiz() {
     const userAnswers = new Array(questions.length).fill(null);
     const userScores = new Array(questions.length).fill(false);
     let totalScore = 0;
-
     const onSubmit = async (index, userAnswer) => {
       const q = questions[index];
       let isCorrect = false;
@@ -379,12 +369,11 @@ async function startDailyQuiz() {
         await fetchWithAuth('/api/game/wrong-questions/record', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questionId: q.id, userAnswer })
+          body: JSON.stringify({ questionId: q.id, userAnswer, questionType: q.type })
         });
       }
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
-
     const onFinish = async (finalScore) => {
       const total = questions.length;
       const rewardPoints = finalScore;
@@ -398,7 +387,6 @@ async function startDailyQuiz() {
       updateTaskProgress('quiz', 1);
       await loadModuleStats();
     };
-
     renderGenericQuiz({
       questions,
       currentIndex: 0,
@@ -420,8 +408,8 @@ async function startDailyQuiz() {
     }
   }
 }
-
 // ==================== 每周竞赛 ====================
+
 async function startWeeklyContest() {
   const startBtn = document.getElementById('startContestBtn');
   if (startBtn) {
@@ -446,11 +434,9 @@ async function startWeeklyContest() {
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
     contestStartTime = Date.now();
     currentAttemptNumber = data.attemptNumber;
-
     const userAnswers = new Array(currentContestQuestions.length).fill(null);
     const userScores = new Array(currentContestQuestions.length).fill(false);
     let totalScore = 0;
-
     const onSubmit = async (index, userAnswer) => {
       const q = currentContestQuestions[index];
       const correctIndex = parseInt(q.answer);
@@ -466,15 +452,17 @@ async function startWeeklyContest() {
         await fetchWithAuth('/api/game/wrong-questions/record', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questionId: q.id, userAnswer })
+          body: JSON.stringify({ questionId: q.id, userAnswer, questionType: 'choice' })
         });
       }
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
-
     const onFinish = async (finalScore) => {
       const timeUsed = Math.floor((Date.now() - contestStartTime) / 1000);
-      const answers = currentContestQuestions.map((_, i) => ({ questionId: currentContestQuestions[i].id, selected: userAnswers[i] }));
+      const answers = currentContestQuestions.map((_, i) => ({
+        questionId: currentContestQuestions[i].id,
+        selected: userAnswers[i]
+      }));
       const res = await fetchWithAuth('/api/game/weekly/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -489,7 +477,6 @@ async function startWeeklyContest() {
       }
       await loadModuleStats();
     };
-
     let interval = null;
     function updateTimerDisplay() {
       const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -506,7 +493,6 @@ async function startWeeklyContest() {
     }
     interval = setInterval(updateTimerDisplay, 1000);
     updateTimerDisplay();
-
     renderGenericQuiz({
       questions: currentContestQuestions,
       currentIndex: 0,
@@ -531,6 +517,7 @@ async function startWeeklyContest() {
 }
 
 // ==================== 趣味闯关 ====================
+
 async function showFunLevelsModal() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -546,17 +533,13 @@ async function showFunLevelsModal() {
           <button class="difficulty-btn" data-diff="hard">🔥 困难 (8题)</button>
         </div>
         <div class="timing-mode">
-          <label>
-            <input type="checkbox" id="timingModeCheckbox"> ⏱️ 限时模式（每题15秒）
-          </label>
+          <label><input type="checkbox" id="timingModeCheckbox"> ⏱️ 限时模式（每题15秒）</label>
         </div>
         <div class="themes-grid" id="funThemesGrid">加载中...</div>
       </div>
     </div>
   `;
-
   document.getElementById('funBackBtn').onclick = () => renderGameView();
-
   const themesRes = await fetchWithAuth('/api/game/policy-themes');
   const themes = await themesRes.json();
   const grid = document.getElementById('funThemesGrid');
@@ -568,7 +551,6 @@ async function showFunLevelsModal() {
       <div class="theme-status">${theme.completed ? '✅ 已通关' : '🔓 未挑战'}</div>
     </div>
   `).join('');
-
   let selectedDifficulty = 'medium';
   document.querySelectorAll('.difficulty-btn').forEach(btn => {
     btn.onclick = () => {
@@ -578,7 +560,6 @@ async function showFunLevelsModal() {
     };
   });
   document.querySelector('.difficulty-btn[data-diff="medium"]').classList.add('active');
-
   document.querySelectorAll('.fun-theme-card').forEach(card => {
     card.onclick = async () => {
       const theme = card.dataset.theme;
@@ -593,19 +574,16 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
   let questionCount = 3;
   if (difficulty === 'medium') questionCount = 5;
   if (difficulty === 'hard') questionCount = 8;
-
   const res = await fetchWithAuth(`/api/game/fun-level-questions?theme=${encodeURIComponent(theme)}&difficulty=${difficulty}&count=${questionCount}`);
   const data = await res.json();
   let questions = data.questions;
   questions = questions.map(q => ({ ...q, question_type: q.question_type || 'choice' }));
-
   const userAnswers = new Array(questions.length).fill(null);
   const userScores = new Array(questions.length).fill(false);
   let totalScore = 0;
   let lives = 3;
   let eventActive = data.event;
   let eventUsed = false;
-
   const onSubmit = async (index, userAnswer) => {
     const q = questions[index];
     let isCorrect = false;
@@ -613,7 +591,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     let pointsGain = 10;
     if (difficulty === 'hard') pointsGain += 5;
     if (eventActive === 'double' && !eventUsed && isCorrect) pointsGain *= 2;
-
     if (q.question_type === 'choice' || q.question_type === 'judge') {
       const correctIndex = parseInt(q.answer);
       const userIndex = parseInt(userAnswer);
@@ -625,8 +602,12 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
         isCorrect = userAnswer.every((val, idx) => val === correctOrder[idx]);
       }
       correctLabel = '正确顺序：' + correctOrder.map(idx => q.options[idx]).join(' → ');
+    } else if (q.type === 'fill') {
+      const correctStr = q.answer.trim().toLowerCase();
+      const userStr = String(userAnswer).trim().toLowerCase();
+      isCorrect = (userStr === correctStr);
+      correctLabel = q.answer;
     }
-
     if (isCorrect) {
       if (!userScores[index]) {
         userScores[index] = true;
@@ -637,7 +618,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
       await fetchWithAuth('/api/game/wrong-questions/record', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: q.id, userAnswer: JSON.stringify(userAnswer) })
+        body: JSON.stringify({ questionId: q.id, userAnswer: String(userAnswer), questionType: q.type || 'choice' })
       });
       if (lives <= 0) {
         alert('💀 生命值归零，闯关失败！');
@@ -647,7 +628,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     }
     return { correct: isCorrect, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
   };
-
   const onFinish = async (finalScore) => {
     const total = questions.length;
     const passingScore = Math.ceil(total * 0.6);
@@ -661,7 +641,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     if (reward) addPoints(reward, '趣味闯关');
     alert(`闯关结束！得分 ${totalScore/10}/${total}，${passed ? '通关成功！' : '再接再厉！'}${reward ? ` 获得 ${reward} 积分` : ''}`);
   };
-
   let timerInterval = null;
   let timeLeft = 15;
   function updateTimerDisplay() {
@@ -669,7 +648,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     const timerSpan = document.getElementById('questionTimer');
     if (timerSpan) timerSpan.textContent = `⏱️ ${timeLeft}s`;
   }
-  function startTimer(index, onTimeout) {
+  function startTimer(idx, onTimeout) {
     if (!timingMode) return;
     if (timerInterval) clearInterval(timerInterval);
     timeLeft = 15;
@@ -677,7 +656,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     timerInterval = setInterval(() => {
       if (timeLeft <= 1) {
         clearInterval(timerInterval);
-        onTimeout(index);
+        onTimeout(idx);
       } else {
         timeLeft--;
         updateTimerDisplay();
@@ -687,7 +666,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
   function clearTimer() {
     if (timerInterval) clearInterval(timerInterval);
   }
-
   const customRender = (cfg) => {
     const extra = `
       <div class="fun-lives" id="funLivesDisplay">❤️ ${lives}</div>
@@ -714,7 +692,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
           hintBtn.onclick = () => {
             const correctAnswer = questions[cfg.currentIndex].question_type === 'sort'
               ? questions[cfg.currentIndex].answer.map(idx => questions[cfg.currentIndex].options[idx]).join(' → ')
-              : formatAnswerLabel(questions[cfg.currentIndex], questions[cfg.currentIndex].answer);
+              : (questions[cfg.currentIndex].type === 'fill' ? questions[cfg.currentIndex].answer : formatAnswerLabel(questions[cfg.currentIndex], questions[cfg.currentIndex].answer));
             alert(`💡 提示：正确答案是 "${correctAnswer}"`);
             eventUsed = true;
             hintBtn.disabled = true;
@@ -750,13 +728,12 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
               onFinish(totalScore);
               return;
             }
-            customRender({ ...cfg, currentIndex: idx });
           }
+          customRender({ ...cfg, currentIndex: idx });
         });
       });
     }
   };
-
   customRender({
     questions,
     currentIndex: 0,
@@ -770,18 +747,18 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     showPrev: true
   });
 }
-// ==================== 政策连连看（改进配对内容、增加视觉反馈） ====================
+
+// ==================== 政策连连看（修复配对内容、增加视觉反馈） ====================
+
 async function startMatchGame() {
   const difficulty = 'medium';
   const res = await fetchWithAuth(`/api/game/match-game?difficulty=${difficulty}`);
   const data = await res.json();
   const pairs = data.pairs;
   const totalPairs = data.pairCount;
-
   let selectedCard = null;
   let matchedPairs = 0;
   let lock = false;
-
   function renderMatchGame() {
     const dynamicContent = document.getElementById('dynamicContent');
     dynamicContent.innerHTML = `
@@ -803,9 +780,7 @@ async function startMatchGame() {
         </div>
       </div>
     `;
-
     document.getElementById('matchBackBtn').onclick = () => renderGameView();
-
     const cards = document.querySelectorAll('.match-card');
     cards.forEach(card => {
       card.onclick = () => {
@@ -825,7 +800,6 @@ async function startMatchGame() {
           const secondPair = card.dataset.pair;
           const firstType = selectedCard.dataset.type;
           const secondType = card.dataset.type;
-
           if (firstPair === secondPair && firstType !== secondType) {
             selectedCard.classList.add('matched');
             card.classList.add('matched');
@@ -854,7 +828,6 @@ async function startMatchGame() {
       };
     });
   }
-
   async function finishMatch() {
     const res = await fetchWithAuth('/api/game/match-game/submit', {
       method: 'POST',
@@ -866,47 +839,47 @@ async function startMatchGame() {
     addPoints(result.reward, '连连看');
     renderGameView();
   }
-
   renderMatchGame();
 }
+// ==================== 错题本（修复：支持填空题） ====================
 
-// ==================== 错题本（全屏版本） ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
-  const wrongs = await res.json();
-  if (wrongs.length === 0) {
+  const data = await res.json();
+  const questions = data.questions || [];
+  if (questions.length === 0) {
     alert('暂无错题');
     return;
   }
-  const questions = wrongs.map(w => ({
-    id: w.question_id,
-    type: 'choice',
-    question: w.question,
-    options: w.options,
-    answer: w.answer,
-    explanation: w.explanation
-  }));
   const userAnswers = new Array(questions.length).fill(null);
   const userScores = new Array(questions.length).fill(false);
   let totalScore = 0;
   let clearedCount = 0;
-
   const onSubmit = async (index, userAnswer) => {
     const q = questions[index];
-    const correctIndex = parseInt(q.answer);
-    const userIndex = parseInt(userAnswer);
-    const isCorrect = (userIndex === correctIndex);
-    const correctLabel = formatAnswerLabel(q, correctIndex);
+    let isCorrect = false;
+    let correctLabel = '';
+    if (q.type === 'choice') {
+      const correctIndex = parseInt(q.answer);
+      const userIndex = parseInt(userAnswer);
+      isCorrect = (userIndex === correctIndex);
+      correctLabel = formatAnswerLabel(q, correctIndex);
+    } else {
+      const correctStr = q.answer.trim().toLowerCase();
+      const userStr = String(userAnswer).trim().toLowerCase();
+      isCorrect = (userStr === correctStr);
+      correctLabel = q.answer;
+    }
     if (isCorrect) {
       if (!userScores[index]) {
         userScores[index] = true;
-        const res = await fetchWithAuth('/api/game/wrong-questions/clear', {
+        const clearRes = await fetchWithAuth('/api/game/wrong-questions/clear', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answers: [{ questionId: q.id, selected: userIndex }] })
+          body: JSON.stringify({ answers: [{ questionId: q.question_id, questionType: q.type, userAnswer: q.type === 'choice' ? parseInt(userAnswer) : userAnswer }] })
         });
-        const result = await res.json();
-        if (result.clearedCount > 0) {
+        const clearData = await clearRes.json();
+        if (clearData.clearedCount > 0) {
           clearedCount++;
           totalScore += 10;
         }
@@ -915,19 +888,17 @@ async function startWrongClear() {
       await fetchWithAuth('/api/game/wrong-questions/record', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: q.id, userAnswer })
+        body: JSON.stringify({ questionId: q.question_id, userAnswer, questionType: q.type })
       });
     }
     return { correct: isCorrect, correctLabel, explanation: q.explanation };
   };
-
   const onFinish = async (finalScore) => {
     alert(`错题闯关结束！本次共答对 ${clearedCount} 题，获得 ${finalScore} 积分`);
     addPoints(finalScore, '错题闯关');
     await loadModuleStats();
     renderGameView();
   };
-
   renderGenericQuiz({
     questions,
     currentIndex: 0,
@@ -943,6 +914,7 @@ async function startWrongClear() {
 }
 
 // ==================== 刮刮乐 ====================
+
 async function updateScratchRemaining() {
   try {
     const res = await fetchWithAuth('/api/game/scratch/today-count');
@@ -1026,7 +998,6 @@ function renderScratchCard(card) {
   const closeModal = () => document.body.removeChild(modal);
   modal.querySelector('.modal-close').onclick = closeModal;
   modal.onclick = (e) => { if(e.target===modal) closeModal(); };
-
   const surface = modal.querySelector('#scratchSurface');
   const againBtn = modal.querySelector('#scratchAgainBtn');
   surface.onclick = () => {
@@ -1034,7 +1005,9 @@ function renderScratchCard(card) {
       <div class="scratch-question">
         <div class="question-text">${escapeHtml(card.question)}</div>
         <div class="scratch-options">
-          ${card.options.map((opt, idx) => `<div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>`).join('')}
+          ${card.options.map((opt, idx) => `
+            <div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>
+          `).join('')}
         </div>
       </div>
     `;
@@ -1070,6 +1043,7 @@ function renderScratchCard(card) {
 }
 
 // ==================== 排行榜 ====================
+
 async function showContestRanking() {
   try {
     const now = new Date();
@@ -1078,16 +1052,13 @@ async function showContestRanking() {
     weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
     weekStart.setHours(0,0,0,0);
     const startStr = weekStart.toISOString().slice(0,10);
-
     const contestRes = await fetchWithAuth(`/api/game/weekly/current`);
     if (!contestRes.ok) throw new Error('获取竞赛信息失败');
     const contestData = await contestRes.json();
     const contestId = contestData.contestId;
-
     const rankRes = await fetchWithAuth(`/api/game/weekly/rank/${contestId}`);
     if (!rankRes.ok) throw new Error('获取排行榜失败');
     const ranks = await rankRes.json();
-
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.display = 'flex';
@@ -1106,10 +1077,7 @@ async function showContestRanking() {
               const timeStr = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
               return `
                 <div style="display:grid; grid-template-columns: 60px 1fr 80px 80px; gap:8px; padding:8px 0; border-bottom:1px solid #eee;">
-                  <div>${idx+1}</div>
-                  <div>${escapeHtml(r.username)}</div>
-                  <div>${r.accuracy}%</div>
-                  <div>${timeStr}</div>
+                  <div>${idx+1}</div><div>${escapeHtml(r.username)}</div><div>${r.accuracy}%</div><div>${timeStr}</div>
                 </div>
               `;
             }).join('')}
@@ -1127,6 +1095,7 @@ async function showContestRanking() {
 }
 
 // ==================== 主渲染 ====================
+
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -1184,10 +1153,8 @@ export async function renderGameView() {
       </div>
     </div>
   `;
-
   await loadModuleStats();
   await updateScratchRemaining();
-
   document.getElementById('openFunBtn').onclick = () => showFunLevelsModal();
   document.getElementById('startDailyBtn').onclick = startDailyQuiz;
   document.getElementById('startContestBtn').onclick = startWeeklyContest;
@@ -1196,7 +1163,6 @@ export async function renderGameView() {
   document.getElementById('getScratchBtn').onclick = getScratchCard;
   const rankBtn = document.getElementById('rankContestBtn');
   if (rankBtn) rankBtn.onclick = showContestRanking;
-
   setActiveNavByView('game');
 }
 
@@ -1213,24 +1179,20 @@ async function loadModuleStats() {
           dailyStats.innerHTML = '今日未开始';
         }
       }
-    } else {
-      console.warn('获取每日一练状态失败');
     }
   } catch(e) {
     console.error('每日一练状态加载失败', e);
   }
-
   try {
     const wrongRes = await fetchWithAuth('/api/game/wrong-questions');
     if (wrongRes.ok) {
-      const wrongs = await wrongRes.json();
+      const data = await wrongRes.json();
       const wrongStats = document.getElementById('wrongStats');
-      if (wrongStats) wrongStats.innerHTML = `共有 ${wrongs.length} 道错题`;
+      if (wrongStats) wrongStats.innerHTML = `共有 ${data.questions?.length || 0} 道错题`;
     }
   } catch(e) {
     console.error('错题本加载失败', e);
   }
-
   try {
     const contestRes = await fetchWithAuth('/api/game/weekly/status');
     if (contestRes.ok) {
@@ -1246,8 +1208,6 @@ async function loadModuleStats() {
           contestStats.innerHTML = '本周未参加 (3次机会)';
         }
       }
-    } else {
-      console.warn('获取每周竞赛状态失败');
     }
   } catch(e) {
     console.error('每周竞赛状态加载失败', e);

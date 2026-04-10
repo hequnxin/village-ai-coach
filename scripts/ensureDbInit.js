@@ -1,4 +1,5 @@
 // scripts/ensureDbInit.js
+require('dotenv').config();
 const db = require('../services/db');
 const { v4: uuidv4 } = require('uuid');
 
@@ -13,6 +14,7 @@ async function tableExists(tableName) {
 async function ensureMissingTables() {
   console.log('🔧 检查并创建缺失的表...');
 
+  // 确保 weekly_contest_attempts 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS weekly_contest_attempts (
       id TEXT PRIMARY KEY,
@@ -28,6 +30,7 @@ async function ensureMissingTables() {
   `);
   console.log('✅ weekly_contest_attempts 表已确保存在');
 
+  // 确保 user_theme_progress 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS user_theme_progress (
       id TEXT PRIMARY KEY,
@@ -40,8 +43,21 @@ async function ensureMissingTables() {
   `);
   console.log('✅ user_theme_progress 表已确保存在');
 
+  // 确保 simulate_mistakes 表存在
   await db.run(`
-    DELETE FROM daily_quiz_questions 
+    CREATE TABLE IF NOT EXISTS simulate_mistakes (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      mistake_text TEXT NOT NULL,
+      scenario_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+  console.log('✅ simulate_mistakes 表已确保存在');
+
+  // 清理无效的每日一练题目关联
+  await db.run(`
+    DELETE FROM daily_quiz_questions
     WHERE question_id NOT IN (SELECT id FROM quiz_questions)
   `);
   console.log('✅ 清理了无效的每日一练题目关联');
@@ -49,12 +65,23 @@ async function ensureMissingTables() {
 
 async function fixQuizQuestions() {
   const count = await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE type = 'choice'`);
-  if (count.c < 10) {
-    console.log(`⚠️ 选择题数量不足 (${count.c})，重新生成...`);
-    const { generateAndStoreQuestions } = require('./questionGenerator');
-    await generateAndStoreQuestions(50);
+  const targetCount = 50;
+  if (count.c < targetCount) {
+    console.log(`⚠️ 选择题数量不足 (${count.c}/${targetCount})，开始补充生成...`);
+    const { generateAndStoreQuestions } = require('../services/questionGenerator');
+    await generateAndStoreQuestions(targetCount, true);
   } else {
     console.log(`✅ 已有 ${count.c} 道选择题，跳过生成`);
+  }
+
+  // 检查填空题数量
+  const fillCount = await db.get(`SELECT COUNT(*) as c FROM fill_questions`);
+  if (fillCount.c < 30) {
+    console.log(`⚠️ 填空题数量不足 (${fillCount.c}/30)，开始补充生成...`);
+    const { generateAndStoreQuestions } = require('../services/questionGenerator');
+    await generateAndStoreQuestions(50, true);
+  } else {
+    console.log(`✅ 已有 ${fillCount.c} 道填空题`);
   }
 }
 
@@ -67,11 +94,26 @@ async function addSourceCategoryColumn() {
   }
 }
 
+async function ensureWrongQuestionsColumn() {
+  try {
+    const columnCheck = await db.get(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'wrong_questions' AND column_name = 'question_type'
+    `);
+    if (!columnCheck) {
+      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
+      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
+      console.log('✅ 为 wrong_questions 表添加 question_type 列');
+    }
+  } catch(e) {
+    console.warn('迁移 wrong_questions 失败:', e.message);
+  }
+}
+
 (async () => {
   console.log('🔍 检查数据库初始化状态...');
   let retries = 5;
   let initialized = false;
-
   while (retries > 0 && !initialized) {
     try {
       await db.get('SELECT 1');
@@ -79,6 +121,7 @@ async function addSourceCategoryColumn() {
 
       await addSourceCategoryColumn();
       await ensureMissingTables();
+      await ensureWrongQuestionsColumn();
 
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
@@ -91,7 +134,6 @@ async function addSourceCategoryColumn() {
         await importKnowledge();
       } else {
         await fixQuizQuestions();
-        // 趣味闯关已改用主题模式，无需关卡关联
         console.log('✅ 趣味闯关已启用主题模式');
       }
 
