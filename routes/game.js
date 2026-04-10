@@ -56,6 +56,7 @@ router.get('/fun-level-questions', async (req, res) => {
     questions = [...questions, ...parsedExtra];
   }
 
+  // 随机转换判断题/排序题
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
@@ -121,7 +122,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 连连看游戏 ====================
+// ==================== 政策连连看 ====================
 router.get('/match-game', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 4;
@@ -139,6 +140,11 @@ router.get('/match-game', async (req, res) => {
     knowledge.push(...extra);
   }
 
+  const getShortDesc = (text) => {
+    const firstSentence = text.split(/[。\n]/)[0];
+    return firstSentence.length > 80 ? firstSentence.substring(0, 80) + '...' : firstSentence;
+  };
+
   const pairs = [];
   knowledge.forEach(k => {
     pairs.push({
@@ -150,10 +156,11 @@ router.get('/match-game', async (req, res) => {
     pairs.push({
       id: k.id + '_desc',
       type: 'desc',
-      text: k.content.substring(0, 100) + (k.content.length > 100 ? '...' : ''),
+      text: getShortDesc(k.content),
       pairId: k.id
     });
   });
+  // 打乱顺序
   for (let i = pairs.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pairs[i], pairs[j]] = [pairs[j], pairs[i]];

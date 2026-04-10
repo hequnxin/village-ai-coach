@@ -52,7 +52,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用全屏答题组件（修复下一题按钮、按钮并排） ====================
+// ==================== 通用全屏答题组件 ====================
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -257,13 +257,13 @@ function renderGenericQuiz(config) {
           const correctOrderText = correctOrder.map(idx => q.options[idx]).join(' → ');
           feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctOrderText)}</div>`;
         }
-        // 更新底部按钮：显示下一题或完成按钮
+        // 更新底部按钮
         const footer = document.querySelector('.quiz-footer .action-buttons');
         if (footer) {
           footer.innerHTML = '';
           if (showPrev && !isFirst) footer.innerHTML += `<button id="quizPrevBtn" class="action-btn">← 上一题</button>`;
-          if (!isLast) footer.innerHTML += `<button id="quizNextBtn" class="action-btn">下一题 →</button>`;
-          if (isLast) footer.innerHTML += `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>`;
+          if (userAnswers[currentIndex] !== null && !isLast) footer.innerHTML += `<button id="quizNextBtn" class="action-btn">下一题 →</button>`;
+          if (userAnswers[currentIndex] !== null && isLast) footer.innerHTML += `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>`;
           // 重新绑定事件
           const newPrev = document.getElementById('quizPrevBtn');
           if (newPrev) newPrev.onclick = () => {
@@ -394,7 +394,6 @@ async function startDailyQuiz() {
       addPoints(rewardPoints, '每日一练');
       updateTaskProgress('quiz', 1);
       await loadModuleStats();
-      // 不自动返回，用户点击返回按钮自行退出
     };
 
     renderGenericQuiz({
@@ -479,10 +478,13 @@ async function startWeeklyContest() {
         body: JSON.stringify({ contestId: currentContestId, answers, timeUsed, attemptNumber: currentAttemptNumber })
       });
       const result = await res.json();
-      alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
-      addPoints(result.rewardPoints, '每周竞赛');
+      if (result.score !== undefined) {
+        alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
+        addPoints(result.rewardPoints, '每周竞赛');
+      } else {
+        alert('竞赛提交失败，请重试');
+      }
       await loadModuleStats();
-      // 不自动返回
     };
 
     let interval = null;
@@ -633,6 +635,11 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ questionId: q.id, userAnswer: JSON.stringify(userAnswer) })
       });
+      if (lives <= 0) {
+        alert('💀 生命值归零，闯关失败！');
+        onFinish(totalScore);
+        return { correct: false, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
+      }
     }
     return { correct: isCorrect, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
   };
@@ -649,7 +656,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     });
     if (reward) addPoints(reward, '趣味闯关');
     alert(`闯关结束！得分 ${totalScore/10}/${total}，${passed ? '通关成功！' : '再接再厉！'}${reward ? ` 获得 ${reward} 积分` : ''}`);
-    // 不自动返回
   };
 
   let timerInterval = null;
@@ -680,7 +686,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
 
   const customRender = (cfg) => {
     const extra = `
-      <div class="fun-lives">❤️ ${lives}</div>
+      <div class="fun-lives" id="funLivesDisplay">❤️ ${lives}</div>
       ${timingMode ? `<div class="question-timer" id="questionTimer">⏱️ 15s</div>` : ''}
       ${eventActive && !eventUsed && cfg.currentIndex === 0 ? `<div class="fun-event">${eventActive === 'double' ? '🎁 双倍积分事件！' : (eventActive === 'hint' ? '💡 提示事件！' : '⏭️ 免答事件！')}</div>` : ''}
     `;
@@ -690,10 +696,13 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
       onSubmit: async (idx, ans) => {
         clearTimer();
         const result = await onSubmit(idx, ans);
+        const livesDisplay = document.getElementById('funLivesDisplay');
+        if (livesDisplay && result.livesRemaining !== undefined) {
+          livesDisplay.textContent = `❤️ ${result.livesRemaining}`;
+        }
         return result;
       }
     });
-    // 绑定提示/跳过按钮
     if (eventActive === 'hint' && !eventUsed && !userAnswers[cfg.currentIndex]) {
       setTimeout(() => {
         const hintBtn = document.getElementById('hintBtn');
