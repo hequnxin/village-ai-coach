@@ -22,7 +22,7 @@ let currentContestId = null;
 let currentContestQuestions = [];
 let currentContestAnswers = [];
 let contestStartTime = null;
-let contestTotalTime = 120; // 2分钟
+let contestTotalTime = 120;
 let contestTimerInterval = null;
 let currentAttemptNumber = 1;
 
@@ -52,11 +52,7 @@ function formatAnswerLabel(question, answerIndex) {
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
 }
 
-// ==================== 通用答题组件（支持每日一练、每周竞赛、趣味闯关） ====================
-/**
- * 通用全屏答题组件 - 提交后无论对错都显示下一题按钮
- * @param {Object} config
- */
+// ==================== 通用答题组件（修复反馈、按钮并排、不自动退出） ====================
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -68,10 +64,9 @@ function renderGenericQuiz(config) {
     onSubmit,
     onFinish,
     onBack,
-    extraHeader = null, // 额外头部内容（如倒计时、生命值）
+    extraHeader = null,
     showPrev = true,
-    showSubmit = true,
-    showFeedback = true
+    showSubmit = true
   } = config;
 
   const dynamicContent = document.getElementById('dynamicContent');
@@ -85,7 +80,6 @@ function renderGenericQuiz(config) {
 
   let optionsHtml = '';
   if (isSort) {
-    // 排序题渲染
     const items = q.options.map((opt, idx) => ({ text: opt, originalIdx: idx }));
     const shuffled = [...items];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -133,11 +127,11 @@ function renderGenericQuiz(config) {
         <div id="quizFeedbackArea" class="quiz-feedback-area"></div>
       </div>
       <div class="quiz-footer">
-        ${showSubmit && !alreadyAnswered ? `<button id="quizSubmitBtn" class="submit-btn">提交答案</button>` : ''}
-        <div style="display: flex; gap: 12px; justify-content: center; margin-top: 12px;">
-          ${showPrev && !isFirst ? `<button id="quizPrevBtn" class="summary-btn">← 上一题</button>` : ''}
-          ${alreadyAnswered && !isLast ? `<button id="quizNextBtn" class="submit-btn">下一题 →</button>` : ''}
-          ${alreadyAnswered && isLast ? `<button id="quizFinishBtn" class="submit-btn success">完成闯关</button>` : ''}
+        <div class="action-buttons">
+          ${showPrev && !isFirst ? `<button id="quizPrevBtn" class="action-btn">← 上一题</button>` : ''}
+          ${showSubmit && !alreadyAnswered ? `<button id="quizSubmitBtn" class="action-btn submit">提交答案</button>` : ''}
+          ${alreadyAnswered && !isLast ? `<button id="quizNextBtn" class="action-btn">下一题 →</button>` : ''}
+          ${alreadyAnswered && isLast ? `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>` : ''}
         </div>
       </div>
     </div>
@@ -148,7 +142,6 @@ function renderGenericQuiz(config) {
     else renderGameView();
   };
 
-  // 选择题/判断题选项点击
   if (!isSort) {
     const opts = document.querySelectorAll('.quiz-option-item');
     opts.forEach(opt => {
@@ -161,7 +154,7 @@ function renderGenericQuiz(config) {
       };
     });
   } else {
-    // 排序题交互
+    // 排序题交互（略）
     let sortItems = document.querySelectorAll('.sort-item');
     let selectedSortItem = null;
     function updateSortOrder() {
@@ -218,7 +211,6 @@ function renderGenericQuiz(config) {
     }
   }
 
-  // 提交答案
   const submitBtn = document.getElementById('quizSubmitBtn');
   if (submitBtn) {
     submitBtn.onclick = async () => {
@@ -249,11 +241,10 @@ function renderGenericQuiz(config) {
           playSound('error');
           if (livesRemaining !== undefined && livesRemaining <= 0) {
             alert('💀 生命值归零，闯关失败！');
-            onFinish(config.totalScore);
+            if (onFinish) onFinish(config.totalScore);
             return;
           }
         }
-        // 高亮正确/错误选项（选择题/判断题）
         if (!isSort) {
           const opts = document.querySelectorAll('.quiz-option-item');
           const correctIndex = q.answer;
@@ -267,47 +258,76 @@ function renderGenericQuiz(config) {
           const correctOrderText = correctOrder.map(idx => q.options[idx]).join(' → ');
           feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctOrderText)}</div>`;
         }
-        // 重新渲染以显示下一题按钮（但保留已提交的答案）
-        renderGenericQuiz({
-          ...config,
-          currentIndex,
-          userAnswers,
-          userScores,
-          totalScore: config.totalScore
-        });
+        // 更新底部按钮
+        const footer = document.querySelector('.quiz-footer .action-buttons');
+        if (footer) {
+          footer.innerHTML = '';
+          if (showPrev && !isFirst) footer.innerHTML += `<button id="quizPrevBtn" class="action-btn">← 上一题</button>`;
+          if (alreadyAnswered && !isLast) footer.innerHTML += `<button id="quizNextBtn" class="action-btn">下一题 →</button>`;
+          if (alreadyAnswered && isLast) footer.innerHTML += `<button id="quizFinishBtn" class="action-btn finish">完成闯关</button>`;
+          // 重新绑定事件
+          const newPrev = document.getElementById('quizPrevBtn');
+          if (newPrev) newPrev.onclick = () => {
+            renderGenericQuiz({
+              ...config,
+              currentIndex: currentIndex - 1,
+              userAnswers,
+              userScores,
+              totalScore: config.totalScore
+            });
+          };
+          const newNext = document.getElementById('quizNextBtn');
+          if (newNext) newNext.onclick = () => {
+            renderGenericQuiz({
+              ...config,
+              currentIndex: currentIndex + 1,
+              userAnswers,
+              userScores,
+              totalScore: config.totalScore
+            });
+          };
+          const newFinish = document.getElementById('quizFinishBtn');
+          if (newFinish) newFinish.onclick = () => {
+            if (onFinish) onFinish(config.totalScore);
+          };
+        }
       }
     };
   }
 
   const prevBtn = document.getElementById('quizPrevBtn');
-  if (prevBtn) prevBtn.onclick = () => {
-    renderGenericQuiz({
-      ...config,
-      currentIndex: currentIndex - 1,
-      userAnswers,
-      userScores,
-      totalScore
-    });
-  };
+  if (prevBtn) {
+    prevBtn.onclick = () => {
+      renderGenericQuiz({
+        ...config,
+        currentIndex: currentIndex - 1,
+        userAnswers,
+        userScores,
+        totalScore
+      });
+    };
+  }
 
   const nextBtn = document.getElementById('quizNextBtn');
-  if (nextBtn) nextBtn.onclick = () => {
-    renderGenericQuiz({
-      ...config,
-      currentIndex: currentIndex + 1,
-      userAnswers,
-      userScores,
-      totalScore
-    });
-  };
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      renderGenericQuiz({
+        ...config,
+        currentIndex: currentIndex + 1,
+        userAnswers,
+        userScores,
+        totalScore
+      });
+    };
+  }
 
   const finishBtn = document.getElementById('quizFinishBtn');
-  if (finishBtn) finishBtn.onclick = () => {
-    if (onFinish) onFinish(config.totalScore);
-    else renderGameView();
-  };
+  if (finishBtn) {
+    finishBtn.onclick = () => {
+      if (onFinish) onFinish(config.totalScore);
+    };
+  }
 }
-
 // ==================== 每日一练 ====================
 async function startDailyQuiz() {
   try {
@@ -369,7 +389,7 @@ async function startDailyQuiz() {
       addPoints(rewardPoints, '每日一练');
       updateTaskProgress('quiz', 1);
       await loadModuleStats();
-      renderGameView();
+      // 不自动返回，用户点击返回按钮自行退出
     };
 
     renderGenericQuiz({
@@ -389,7 +409,7 @@ async function startDailyQuiz() {
   }
 }
 
-// ==================== 每周竞赛（带倒计时） ====================
+// ==================== 每周竞赛 ====================
 async function startWeeklyContest() {
   try {
     const res = await fetchWithAuth('/api/game/weekly/current');
@@ -447,10 +467,9 @@ async function startWeeklyContest() {
       alert(`竞赛完成！得分 ${result.score}/${result.total}，获得 ${result.rewardPoints} 积分`);
       addPoints(result.rewardPoints, '每周竞赛');
       await loadModuleStats();
-      renderGameView();
+      // 不自动返回
     };
 
-    // 自定义渲染带倒计时
     let interval = null;
     function updateTimerDisplay() {
       const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -611,10 +630,9 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     });
     if (reward) addPoints(reward, '趣味闯关');
     alert(`闯关结束！得分 ${totalScore/10}/${total}，${passed ? '通关成功！' : '再接再厉！'}${reward ? ` 获得 ${reward} 积分` : ''}`);
-    renderGameView();
+    // 不自动返回
   };
 
-  // 渲染趣味闯关，带生命值和限时模式
   let timerInterval = null;
   let timeLeft = 15;
   function updateTimerDisplay() {
@@ -641,7 +659,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     if (timerInterval) clearInterval(timerInterval);
   }
 
-  // 包装渲染函数以支持限时模式
   const customRender = (cfg) => {
     const extra = `
       <div class="fun-lives">❤️ ${lives}</div>
@@ -657,7 +674,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
         return result;
       }
     });
-    // 绑定提示/跳过按钮（事件已由通用组件处理，但需要额外处理）
+    // 绑定提示/跳过按钮
     if (eventActive === 'hint' && !eventUsed && !userAnswers[cfg.currentIndex]) {
       setTimeout(() => {
         const hintBtn = document.getElementById('hintBtn');
@@ -679,7 +696,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
         if (skipBtn) {
           skipBtn.onclick = () => {
             eventUsed = true;
-            // 跳过本题：标记为已答但不扣分，不得分，直接进入下一题
             userScores[cfg.currentIndex] = false;
             userAnswers[cfg.currentIndex] = null;
             if (cfg.currentIndex + 1 < questions.length) {
@@ -722,7 +738,6 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     showPrev: true
   });
 }
-
 // ==================== 排行榜 ====================
 async function showContestRanking() {
   try {
@@ -1029,7 +1044,7 @@ function renderScratchCard(card) {
   updateScratchRemaining();
 }
 
-// ==================== 主渲染（挑战中心首页） ====================
+// ==================== 主渲染 ====================
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -1076,15 +1091,6 @@ export async function renderGameView() {
           <div class="module-desc">每日5次，刮出惊喜</div>
           <div class="module-stats" id="scratchStats">剩余次数: --</div>
           <button class="module-btn" id="getScratchBtn">刮一张 →</button>
-        </div>
-      </div>
-      <div id="levelsModal" class="game-modal" style="display:none;">
-        <div class="game-modal-content">
-          <div class="game-modal-header">
-            <span>🏆 趣味闯关</span>
-            <button class="close-modal">&times;</button>
-          </div>
-          <div id="themesDetailContainer" class="themes-detail"></div>
         </div>
       </div>
     </div>

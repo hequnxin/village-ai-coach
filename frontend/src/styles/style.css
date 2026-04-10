@@ -1385,3 +1385,28 @@ body {
     grid-template-columns: 1fr;
   }
 }
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.action-btn {
+  background: #2e5d34;
+  color: white;
+  border: none;
+  padding: 8px 20px;
+  border-radius: 30px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.action-btn.submit {
+  background: #ff9800;
+}
+.action-btn.finish {
+  background: #4caf50;
+}
+.action-btn:hover {
+  transform: scale(1.02);
+}
