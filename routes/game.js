@@ -54,7 +54,6 @@ router.get('/fun-level-questions', async (req, res) => {
     const parsedExtra = extra.map(q => ({ ...q, options: JSON.parse(q.options) }));
     questions = [...questions, ...parsedExtra];
   }
-  // 随机将部分题目转换为判断题或排序题（仅对选择题操作）
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
@@ -62,7 +61,6 @@ router.get('/fun-level-questions', async (req, res) => {
       const rand = Math.random();
       if (q.type === 'choice') {
         if (rand < 0.2 && i % 2 === 0) {
-          // 修复正则：使用字符集匹配中英文问号
           const cleanQuestion = q.question.replace(/[？?]/g, '');
           q = {
             ...q,
@@ -126,7 +124,7 @@ router.post('/policy-submit', async (req, res) => {
 
 router.get('/match-game', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
-  let pairCount = 8; // 增加到8对，增强游戏性
+  let pairCount = 8;
   if (difficulty === 'easy') pairCount = 6;
   if (difficulty === 'hard') pairCount = 10;
   const knowledge = await db.all(`
@@ -251,7 +249,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛（带缓存优化） ====================
+// ==================== 每周竞赛（带缓存） ====================
 
 let cachedWeeklyContest = null;
 let cachedWeekStart = null;
@@ -284,7 +282,6 @@ router.get('/weekly/current', async (req, res) => {
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
 
-  // 检查缓存
   if (cachedWeeklyContest && cachedWeekStart === startStr) {
     const contest = cachedWeeklyContest;
     const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
@@ -335,7 +332,6 @@ router.get('/weekly/current', async (req, res) => {
     await db.run(`INSERT INTO weekly_contest (id, week_start, week_end, questions, status) VALUES ($1, $2, $3, $4, 'active')`,
       [contestId, startStr, endStr, JSON.stringify(questions.map(q => q.id))]);
     contest = { id: contestId };
-    // 更新缓存
     cachedWeeklyContest = { id: contestId, questions: JSON.stringify(questions.map(q => q.id)) };
     cachedWeekStart = startStr;
   }
@@ -385,7 +381,7 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
   res.json(ranks);
 });
 
-// ==================== 错题本（支持选择题、填空题，实时清除） ====================
+// ==================== 错题本 ====================
 
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;
@@ -457,21 +453,30 @@ router.post('/wrong-questions/record', async (req, res) => {
 router.get('/scratch/today-count', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
-  const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
+  const result = await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND DATE(created_at) = $2`, [userId, today]);
+  const count = result ? result.c : 0;
   res.json({ count });
 });
 
 router.get('/scratch/generate', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0,10);
-  const count = (await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND date(created_at) = $2`, [userId, today])).c;
-  if (count >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
-  const question = await db.all(`SELECT id, question, options, answer FROM quiz_questions WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题')) ORDER BY RANDOM() LIMIT 1`);
-  if (question.length === 0) return res.status(404).json({ error: '无题目' });
-  const q = question[0];
+  const countResult = await db.get(`SELECT COUNT(*) as c FROM scratch_cards WHERE user_id = $1 AND DATE(created_at) = $2`, [userId, today]);
+  if (countResult.c >= 5) return res.status(429).json({ error: '今日刮刮卡次数已达上限' });
+
+  const question = await db.get(`
+    SELECT id, question, options, answer FROM quiz_questions 
+    WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题'))
+    ORDER BY RANDOM() LIMIT 1
+  `);
+  if (!question) return res.status(404).json({ error: '无题目' });
+
   const cardId = uuidv4();
-  await db.run(`INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`, [cardId, userId, q.id, q.answer, new Date().toISOString()]);
-  res.json({ cardId, question: q.question, options: JSON.parse(q.options) });
+  await db.run(
+    `INSERT INTO scratch_cards (id, user_id, question_id, answer, reward_points, created_at) VALUES ($1, $2, $3, $4, 0, $5)`,
+    [cardId, userId, question.id, question.answer, new Date().toISOString()]
+  );
+  res.json({ cardId, question: question.question, options: JSON.parse(question.options) });
 });
 
 router.post('/scratch/submit', async (req, res) => {
@@ -479,7 +484,7 @@ router.post('/scratch/submit', async (req, res) => {
   const userId = req.user.userId;
   const card = await db.get(`SELECT * FROM scratch_cards WHERE id = $1 AND user_id = $2 AND is_used = 0`, [cardId, userId]);
   if (!card) return res.status(400).json({ error: '无效刮刮卡' });
-  const isCorrect = (card.answer == selected);
+  const isCorrect = (parseInt(card.answer) === parseInt(selected));
   let reward = 0;
   if (isCorrect) {
     reward = Math.floor(Math.random() * 20) + 10;
@@ -491,7 +496,18 @@ router.post('/scratch/submit', async (req, res) => {
   res.json({ correct: isCorrect, rewardPoints: reward });
 });
 
-// ==================== 其他接口 ====================
+// ==================== 模拟失误点（可选） ====================
+
+router.get('/simulate-mistakes', async (req, res) => {
+  const userId = req.user.userId;
+  const mistakes = await db.all(
+    `SELECT id, mistake_text, scenario_id, created_at FROM simulate_mistakes WHERE user_id = $1 ORDER BY created_at DESC`,
+    [userId]
+  );
+  res.json(mistakes);
+});
+
+// ==================== 其他 ====================
 
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;

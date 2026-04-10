@@ -1234,8 +1234,9 @@ body {
 }
 
 .match-card.error {
-  background: #ffcdd2;
+  background: #ffcdd2 !important;
   transform: scale(0.98);
+  transition: all 0.2s;
 }
 
 .animate-pop {
