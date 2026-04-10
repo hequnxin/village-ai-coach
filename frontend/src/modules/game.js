@@ -742,6 +742,8 @@ async function startMatchGame() {
   let selectedCard = null;
   let matchedPairs = 0;
   let lock = false;
+  // 存储已配对的卡片索引，用于隐藏
+  let matchedIndices = new Set();
 
   function renderMatchGame() {
     const dynamicContent = document.getElementById('dynamicContent');
@@ -754,7 +756,7 @@ async function startMatchGame() {
         </div>
         <div class="match-grid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:20px;">
           ${pairs.map((card, idx) => `
-            <div class="match-card ${card.matched ? 'matched' : ''}" data-idx="${idx}" data-pair="${card.pairId}" data-type="${card.type}" style="background:white; border-radius:12px; padding:16px; text-align:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s;">
+            <div class="match-card ${matchedIndices.has(idx) ? 'matched-hidden' : ''}" data-idx="${idx}" data-pair="${card.pairId}" data-type="${card.type}" style="background:white; border-radius:12px; padding:16px; text-align:center; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:all 0.2s; ${matchedIndices.has(idx) ? 'display:none;' : ''}">
               <div class="match-card-content">${escapeHtml(card.text)}</div>
             </div>
           `).join('')}
@@ -765,11 +767,12 @@ async function startMatchGame() {
       </div>
     `;
     document.getElementById('matchBackBtn').onclick = () => renderGameView();
-    const cards = document.querySelectorAll('.match-card');
+    const cards = document.querySelectorAll('.match-card:not([style*="display:none"])');
     cards.forEach(card => {
       card.onclick = () => {
         if (lock) return;
-        if (card.classList.contains('matched')) return;
+        const idx = parseInt(card.dataset.idx);
+        if (matchedIndices.has(idx)) return;
         if (selectedCard === null) {
           selectedCard = card;
           card.classList.add('selected');
@@ -787,11 +790,13 @@ async function startMatchGame() {
           const firstType = selectedCard.dataset.type;
           const secondType = card.dataset.type;
           if (firstPair === secondPair && firstType !== secondType) {
-            // 配对成功动画
-            selectedCard.classList.add('matched', 'animate-pop');
-            card.classList.add('matched', 'animate-pop');
-            selectedCard.classList.remove('selected');
-            selectedCard.style.transform = '';
+            // 配对成功：隐藏两张卡片
+            const firstIdx = parseInt(selectedCard.dataset.idx);
+            const secondIdx = parseInt(card.dataset.idx);
+            matchedIndices.add(firstIdx);
+            matchedIndices.add(secondIdx);
+            selectedCard.style.display = 'none';
+            card.style.display = 'none';
             matchedPairs++;
             const progressDiv = document.querySelector('.match-progress');
             if (progressDiv) progressDiv.textContent = `配对进度: ${matchedPairs} / ${totalPairs}`;
@@ -802,7 +807,7 @@ async function startMatchGame() {
             }
             playSound('complete');
           } else {
-            // 配对失败动画
+            // 配对失败：变红，延迟后恢复
             selectedCard.classList.add('error');
             card.classList.add('error');
             setTimeout(() => {
@@ -846,6 +851,16 @@ async function startWrongClear() {
   let userScores = new Array(questions.length).fill(false);
   let totalScore = 0;
   let clearedCount = 0;
+  let remainingCount = questions.length;
+
+  // 更新错题本卡片显示的函数
+  async function updateWrongStats() {
+    const newRes = await fetchWithAuth('/api/game/wrong-questions');
+    const newData = await newRes.json();
+    const newCount = newData.questions?.length || 0;
+    const wrongStats = document.getElementById('wrongStats');
+    if (wrongStats) wrongStats.innerHTML = `共有 ${newCount} 道错题`;
+  }
 
   const onSubmit = async (index, userAnswer) => {
     const q = questions[index];
@@ -865,7 +880,6 @@ async function startWrongClear() {
     if (isCorrect) {
       if (!userScores[index]) {
         userScores[index] = true;
-        // 调用清除接口，实时删除这道错题
         const clearRes = await fetchWithAuth('/api/game/wrong-questions/clear', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -875,26 +889,28 @@ async function startWrongClear() {
         if (clearData.clearedCount > 0) {
           clearedCount++;
           totalScore += 10;
-          // 从当前列表中移除该题，动态更新剩余题目
+          remainingCount--;
+          // 从当前列表中移除该题
           questions.splice(index, 1);
           userAnswers.splice(index, 1);
           userScores.splice(index, 1);
-          // 如果已无题目，结束闯关；否则重新渲染当前索引（注意索引变化）
+          // 更新错题本卡片显示
+          await updateWrongStats();
           if (questions.length === 0) {
-            alert(`错题闯关结束！本次共答对 ${clearedCount} 题，获得 ${totalScore} 积分`);
+            alert(`错题闯关结束！本次共答对 ${clearedCount} 题，获得 ${totalScore} 积分，所有错题已消灭！`);
             addPoints(totalScore, '错题闯关');
             await loadModuleStats();
             renderGameView();
             return { correct: true, correctLabel, explanation: q.explanation };
           } else {
-            // 重新渲染，索引保持不变（因为删除了当前题，下一题会移到当前索引）
+            // 重新渲染，索引保持不变
             renderGenericQuiz({
               questions,
               currentIndex: index,
               userAnswers,
               userScores,
               totalScore,
-              title: '错题闯关',
+              title: `错题闯关 (剩余${remainingCount}题)`,
               onSubmit,
               onFinish,
               onBack: () => renderGameView(),
@@ -916,25 +932,53 @@ async function startWrongClear() {
   };
 
   const onFinish = async (finalScore) => {
-    alert(`错题闯关结束！本次共答对 ${clearedCount} 题，获得 ${finalScore} 积分`);
+    alert(`错题闯关结束！本次共答对 ${clearedCount} 题，获得 ${finalScore} 积分，剩余 ${remainingCount} 道错题`);
     addPoints(finalScore, '错题闯关');
     await loadModuleStats();
     renderGameView();
   };
 
-  renderGenericQuiz({
+  // 添加结束按钮的自定义渲染
+  const originalRender = renderGenericQuiz;
+  const customRender = (cfg) => {
+    // 在 extraHeader 中添加结束按钮
+    const extra = `<button id="exitWrongClearBtn" class="summary-btn" style="background:#f44336; color:white; margin-left:10px;">结束闯关</button>`;
+    const newExtraHeader = cfg.extraHeader ? cfg.extraHeader + extra : extra;
+    originalRender({ ...cfg, extraHeader: newExtraHeader, title: `错题闯关 (剩余${remainingCount}题)` });
+    setTimeout(() => {
+      const exitBtn = document.getElementById('exitWrongClearBtn');
+      if (exitBtn) {
+        exitBtn.onclick = () => {
+          if (confirm(`确定结束闯关？已消灭 ${clearedCount} 题，剩余 ${remainingCount} 题，可获得 ${totalScore} 积分。`)) {
+            onFinish(totalScore);
+          }
+        };
+      }
+    }, 100);
+  };
+
+  // 临时覆盖 renderGenericQuiz
+  window._originalRenderGenericQuiz = renderGenericQuiz;
+  window.renderGenericQuiz = customRender;
+
+  customRender({
     questions,
     currentIndex: 0,
     userAnswers,
     userScores,
     totalScore,
-    title: '错题闯关',
+    title: `错题闯关 (剩余${remainingCount}题)`,
     onSubmit,
     onFinish,
     onBack: () => renderGameView(),
     showPrev: true,
     isWrongClear: true
   });
+
+  // 恢复原函数（避免影响其他模块）
+  setTimeout(() => {
+    window.renderGenericQuiz = window._originalRenderGenericQuiz;
+  }, 100);
 }
 
 // ==================== 刮刮乐 ====================
@@ -944,8 +988,9 @@ async function updateScratchRemaining() {
     const res = await fetchWithAuth('/api/game/scratch/today-count');
     if (res.ok) {
       const data = await res.json();
-      scratchRemaining = Math.max(0, 5 - data.count);
+      scratchRemaining = Math.max(0, 5 - (data.count || 0));
     } else {
+      // 降级处理
       const today = new Date().toISOString().slice(0,10);
       let count = parseInt(localStorage.getItem('scratch_count')) || 0;
       if (localStorage.getItem('scratch_date') !== today) {
@@ -957,19 +1002,110 @@ async function updateScratchRemaining() {
     }
   } catch(e) {
     console.warn('获取刮刮乐次数失败', e);
-    const today = new Date().toISOString().slice(0,10);
-    let count = parseInt(localStorage.getItem('scratch_count')) || 0;
-    if (localStorage.getItem('scratch_date') !== today) {
-      count = 0;
-      localStorage.setItem('scratch_date', today);
-      localStorage.setItem('scratch_count', '0');
-    }
-    scratchRemaining = Math.max(0, 5 - count);
+    scratchRemaining = 5; // 默认5次
   }
   const statsSpan = document.getElementById('scratchStats');
   if (statsSpan) statsSpan.innerHTML = `剩余次数: ${scratchRemaining}`;
   const btn = document.getElementById('getScratchBtn');
   if (btn) btn.disabled = scratchRemaining <= 0;
+}
+
+async function getScratchCard() {
+  if (scratchRemaining <= 0) {
+    alert('今日刮刮卡次数已用完');
+    return;
+  }
+  try {
+    const res = await fetchWithAuth('/api/game/scratch/generate');
+    if (!res.ok) {
+      if (res.status === 429) {
+        alert('今日次数已用完');
+        await updateScratchRemaining();
+        return;
+      }
+      throw new Error('生成失败');
+    }
+    const card = await res.json();
+    renderScratchCard(card);
+  } catch(e) {
+    alert(e.message);
+  }
+}
+
+function renderScratchCard(card) {
+  // 移除已存在的模态框
+  const existingModal = document.querySelector('.modal');
+  if (existingModal) existingModal.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-content" style="width:500px;">
+      <button class="modal-close">&times;</button>
+      <div id="scratchSurface" class="scratch-card">
+        <div class="scratch-cover">🎫 点击刮开涂层 🎫</div>
+      </div>
+      <div id="scratchAgainBtn" class="submit-btn" style="margin-top:12px; display:none;">再刮一张</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => {
+    if (modal && modal.parentNode) modal.remove();
+  };
+  const closeBtn = modal.querySelector('.modal-close');
+  if (closeBtn) closeBtn.onclick = closeModal;
+  modal.onclick = (e) => { if(e.target === modal) closeModal(); };
+
+  const surface = modal.querySelector('#scratchSurface');
+  const againBtn = modal.querySelector('#scratchAgainBtn');
+  if (!surface) return;
+
+  surface.onclick = () => {
+    if (!surface) return;
+    surface.innerHTML = `
+      <div class="scratch-question">
+        <div class="question-text">${escapeHtml(card.question)}</div>
+        <div class="scratch-options">
+          ${card.options.map((opt, idx) => `<div class="scratch-option" data-opt="${idx}">${String.fromCharCode(65+idx)}. ${escapeHtml(opt)}</div>`).join('')}
+        </div>
+      </div>
+    `;
+    const opts = surface.querySelectorAll('.scratch-option');
+    opts.forEach(opt => {
+      opt.onclick = async () => {
+        const selected = parseInt(opt.dataset.opt);
+        const res = await fetchWithAuth('/api/game/scratch/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId: card.cardId, selected })
+        });
+        const result = await res.json();
+        if (result.correct) {
+          surface.innerHTML = `<div class="scratch-reward">🎉 刮中奖励！获得 ${result.rewardPoints} 积分 🎉</div>`;
+          addPoints(result.rewardPoints, '刮刮乐');
+        } else {
+          surface.innerHTML = `<div class="scratch-reward">😢 很遗憾，答案错误，下次再试试吧</div>`;
+        }
+        const today = new Date().toISOString().slice(0,10);
+        let count = parseInt(localStorage.getItem('scratch_count')) || 0;
+        count++;
+        localStorage.setItem('scratch_count', count);
+        localStorage.setItem('scratch_date', today);
+        await updateScratchRemaining();
+        if (scratchRemaining > 0 && againBtn) againBtn.style.display = 'block';
+        else if (againBtn) againBtn.style.display = 'none';
+      };
+    });
+  };
+  if (againBtn) {
+    againBtn.onclick = () => {
+      closeModal();
+      getScratchCard();
+    };
+  }
+  updateScratchRemaining();
 }
 
 async function getScratchCard() {

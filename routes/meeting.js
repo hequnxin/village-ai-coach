@@ -1,216 +1,468 @@
-// routes/meeting.js
-const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { chat } = require('../services/openai');
-const { addMessage, createSession, getSession } = require('../services/sessionService');
-const db = require('../services/db');
+// frontend/src/modules/meeting.js
+import { fetchWithAuth } from '../utils/api';
+import { appState, createNewSession, switchSession } from './state';
+import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
 
-const router = express.Router();
+let currentMeeting = null;
+let meetingTyping = false;
+let meetingPollInterval = null;
 
-// 创建会议会话（支持议程、参与者、时间限制）
-router.post('/session', async (req, res) => {
-  const { topic, villagers, agenda, timeLimit } = req.body;
-  const userId = req.user.userId;
-  const session = await createSession(userId, { title: topic, type: 'meeting' });
-  const config = {
-    villagers: villagers || [],
-    agenda: agenda || [{ name: '开场', completed: false }, { name: '讨论', completed: false }, { name: '总结', completed: false }],
-    timeLimit: timeLimit || null,
-    startTime: Date.now(),
-    votes: {},           // 存储每个议题的投票结果
-    resolvedItems: [],
-    satisfaction: 50,
-    emotions: {},
-    currentAgendaIndex: 0
-  };
-  await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(config), session.id]);
-  const initialMsg = `🏛️ 会议开始！主题：${topic}\n议程：${config.agenda.map((a, i) => `${i+1}. ${a.name}`).join('；')}\n参会人员：${villagers.map(v => v.name).join('、')}\n请主持会议。`;
-  await addMessage(session.id, 'system', initialMsg, Date.now());
-  res.json({ sessionId: session.id, config });
-});
+const meetingTypes = [
+  { value: 'villager', label: '村民大会', roles: [
+    { name: '张大爷', avatar: '👴', personality: '固执、爱面子', stance: '中立', stanceValue: 0.5, id: 'v1' },
+    { name: '李大妈', avatar: '👵', personality: '热情、话多', stance: '中立', stanceValue: 0.5, id: 'v2' },
+    { name: '王叔', avatar: '👨', personality: '务实、理性', stance: '中立', stanceValue: 0.5, id: 'v3' },
+    { name: '赵婶', avatar: '👩', personality: '敏感、爱抱怨', stance: '中立', stanceValue: 0.5, id: 'v4' }
+  ] },
+  { value: 'cadre', label: '村干部大会', roles: [
+    { name: '村支书', avatar: '👨‍💼', personality: '稳重、有远见', stance: '支持', stanceValue: 0.8, id: 'c1' },
+    { name: '村主任', avatar: '👩‍💼', personality: '务实、执行力强', stance: '支持', stanceValue: 0.7, id: 'c2' },
+    { name: '妇女主任', avatar: '👩', personality: '细心、善于沟通', stance: '中立', stanceValue: 0.5, id: 'c3' },
+    { name: '民兵连长', avatar: '👮', personality: '直爽、急躁', stance: '中立', stanceValue: 0.5, id: 'c4' }
+  ] }
+];
 
-// 获取会议状态（轮询用）
-router.get('/status/:sessionId', async (req, res) => {
-  const userId = req.user.userId;
-  const session = await getSession(userId, req.params.sessionId);
-  if (!session || session.type !== 'meeting') return res.status(404).json({ error: '会议不存在' });
-  let config = {};
-  if (session.scenarioId) { try { config = JSON.parse(session.scenarioId); } catch(e) {} }
-  res.json({
-    agenda: config.agenda || [],
-    satisfaction: config.satisfaction || 50,
-    emotions: config.emotions || {},
-    votes: config.votes || {},
-    resolvedItems: config.resolvedItems || [],
-    timeRemaining: config.timeLimit ? Math.max(0, config.timeLimit - Math.floor((Date.now() - (config.startTime||Date.now())) / 1000)) : null,
-    currentAgendaIndex: config.currentAgendaIndex || 0
+const commonTopics = ['人居环境整治', '土地流转协调', '产业发展规划', '矛盾纠纷调解', '惠民政策宣传'];
+
+export async function renderMeetingSetupView() {
+  if (meetingPollInterval) clearInterval(meetingPollInterval);
+  const dynamicContent = document.getElementById('dynamicContent');
+  dynamicContent.innerHTML = `
+    <div class="meeting-setup" style="max-width:600px; margin:20px auto; padding:20px; background:white; border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+      <h3 style="margin-bottom:20px;">🏛️ 会议模式</h3>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; margin-bottom:6px;">会议类型：</label>
+        <select id="meetingTypeSelect" style="width:100%; padding:8px; border-radius:8px; border:1px solid #ccc;">
+          ${meetingTypes.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; margin-bottom:6px;">会议主题：</label>
+        <select id="meetingTopicSelect" style="width:100%; padding:8px; border-radius:8px; border:1px solid #ccc;">
+          <option value="custom">自定义主题</option>
+          ${commonTopics.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select>
+        <input type="text" id="customTopicInput" placeholder="输入自定义主题" style="width:100%; margin-top:8px; padding:8px; border-radius:8px; border:1px solid #ccc; display:none;">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; margin-bottom:6px;">议程（每行一个，可调整顺序）</label>
+        <textarea id="agendaInput" rows="4" style="width:100%; padding:8px; border-radius:8px; border:1px solid #ccc;" placeholder="例如：&#10;1. 开场致辞&#10;2. 村民意见收集&#10;3. 方案讨论&#10;4. 投票表决"></textarea>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; margin-bottom:6px;">参与人员（格式：姓名:头像:性格，每行一个）</label>
+        <textarea id="customRolesInput" rows="3" style="width:100%; padding:8px; border-radius:8px; border:1px solid #ccc;"></textarea>
+        <div style="font-size:0.8rem; color:#666; margin-top:4px;">留空则使用默认人员</div>
+      </div>
+      <button id="startMeetingBtn" class="submit-btn" style="width:100%;">开始会议</button>
+    </div>
+  `;
+
+  const typeSelect = document.getElementById('meetingTypeSelect');
+  const topicSelect = document.getElementById('meetingTopicSelect');
+  const customInput = document.getElementById('customTopicInput');
+  topicSelect.addEventListener('change', () => {
+    const isCustom = topicSelect.value === 'custom';
+    customInput.style.display = isCustom ? 'block' : 'none';
+    if (!isCustom) customInput.value = '';
   });
-});
-
-// 发送会议消息（支持点名、自由发言、举手、投票等）
-router.post('/chat', async (req, res) => {
-  const { sessionId, message, villagerId, action, option } = req.body;
-  const userId = req.user.userId;
-  const session = await getSession(userId, sessionId);
-  if (!session || session.type !== 'meeting') return res.status(404).json({ error: '会议不存在' });
-  let config = {};
-  if (session.scenarioId) { try { config = JSON.parse(session.scenarioId); } catch(e) { config = { villagers: [], agenda: [], satisfaction: 50, currentAgendaIndex: 0 }; } }
-  const villagers = config.villagers || [];
-  let agenda = config.agenda || [];
-  let satisfaction = config.satisfaction || 50;
-  let emotions = config.emotions || {};
-  let votes = config.votes || {};
-  let resolvedItems = config.resolvedItems || [];
-  let currentAgendaIndex = config.currentAgendaIndex || 0;
-
-  // 处理投票
-  if (action === 'vote') {
-    if (!option) return res.status(400).json({ error: '缺少投票选项' });
-    const currentAgenda = agenda[currentAgendaIndex];
-    if (!currentAgenda || currentAgenda.completed) return res.status(400).json({ error: '无进行中的议题' });
-    votes[currentAgenda.name] = votes[currentAgenda.name] || { for: 0, against: 0, abstain: 0 };
-    votes[currentAgenda.name][option === '支持' ? 'for' : (option === '反对' ? 'against' : 'abstain')]++;
-    const totalVotes = Object.values(votes[currentAgenda.name]).reduce((a,b)=>a+b, 0);
-    // 如果所有村民都投票了，自动判定结果并推进议程
-    if (totalVotes >= villagers.length) {
-      const passed = votes[currentAgenda.name].for > votes[currentAgenda.name].against;
-      const resultMsg = passed ? `✅ 议题"${currentAgenda.name}"通过！` : `❌ 议题"${currentAgenda.name}"未通过。`;
-      await addMessage(sessionId, 'system', resultMsg, Date.now());
-      currentAgenda.completed = true;
-      if (passed) resolvedItems.push(currentAgenda.name);
-      satisfaction += passed ? 10 : -5;
-      satisfaction = Math.min(100, Math.max(0, satisfaction));
-      // 自动推进到下一个议程
-      if (currentAgendaIndex + 1 < agenda.length) {
-        currentAgendaIndex++;
-        await addMessage(sessionId, 'system', `📌 进入下一议程：${agenda[currentAgendaIndex].name}`, Date.now());
-      } else {
-        await addMessage(sessionId, 'system', `🎉 所有议程已完成！会议即将结束。`, Date.now());
+  document.getElementById('startMeetingBtn').onclick = async () => {
+    const meetingType = typeSelect.value;
+    let topic = topicSelect.value;
+    if (topic === 'custom') topic = customInput.value.trim();
+    if (!topic) { alert('请填写会议主题'); return; }
+    let roles = [];
+    const customRolesText = document.getElementById('customRolesInput').value.trim();
+    if (customRolesText) {
+      const lines = customRolesText.split('\n');
+      for (let line of lines) {
+        const parts = line.split(':');
+        if (parts.length >= 2) {
+          roles.push({
+            name: parts[0].trim(),
+            avatar: parts[1].trim() || '👤',
+            personality: parts[2] ? parts[2].trim() : '普通',
+            stance: '中立',
+            stanceValue: 0.5,
+            id: `custom_${Date.now()}_${Math.random()}`
+          });
+        }
       }
     }
-    const newConfig = { ...config, agenda, satisfaction, votes, resolvedItems, currentAgendaIndex };
-    await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(newConfig), sessionId]);
-    return res.json({ success: true, satisfaction, agendaCompleted: currentAgenda.completed, votes: votes[currentAgenda.name] });
-  }
-
-  // 处理下一议程（手动推进）
-  if (action === 'nextAgenda') {
-    if (currentAgendaIndex + 1 < agenda.length) {
-      currentAgendaIndex++;
-      await addMessage(sessionId, 'system', `📌 主持人手动推进到下一议程：${agenda[currentAgendaIndex].name}`, Date.now());
+    if (roles.length === 0) {
+      const defaultTypes = { villager: meetingTypes[0].roles, cadre: meetingTypes[1].roles };
+      roles = defaultTypes[meetingType] || meetingTypes[0].roles;
+    }
+    let agendaText = document.getElementById('agendaInput').value.trim();
+    let agenda = [];
+    if (agendaText) {
+      agenda = agendaText.split('\n').filter(l => l.trim()).map((l, idx) => ({ name: l.replace(/^\d+\.\s*/, ''), description: '', order: idx }));
     } else {
-      return res.json({ success: false, message: '已是最后一个议程' });
+      agenda = [
+        { name: '议题介绍', description: '主持人介绍本次会议议题', order: 0 },
+        { name: '村民发言', description: '听取各方意见', order: 1 },
+        { name: '讨论与辩论', description: '针对分歧进行讨论', order: 2 },
+        { name: '投票表决', description: '对最终方案进行投票', order: 3 }
+      ];
     }
-    const newConfig = { ...config, currentAgendaIndex };
-    await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(newConfig), sessionId]);
-    return res.json({ success: true, currentAgendaIndex });
-  }
+    await startMeeting(roles, topic, agenda);
+  };
+  setActiveNavByView('meeting');
+}
 
-  // 普通发言
-  if (!message) return res.status(400).json({ error: '消息内容不能为空' });
-  const activeVillager = villagers.find(v => v.id === villagerId) || (villagers.length ? villagers[0] : null);
-  if (!activeVillager) return res.status(400).json({ error: '无效的发言者' });
-  await addMessage(sessionId, 'user', message, Date.now());
+async function startMeeting(roles, topic, agenda) {
+  const res = await fetchWithAuth('/api/meeting/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic, villagers: roles, agenda })
+  });
+  const data = await res.json();
+  const sessionId = data.sessionId;
+  const session = { id: sessionId, title: topic, type: 'meeting', messages: [], createdAt: new Date().toISOString() };
+  appState.sessions.unshift(session);
+  const { renderSessionList } = await import('./ui');
+  renderSessionList();
+  await switchSession(sessionId);
+  currentMeeting = { sessionId, villagers: roles, agenda, currentAgendaIndex: 0, votes: {}, topic };
+  renderMeetingChatArea();
+  startMeetingPolling(sessionId);
+}
 
-  // 构建 prompt 让 AI 生成村民回复，并分析满意度变化、情绪、是否推进议程
-  const prompt = `你正在模拟一场乡村会议。会议主题：${session.title}。当前议程：${agenda.map((a, i) => `${a.name}${a.completed ? '✅' : (i === currentAgendaIndex ? '⏳' : '')}`).join(' → ')}。
-当前会议满意度：${satisfaction}（0-100）。
-请扮演村民"${activeVillager.name}"，性格：${activeVillager.personality || '普通'}。针对村官的话"${message}"做出自然回应。
-同时分析村官的表现，返回JSON格式：
-{
-  "reply": "你的回复内容",
-  "satisfactionDelta": 整数(-20到20),
-  "emotion": "happy/sad/angry/neutral",
-  "agendaProgress": 0或1（是否推进当前议程）
-}`;
-  try {
-    const response = await chat([{ role: 'user', content: prompt }], { temperature: 0.8, max_tokens: 300 });
-    let parsed;
+async function startMeetingPolling(sessionId) {
+  if (meetingPollInterval) clearInterval(meetingPollInterval);
+  meetingPollInterval = setInterval(async () => {
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-    } catch(e) {}
-    if (!parsed) parsed = { reply: response, satisfactionDelta: 0, emotion: 'neutral', agendaProgress: 0 };
-    const reply = parsed.reply;
-    const delta = parsed.satisfactionDelta || 0;
-    let newSatisfaction = satisfaction + delta;
-    newSatisfaction = Math.min(100, Math.max(0, newSatisfaction));
-    emotions[activeVillager.id] = parsed.emotion || 'neutral';
-    let agendaUpdated = false;
-    if (parsed.agendaProgress === 1 && agenda.length && !agenda[currentAgendaIndex].completed) {
-      agenda[currentAgendaIndex].completed = true;
-      agendaUpdated = true;
-      await addMessage(sessionId, 'system', `📌 议程"${agenda[currentAgendaIndex].name}"已完成。`, Date.now());
-      // 自动推进到下一议程
-      if (currentAgendaIndex + 1 < agenda.length) {
-        currentAgendaIndex++;
-        await addMessage(sessionId, 'system', `📌 进入下一议程：${agenda[currentAgendaIndex].name}`, Date.now());
-      } else {
-        await addMessage(sessionId, 'system', `🎉 所有议程已完成！会议即将结束。`, Date.now());
+      const res = await fetchWithAuth(`/api/meeting/status/${sessionId}`);
+      const data = await res.json();
+      if (currentMeeting) {
+        currentMeeting.agenda = data.agenda;
+        currentMeeting.currentAgendaIndex = data.currentAgendaIndex;
+        currentMeeting.votes = data.votes;
+        currentMeeting.satisfaction = data.satisfaction;
+        currentMeeting.emotions = data.emotions;
+        if (data.meetingStatus === 'finished' && data.resolution) {
+          clearInterval(meetingPollInterval);
+          showMeetingResolution(data.resolution);
+        }
+        updateMeetingUI();
       }
-    }
-    const newConfig = { ...config, agenda, satisfaction: newSatisfaction, emotions, currentAgendaIndex };
-    await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(newConfig), sessionId]);
-    await addMessage(sessionId, 'assistant', reply, Date.now());
-    res.json({
-      reply,
-      villager: activeVillager,
-      satisfaction: newSatisfaction,
-      emotion: parsed.emotion,
-      agendaProgress: agendaUpdated,
-      timeRemaining: config.timeLimit ? Math.max(0, config.timeLimit - Math.floor((Date.now() - config.startTime) / 1000)) : null
+    } catch(e) { console.warn('轮询会议状态失败', e); }
+  }, 3000);
+}
+
+function updateMeetingUI() {
+  if (!currentMeeting) return;
+  const agendaContainer = document.getElementById('meetingAgenda');
+  if (agendaContainer && currentMeeting.agenda) {
+    agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
+      <div class="agenda-item ${idx === currentMeeting.currentAgendaIndex ? 'current' : ''} ${idx < currentMeeting.currentAgendaIndex ? 'completed' : ''}">
+        ${idx+1}. ${escapeHtml(item.name)}
+      </div>
+    `).join('');
+  }
+  const villagersContainer = document.getElementById('meetingVillagers');
+  if (villagersContainer && currentMeeting.villagers) {
+    currentMeeting.villagers.forEach(v => {
+      const card = villagersContainer.querySelector(`.villager-card[data-id="${v.id}"]`);
+      if (card) {
+        const stanceSpan = card.querySelector('.villager-stance');
+        if (stanceSpan) {
+          stanceSpan.textContent = v.stance === '支持' ? '✅' : (v.stance === '反对' ? '❌' : '⚪');
+          stanceSpan.className = `villager-stance stance-${v.stance === '支持' ? 'support' : (v.stance === '反对' ? 'oppose' : 'neutral')}`;
+        }
+        const fill = card.querySelector('.satisfaction-mini-fill');
+        if (fill && v.stanceValue !== undefined) fill.style.width = `${v.stanceValue * 100}%`;
+      }
     });
-  } catch (err) {
-    console.error('会议消息失败:', err);
-    res.status(500).json({ error: '服务器内部错误' });
   }
-});
+  const voteResultContainer = document.getElementById('meetingVoteResult');
+  if (voteResultContainer && currentMeeting.votes) {
+    const currentVotes = currentMeeting.votes[currentMeeting.currentAgendaIndex] || {};
+    const support = Object.values(currentVotes).filter(v => v === '支持').length;
+    const oppose = Object.values(currentVotes).filter(v => v === '反对').length;
+    voteResultContainer.innerHTML = `<div>当前投票：支持 ${support} 人，反对 ${oppose} 人</div>`;
+  }
+  const satisfactionDiv = document.getElementById('meetingSatisfaction');
+  if (satisfactionDiv && currentMeeting.satisfaction !== undefined) {
+    satisfactionDiv.innerHTML = `村民满意度：${currentMeeting.satisfaction}%`;
+  }
+}
 
-// 结束会议并生成会议纪要
-router.post('/finish', async (req, res) => {
-  const { sessionId } = req.body;
-  const userId = req.user.userId;
-  const session = await getSession(userId, sessionId);
-  if (!session || session.type !== 'meeting') return res.status(404).json({ error: '会议不存在' });
-  let config = {};
-  if (session.scenarioId) { try { config = JSON.parse(session.scenarioId); } catch(e) {} }
-  const agenda = config.agenda || [];
-  const resolvedItems = config.resolvedItems || [];
-  const satisfaction = config.satisfaction || 50;
-  const votes = config.votes || {};
-  const dialogue = session.messages.map(m => `${m.role === 'user' ? '村官' : (m.role === 'assistant' ? '村民' : '系统')}: ${m.content}`).join('\n');
-  const summaryPrompt = `你是一名乡村会议记录员。请根据以下会议对话，生成一份结构化的会议纪要，包含：
-- 会议主题
-- 议程完成情况
-- 决议事项（通过的议题）
-- 争议点
-- 待办事项
-- 总体评价（满意度：${satisfaction}/100）
-对话内容：
-${dialogue}
-输出格式（纯JSON）：
-{
-  "minutes": "会议纪要文本",
-  "resolutions": ["决议1", "决议2"],
-  "disputes": ["争议点1"],
-  "actionItems": ["待办1"],
-  "overallScore": 满意度分数
-}`;
+function renderMeetingChatArea() {
+  if (!currentMeeting) return;
+  const dynamicContent = document.getElementById('dynamicContent');
+  dynamicContent.innerHTML = `
+    <div class="meeting-layout" style="display:flex; height:100%; gap:16px; padding:16px; background:#f5f7fa;">
+      <div class="meeting-sidebar" style="width:280px; background:white; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:20px; overflow-y:auto;">
+        <div>
+          <h3 style="margin-bottom:8px;">🏛️ ${escapeHtml(currentMeeting.topic || '会议')}</h3>
+          <div id="meetingSatisfaction" style="font-size:0.9rem; color:#2e5d34;">村民满意度：${currentMeeting.satisfaction || 50}%</div>
+        </div>
+        <div>
+          <h4>📋 议程</h4>
+          <div id="meetingAgenda" style="margin-top:8px;"></div>
+          <button id="nextAgendaBtn" class="summary-btn" style="margin-top:12px; background:#ff9800;">下一议程</button>
+          <button id="voteBtn" class="summary-btn" style="margin-top:8px; background:#4caf50;">投票</button>
+        </div>
+        <div id="meetingVoteResult" style="font-size:0.85rem; background:#f0f0f0; padding:8px; border-radius:8px;"></div>
+        <div>
+          <h4>👥 参会人员</h4>
+          <div id="meetingVillagers" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+        </div>
+        <button id="finishMeetingBtn" class="summary-btn" style="background:#4caf50; color:white;">结束会议并生成纪要</button>
+        <button id="exitMeetingBtn" class="summary-btn" style="background:#f44336; color:white; margin-top:8px;">退出会议</button>
+      </div>
+      <div class="meeting-chat-area" style="flex:1; background:white; border-radius:16px; display:flex; flex-direction:column; overflow:hidden;">
+        <div class="meeting-messages" id="meetingMessages" style="flex:1; overflow-y:auto; padding:16px;"></div>
+        <div class="meeting-input-area" style="border-top:1px solid #eee; padding:12px; display:flex; gap:8px;">
+          <textarea id="meetingInput" placeholder="向与会人员发言..." rows="2" style="flex:1; padding:8px; border-radius:20px; border:1px solid #ccc; resize:none;"></textarea>
+          <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:0 20px;">发送</button>
+          <button id="meetingVoiceBtn" class="voice-btn" style="background:#f0f0f0; border:none; border-radius:30px; padding:0 16px;">🎤</button>
+        </div>
+      </div>
+    </div>
+  `;
+  renderMeetingVillagers();
+  const meetingInput = document.getElementById('meetingInput');
+  const sendBtn = document.getElementById('sendMeetingBtn');
+  const exitBtn = document.getElementById('exitMeetingBtn');
+  const finishBtn = document.getElementById('finishMeetingBtn');
+  const nextAgendaBtn = document.getElementById('nextAgendaBtn');
+  const voteBtn = document.getElementById('voteBtn');
+  const voiceBtn = document.getElementById('meetingVoiceBtn');
+  sendBtn.onclick = () => sendMeetingMessage();
+  meetingInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(); } };
+  exitBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
+  finishBtn.onclick = () => finishMeeting();
+  nextAgendaBtn.onclick = async () => {
+    await fetchWithAuth('/api/meeting/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId, action: 'nextAgenda' })
+    });
+    const statusRes = await fetchWithAuth(`/api/meeting/status/${currentMeeting.sessionId}`);
+    const data = await statusRes.json();
+    currentMeeting.currentAgendaIndex = data.currentAgendaIndex;
+    currentMeeting.agenda = data.agenda;
+    updateMeetingUI();
+  };
+  voteBtn.onclick = () => showVoteModal();
+  if (voiceBtn) setupVoiceInput(meetingInput, voiceBtn);
+  setActiveNavByView('meeting');
+  loadMeetingHistory();
+  // 自动轮流发言：每30秒随机选择一个未发言的村民发言（如果用户没有发言）
+  let autoSpeakInterval = setInterval(async () => {
+    if (meetingTyping) return;
+    const lastMessage = document.querySelector('.meeting-message.user');
+    if (lastMessage && (Date.now() - lastMessage.timestamp) < 15000) return;
+    const availableVillagers = currentMeeting.villagers.filter(v => {
+      const lastReply = Array.from(document.querySelectorAll('.meeting-message.assistant')).find(msg => msg.innerHTML.includes(v.name));
+      return !lastReply || (Date.now() - lastReply.timestamp) > 30000;
+    });
+    if (availableVillagers.length === 0) return;
+    const randomVillager = availableVillagers[Math.floor(Math.random() * availableVillagers.length)];
+    const autoMsg = `请${randomVillager.name}谈谈您的看法。`;
+    await sendMeetingMessage(autoMsg, true);
+  }, 30000);
+  currentMeeting.autoSpeakInterval = autoSpeakInterval;
+}
+
+async function loadMeetingHistory() {
+  const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
+  if (session && session.messages) {
+    const container = document.getElementById('meetingMessages');
+    if (container) {
+      container.innerHTML = '';
+      session.messages.forEach(msg => {
+        if (msg.role === 'system') return;
+        const roleClass = msg.role === 'user' ? 'user' : 'assistant';
+        let avatar = msg.role === 'user' ? '👨‍🌾' : '👤';
+        let name = msg.role === 'user' ? '村官' : (currentMeeting.villagers.find(v => msg.content.includes(v.name))?.name || '村民');
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `meeting-message ${roleClass}`;
+        msgDiv.innerHTML = `<div class="message-avatar">${avatar}</div><div class="message-bubble"><strong>${escapeHtml(name)}</strong><br>${escapeHtml(msg.content)}</div>`;
+        container.appendChild(msgDiv);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+}
+
+function renderMeetingVillagers() {
+  const container = document.getElementById('meetingVillagers');
+  if (!container) return;
+  container.innerHTML = '';
+  currentMeeting.villagers.forEach(v => {
+    const card = document.createElement('div');
+    card.className = 'villager-card';
+    card.dataset.id = v.id;
+    const stanceIcon = v.stance === '支持' ? '✅' : (v.stance === '反对' ? '❌' : '⚪');
+    const stanceClass = `stance-${v.stance === '支持' ? 'support' : (v.stance === '反对' ? 'oppose' : 'neutral')}`;
+    card.innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="villager-avatar" style="font-size:1.5rem;">${v.avatar}</div>
+        <div style="flex:1;">
+          <div class="villager-name" style="font-weight:bold;">${escapeHtml(v.name)}</div>
+          <div class="villager-stance ${stanceClass}" style="font-size:0.8rem;">${stanceIcon} ${v.stance}</div>
+          <div class="satisfaction-mini" style="background:#eee; border-radius:4px; height:4px; margin-top:4px;"><div class="satisfaction-mini-fill" style="width:${(v.stanceValue || 0.5) * 100}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>
+        </div>
+      </div>
+    `;
+    card.onclick = () => {
+      currentMeeting.activeVillagerId = v.id;
+      document.querySelectorAll('.villager-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+    };
+    container.appendChild(card);
+  });
+  if (currentMeeting.villagers.length) {
+    const firstCard = container.querySelector('.villager-card');
+    if (firstCard) firstCard.classList.add('active');
+    currentMeeting.activeVillagerId = currentMeeting.villagers[0].id;
+  }
+}
+
+function showVoteModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-content" style="width:300px;">
+      <button class="modal-close">&times;</button>
+      <h3>投票表决</h3>
+      <p>当前议程：${escapeHtml(currentMeeting.agenda[currentMeeting.currentAgendaIndex]?.name)}</p>
+      <div style="display:flex; gap:16px; justify-content:center; margin-top:20px;">
+        <button id="voteSupport" style="background:#4caf50; color:white; padding:8px 24px; border:none; border-radius:30px;">支持</button>
+        <button id="voteOppose" style="background:#f44336; color:white; padding:8px 24px; border:none; border-radius:30px;">反对</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.modal-close').onclick = () => document.body.removeChild(modal);
+  modal.onclick = e => { if (e.target === modal) document.body.removeChild(modal); };
+  modal.querySelector('#voteSupport').onclick = async () => {
+    await fetchWithAuth('/api/meeting/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId, action: 'vote', option: '支持' })
+    });
+    document.body.removeChild(modal);
+    alert('投票已记录');
+  };
+  modal.querySelector('#voteOppose').onclick = async () => {
+    await fetchWithAuth('/api/meeting/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId, action: 'vote', option: '反对' })
+    });
+    document.body.removeChild(modal);
+    alert('投票已记录');
+  };
+}
+
+async function sendMeetingMessage(text, isAuto = false) {
+  const input = document.getElementById('meetingInput');
+  const messageText = text || input.value.trim();
+  if (!messageText || meetingTyping) return;
+  if (!isAuto) input.value = '';
+  const activeVillager = currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId) || currentMeeting.villagers[0];
+  const userMsgDiv = document.createElement('div');
+  userMsgDiv.className = 'meeting-message user';
+  userMsgDiv.innerHTML = `<div class="message-avatar">👨‍🌾</div><div class="message-bubble">${escapeHtml(messageText)}</div>`;
+  const messagesContainer = document.getElementById('meetingMessages');
+  messagesContainer.appendChild(userMsgDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  meetingTyping = true;
   try {
-    const resultText = await chat([{ role: 'user', content: summaryPrompt }], { temperature: 0.3, max_tokens: 800 });
-    let summary;
-    const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) summary = JSON.parse(jsonMatch[0]);
-    else summary = { minutes: resultText, resolutions: [], disputes: [], actionItems: [], overallScore: satisfaction };
-    await addMessage(sessionId, 'system', `meeting_minutes:${JSON.stringify(summary)}`, Date.now());
-    const completedAgenda = agenda.filter(a => a.completed).length;
-    const agendaScore = (completedAgenda / agenda.length) * 50;
-    const finalScore = Math.min(100, Math.floor(satisfaction * 0.5 + agendaScore));
-    res.json({ summary, finalScore, completedAgenda, totalAgenda: agenda.length, satisfaction });
-  } catch (err) {
-    console.error('生成会议纪要失败:', err);
-    res.status(500).json({ error: '生成会议纪要失败' });
+    const res = await fetchWithAuth('/api/meeting/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId, message: messageText, villagerId: activeVillager.id })
+    });
+    const data = await res.json();
+    const reply = data.reply || '嗯...我再想想。';
+    const replyDiv = document.createElement('div');
+    replyDiv.className = 'meeting-message assistant';
+    replyDiv.innerHTML = `<div class="message-avatar">${activeVillager.avatar}</div><div class="message-bubble"><strong>${escapeHtml(activeVillager.name)}</strong><br>${escapeHtml(reply)}</div>`;
+    messagesContainer.appendChild(replyDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    playSound('send');
+    updateTaskProgress('meeting', 1);
+  } catch(err) {
+    console.error(err);
+    const errDiv = document.createElement('div');
+    errDiv.className = 'meeting-message assistant';
+    errDiv.innerHTML = `<div class="message-avatar">⚠️</div><div class="message-bubble">系统繁忙，请稍后再试。</div>`;
+    messagesContainer.appendChild(errDiv);
+  } finally {
+    meetingTyping = false;
   }
-});
+}
 
-module.exports = router;
+async function finishMeeting() {
+  if (!confirm('结束会议并生成会议纪要？')) return;
+  try {
+    const res = await fetchWithAuth(`/api/meeting/finish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId })
+    });
+    const data = await res.json();
+    if (data.summary) {
+      showMeetingResolution(data.summary);
+      alert(`会议结束！最终得分：${data.finalScore}`);
+    } else {
+      alert('会议纪要生成失败');
+    }
+    if (currentMeeting.autoSpeakInterval) clearInterval(currentMeeting.autoSpeakInterval);
+    renderMeetingSetupView();
+  } catch(e) {
+    alert('结束会议失败：' + e.message);
+  }
+}
+
+function showMeetingResolution(resolution) {
+  const modal = document.createElement('div');
+  modal.className = 'modal';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-content" style="width:500px;">
+      <button class="modal-close">&times;</button>
+      <h3>📄 会议决议</h3>
+      <div class="meeting-resolution">
+        <p><strong>通过的议题：</strong>${resolution.resolutions?.join('、') || '无'}</p>
+        <p><strong>争议点：</strong>${resolution.disputes?.join('、') || '无'}</p>
+        <hr>
+        <h4>会议纪要</h4>
+        <div style="white-space:pre-wrap;">${escapeHtml(resolution.minutes || '')}</div>
+        <p><strong>待办事项：</strong>${resolution.actionItems?.join('；') || '无'}</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.modal-close').onclick = () => document.body.removeChild(modal);
+  modal.onclick = e => { if (e.target === modal) document.body.removeChild(modal); };
+}
+
+export async function renderMeetingChat(session) {
+  if (meetingPollInterval) clearInterval(meetingPollInterval);
+  let config = {};
+  if (session.scenarioId) {
+    try { config = JSON.parse(session.scenarioId); } catch(e) {}
+  }
+  const topic = session.title || '会议';
+  const villagers = config.villagers || [];
+  const agenda = config.agenda || [];
+  const currentAgendaIndex = config.currentAgendaIndex || 0;
+  const votes = config.votes || {};
+  const satisfaction = config.satisfaction || 50;
+  const emotions = config.emotions || {};
+  currentMeeting = {
+    sessionId: session.id,
+    topic,
+    villagers,
+    agenda,
+    currentAgendaIndex,
+    votes,
+    satisfaction,
+    emotions,
+    activeVillagerId: villagers[0]?.id
+  };
+  renderMeetingChatArea();
+  startMeetingPolling(session.id);
+}

@@ -28,15 +28,15 @@ function getEmotionIcon(emotion) {
 
 function createSimulateMessageElement(role, content, avatar, emotion, satisfaction, messageId) {
   const msgDiv = document.createElement('div');
-  msgDiv.className = `message ${role}`;
+  msgDiv.className = `simulate-message ${role}`;
   if (messageId) msgDiv.dataset.messageId = messageId;
   const emotionIcon = getEmotionIcon(emotion);
   msgDiv.innerHTML = `
-    <div class="message-avatar">${avatar}</div>
-    <div class="message-bubble">
-      <div class="message-content">${escapeHtml(content)}</div>
-      ${satisfaction !== undefined ? `<div class="satisfaction-bar" style="margin-top:6px; background:#eee; border-radius:4px; height:4px;"><div style="width:${satisfaction}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>` : ''}
-      <div class="emotion-icon" style="font-size:0.8rem; margin-top:4px;">${emotionIcon}</div>
+    <div class="simulate-message-avatar">${avatar}</div>
+    <div class="simulate-message-bubble">
+      <div class="simulate-message-content">${escapeHtml(content)}</div>
+      ${satisfaction !== undefined ? `<div class="simulate-satisfaction-bar"><div style="width:${satisfaction}%;"></div></div>` : ''}
+      <div class="simulate-emotion-icon">${emotionIcon}</div>
     </div>
   `;
   return msgDiv;
@@ -183,34 +183,34 @@ export async function renderSimulateView(forceList = false) {
       setActiveNavByView('simulate');
       return;
     }
-    let html = `<div class="scenarios-list"><h2>选择场景</h2>`;
+    let html = `<div class="scenarios-list" style="padding:20px; display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px;">`;
     scenarios.forEach(s => {
       html += `
-        <div class="scenario-card" data-id="${s.id}">
-          <h3>${escapeHtml(s.title)}</h3>
-          <p>${escapeHtml(s.description)}</p>
-          <p><strong>目标：</strong>${escapeHtml(s.goal)}</p>
+        <div class="scenario-card" data-id="${s.id}" style="background:white; border-radius:16px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1); transition:transform 0.2s;">
+          <h3 style="color:#2e5d34; margin-bottom:8px;">${escapeHtml(s.title)}</h3>
+          <p style="color:#666; font-size:0.9rem;">${escapeHtml(s.description)}</p>
+          <p style="margin-top:8px;"><strong>目标：</strong>${escapeHtml(s.goal)}</p>
           <p><strong>角色：</strong>${escapeHtml(s.role)}</p>
-          <div class="difficulty-selector">
+          <div class="difficulty-selector" style="margin:12px 0;">
             <label>难度：</label>
-            <select class="difficulty-select">
+            <select class="difficulty-select" style="padding:4px 8px; border-radius:20px; border:1px solid #ccc;">
               <option value="easy">🌟简单</option>
               <option value="medium" selected>⚡中等</option>
               <option value="hard">🔥困难</option>
             </select>
           </div>
-          <div class="time-limit-selector">
+          <div class="time-limit-selector" style="margin:8px 0;">
             <label>时间限制（秒）：</label>
-            <input type="number" class="time-limit-input" value="0" placeholder="0表示无限制" style="width:80px;">
+            <input type="number" class="time-limit-input" value="0" placeholder="0表示无限制" style="width:80px; padding:4px;">
           </div>
-          <div class="mode-selector" style="margin: 8px 0;">
+          <div class="mode-selector" style="margin:8px 0;">
             <label>模式：</label>
-            <select class="mode-select">
+            <select class="mode-select" style="padding:4px 8px; border-radius:20px; border:1px solid #ccc;">
               <option value="single">👤 单人模式</option>
               <option value="multi">👥 多人模式（3位村民）</option>
             </select>
           </div>
-          <button class="start-simulate" data-id="${s.id}">开始对练</button>
+          <button class="start-simulate" data-id="${s.id}" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:8px 16px; width:100%; cursor:pointer; margin-top:8px;">开始对练</button>
         </div>
       `;
     });
@@ -304,7 +304,7 @@ export async function renderSimulateChat(session) {
     const examplesHtml = (report.examples || []).map(ex => `<div class="example-item ${ex.verdict === '优点' ? 'good' : 'bad'}"><strong>${ex.verdict}</strong>：${escapeHtml(ex.quote)}<br><span class="comment">${escapeHtml(ex.comment)}</span></div>`).join('');
     const bestHtml = (report.bestPractices || []).map(p => `<div class="best-practice">💡 ${escapeHtml(p)}</div>`).join('');
     reportHtml = `
-      <div class="report-section">
+      <div class="report-section" style="background:white; border-radius:16px; padding:16px; margin-top:20px;">
         <h4>评估报告</h4>
         <div class="scores">${scoresHtml}</div>
         <div class="examples"><strong>逐句点评</strong>${examplesHtml}</div>
@@ -318,29 +318,29 @@ export async function renderSimulateChat(session) {
   const modeText = simulateMode === 'multi' ? '👥 多人模式' : '👤 单人模式';
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
-    <div class="simulate-view">
-      <div class="simulate-header">
-        <div style="display:flex;justify-content:space-between;">
-          <h2>${escapeHtml(scenario.title)} <span class="difficulty-badge">难度:${difficultyText}</span> <span class="difficulty-badge">${modeText}</span></h2>
+    <div class="simulate-view" style="display:flex; flex-direction:column; height:100%;">
+      <div class="simulate-header" style="background:white; border-bottom:1px solid #eee; padding:12px 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h2 style="font-size:1.2rem;">${escapeHtml(scenario.title)} <span style="background:#f0f0f0; padding:2px 8px; border-radius:20px; font-size:0.8rem;">难度:${difficultyText}</span> <span style="background:#f0f0f0; padding:2px 8px; border-radius:20px; font-size:0.8rem;">${modeText}</span></h2>
           <button id="backToListBtn" class="summary-btn">←返回</button>
         </div>
-        <p><strong>目标：</strong>${escapeHtml(scenario.goal)}</p>
+        <p style="margin-top:8px;"><strong>目标：</strong>${escapeHtml(scenario.goal)}</p>
         <p><strong>角色：</strong>${escapeHtml(scenario.role)}</p>
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex; gap:10px; margin-top:8px;">
           <button id="hintBtn" class="summary-btn" ${report ? 'disabled' : ''}>💡提示</button>
           <button id="finishSimulateBtn" class="summary-btn" ${report ? 'disabled' : ''}>结束并查看报告</button>
         </div>
       </div>
-      <div class="chat-container" id="simulateMessagesContainer">
+      <div class="chat-container" id="simulateMessagesContainer" style="flex:1; overflow-y:auto; padding:16px;">
         <div id="simulateMessages"></div>
-        <div id="simulateTyping" class="hidden">对方正在思考...</div>
+        <div id="simulateTyping" class="hidden" style="padding:8px; color:#666;">对方正在思考...</div>
       </div>
       ${reportHtml}
-      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''}>
-        <div class="input-area">
-          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2"></textarea>
-          <button id="simulateVoiceBtn" class="voice-btn">🎤</button>
-          <button id="simulateSendBtn">发送</button>
+      <footer class="chat-footer" ${report ? 'style="display:none;"' : ''} style="background:white; border-top:1px solid #eee; padding:12px;">
+        <div class="input-area" style="display:flex; gap:8px;">
+          <textarea id="simulateInput" placeholder="输入你的回应..." rows="2" style="flex:1; padding:10px; border-radius:24px; border:1px solid #ccc; resize:none;"></textarea>
+          <button id="simulateVoiceBtn" class="voice-btn" style="background:#f0f0f0; border:none; border-radius:30px; padding:0 16px;">🎤</button>
+          <button id="simulateSendBtn" style="background:#2e5d34; color:white; border:none; border-radius:30px; padding:0 20px;">发送</button>
         </div>
       </footer>
     </div>
@@ -385,7 +385,6 @@ export async function renderSimulateChat(session) {
       }
     };
   }
-  // 使用从 helpers 导入的 setupVoiceInput
   const voiceBtn = document.getElementById('simulateVoiceBtn');
   if (voiceBtn) setupVoiceInput(simulateInput, voiceBtn);
   if (finishBtn && !report) {
@@ -421,8 +420,8 @@ export async function renderSimulateChat(session) {
       if (isTyping) return;
       hintBtn.disabled = true;
       const loading = document.createElement('div');
-      loading.className = 'message assistant';
-      loading.innerHTML = '<div class="message-content">🤔生成提示...</div>';
+      loading.className = 'simulate-message assistant';
+      loading.innerHTML = '<div class="simulate-message-bubble">🤔生成提示...</div>';
       simulateMessagesDiv.appendChild(loading);
       scrollSimulate();
       try {
@@ -436,9 +435,9 @@ export async function renderSimulateChat(session) {
         let hint = '💡建议：\n';
         if (summary.suggestions && summary.suggestions.length) hint += summary.suggestions.map(s => `- ${s}`).join('\n');
         else hint += '尝试更耐心地沟通。';
-        loading.innerHTML = `<div class="message-content">${escapeHtml(hint)}</div>`;
+        loading.innerHTML = `<div class="simulate-message-bubble">${escapeHtml(hint)}</div>`;
       } catch(e) {
-        loading.innerHTML = '<div class="message-content">⚠️提示失败</div>';
+        loading.innerHTML = '<div class="simulate-message-bubble">⚠️提示失败</div>';
       } finally {
         hintBtn.disabled = false;
         scrollSimulate();
