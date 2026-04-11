@@ -11,7 +11,7 @@ async function importKnowledge() {
         try {
             await db.run(
                 `INSERT INTO knowledge (id, title, content, source, status, tags, type, category, submitted_by, submitted_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                  ON CONFLICT (id) DO NOTHING`,
                 [k.id, k.title, k.content, k.source, k.status, tagsStr, k.type, k.category, k.submittedBy || 'system', k.submittedAt]
             );

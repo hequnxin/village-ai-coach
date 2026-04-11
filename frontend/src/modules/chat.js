@@ -1,3 +1,4 @@
+// frontend/src/modules/chat.js
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
@@ -49,17 +50,29 @@ function addStopButton() {
   ti.parentNode.insertBefore(btn, ti.nextSibling);
 }
 
-function typeText(element, text, speed) {
-  return new Promise((resolve) => {
-    if (!element || !text) { resolve(); return; }
-    let i = 0;
-    element.textContent = '';
-    typingInterval = setInterval(() => {
-      if (stopTypingFlag) { clearInterval(typingInterval); typingInterval = null; resolve(); return; }
-      if (i < text.length) { element.textContent += text[i]; i++; scrollToBottom(); }
-      else { clearInterval(typingInterval); typingInterval = null; resolve(); }
-    }, speed);
+// 格式化 AI 回复：移除 Markdown 加粗符号，并将纯文本标题行加粗
+function formatAssistantContent(content) {
+  if (!content) return '';
+  // 1. 移除 Markdown 加粗 **xxx** 和 *xxx*
+  let cleaned = content.replace(/\*\*(.*?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
+  // 2. 移除 Markdown 标题标记 # ## 等
+  cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
+
+  const lines = cleaned.split('\n');
+  const processedLines = lines.map(line => {
+    const trimmed = line.trim();
+    // 匹配纯文本标题模式：一、二、 / 1. 2. / （一）（二） / （1）（2） / ①②③
+    if (/^[一二三四五六七八九十]+、/.test(trimmed) ||
+        /^\d+\./.test(trimmed) ||
+        /^（[一二三四五六七八九十]+）/.test(trimmed) ||
+        /^（\d+）/.test(trimmed) ||
+        /^[①②③④⑤⑥⑦⑧⑨⑩]/.test(trimmed)) {
+      return `<strong>${line}</strong>`;
+    }
+    return line;
   });
+  return processedLines.join('\n');
 }
 
 function createMessageElement(role, content, messageId) {
@@ -68,7 +81,12 @@ function createMessageElement(role, content, messageId) {
   if (messageId) msgDiv.dataset.messageId = messageId;
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
-  contentDiv.textContent = content;
+
+  let displayContent = content;
+  if (role === 'assistant') {
+    displayContent = formatAssistantContent(content);
+  }
+  contentDiv.innerHTML = displayContent.replace(/\n/g, '<br>');
   msgDiv.appendChild(contentDiv);
   return msgDiv;
 }
@@ -135,48 +153,113 @@ async function regenerateAnswer(msgDiv) {
   await sendUserMessage(userText);
 }
 
-async function addMessageWithTyping(role, content, messageId = null) {
-  isTyping = true;
-  setInputEnabled(false);
-  stopTypingFlag = false;
-  addStopButton();
-  const messagesDiv = document.getElementById('messages');
-  if (!messagesDiv) return;
-  const msgDiv = createMessageElement(role, content, messageId);
-  const contentDiv = msgDiv.querySelector('.message-content');
-  contentDiv.textContent = '';
-  messagesDiv.appendChild(msgDiv);
-  scrollToBottom();
-  try {
-    await typeText(contentDiv, content, typingSpeed);
-    if (stopTypingFlag) return;
-    addActionIcons(msgDiv, messageId);
-    scrollToBottom();
-  } catch(e) { console.error(e); }
-  finally { stopTyping(); }
-}
-
+// 发送消息（流式 + 缓存）
 async function sendUserMessage(text) {
   if (isTyping) return;
   if (!text || !appState.currentSessionId) return;
+
   const messagesDiv = document.getElementById('messages');
   if (!messagesDiv) return;
-  const tempMsg = createMessageElement('user', text);
-  messagesDiv.appendChild(tempMsg);
-  addActionIcons(tempMsg, null);
+
+  const userMsgDiv = createMessageElement('user', text);
+  messagesDiv.appendChild(userMsgDiv);
+  addActionIcons(userMsgDiv, null);
   scrollToBottom();
+
   const typingIndicator = document.getElementById('typingIndicator');
   if (typingIndicator) typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
+  stopTypingFlag = false;
+  addStopButton();
+
+  const assistantMsgDiv = createMessageElement('assistant', '');
+  const contentDiv = assistantMsgDiv.querySelector('.message-content');
+  contentDiv.innerHTML = '';
+  messagesDiv.appendChild(assistantMsgDiv);
+  scrollToBottom();
+
+  let token = localStorage.getItem('token');
+  if (!token) {
+    if (typingIndicator) typingIndicator.classList.add('hidden');
+    setInputEnabled(true);
+    isTyping = false;
+    throw new Error('未登录');
+  }
+
   try {
-    const res = await fetchWithAuth('/api/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ sessionId: appState.currentSessionId, message: text })
     });
-    if (!res.ok) { const err = await res.json(); throw new Error(err.error); }
-    const data = await res.json();
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || '请求失败');
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      contentDiv.innerHTML = formatAssistantContent(data.reply).replace(/\n/g, '<br>');
+      addActionIcons(assistantMsgDiv, data.assistantMessageId);
+      await loadSessions();
+      await loadMessageFavorites();
+      showComboEffect();
+      updateTaskProgress('chat', 1);
+      playSound('send');
+      if (typingIndicator) typingIndicator.classList.add('hidden');
+      stopTyping();
+      scrollToBottom();
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullReply = '';
+    let assistantMessageId = null;
+    let sessionTitle = null;
+    let knowledgeRefs = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        if (trimmedLine.startsWith('data:')) {
+          let jsonStr = trimmedLine.substring(5).trim();
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.content) {
+              fullReply += parsed.content;
+              contentDiv.innerHTML = formatAssistantContent(fullReply).replace(/\n/g, '<br>');
+              scrollToBottom();
+            } else if (parsed.done) {
+              assistantMessageId = parsed.assistantMessageId;
+              sessionTitle = parsed.sessionTitle;
+              knowledgeRefs = parsed.knowledgeRefs;
+            } else if (parsed.error) {
+              throw new Error(parsed.error);
+            }
+          } catch (e) {
+            console.warn('解析流数据失败，原始行:', line, e);
+          }
+        }
+      }
+    }
+
     if (typingIndicator) typingIndicator.classList.add('hidden');
-    await addMessageWithTyping('assistant', data.reply, data.assistantMessageId);
+    stopTyping();
+    addActionIcons(assistantMsgDiv, assistantMessageId);
+    scrollToBottom();
+
     await loadSessions();
     const curr = appState.sessions.find(s => s.id === appState.currentSessionId);
     if (curr) {
@@ -187,10 +270,16 @@ async function sendUserMessage(text) {
     showComboEffect();
     updateTaskProgress('chat', 1);
     playSound('send');
-  } catch(err) {
-    if (typingIndicator) typingIndicator.classList.add('hidden');
+
+  } catch (err) {
     console.error(err);
+    if (typingIndicator) typingIndicator.classList.add('hidden');
+    assistantMsgDiv.remove();
+    const errorMsg = createMessageElement('assistant', `❌ 发送失败：${err.message}`);
+    messagesDiv.appendChild(errorMsg);
+    scrollToBottom();
     alert('发送失败：' + err.message);
+  } finally {
     setInputEnabled(true);
     isTyping = false;
   }
@@ -271,7 +360,6 @@ export async function renderChatView(existingSession = null) {
     </div>
   `;
 
-  const messagesDiv = document.getElementById('messages');
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
   const exportBtn = document.getElementById('exportBtn');
@@ -283,6 +371,7 @@ export async function renderChatView(existingSession = null) {
 
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
+
   exportBtn.onclick = exportCurrentChat;
   summaryBtn.onclick = async () => {
     const sessionId = appState.currentSessionId;
