@@ -67,68 +67,60 @@ function initBottomNav() {
 
 // ========== 🚀 终极修复：手机端悬浮按钮拖拽逻辑 ==========
 function initDraggableMenu() {
-  // 检查屏幕宽度
-  if (window.innerWidth > 768) {
-    return;
-  }
+  if (window.innerWidth > 768) return;
 
   const btn = document.getElementById('menuToggle');
-  if (!btn) {
-    console.error("错误: 未找到 ID 为 'menuToggle' 的按钮元素");
-    return;
-  }
+  if (!btn) return;
 
+  let startX = 0, startY = 0;
   let isDragging = false;
-  let offsetX = 0;
-  let offsetY = 0;
+  let dragThreshold = 10; // 移动超过10px才算拖拽
 
   function handleStart(e) {
-    e.preventDefault();
-    isDragging = true;
-    const rect = btn.getBoundingClientRect();
+    // 不再无条件 preventDefault，让 click 有机会触发
     const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
     const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
-    offsetX = clientX - rect.left;
-    offsetY = clientY - rect.top;
+    startX = clientX;
+    startY = clientY;
+    isDragging = false; // 重置拖拽标志
     btn.style.transition = 'none';
     btn.style.cursor = 'grabbing';
   }
 
   function handleMove(e) {
-    if (!isDragging) {
-        return;
-    }
-    e.preventDefault();
     const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
     const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+    const deltaX = Math.abs(clientX - startX);
+    const deltaY = Math.abs(clientY - startY);
 
-    let newLeft = clientX - offsetX;
-    let newTop = clientY - offsetY;
+    if (!isDragging && (deltaX > dragThreshold || deltaY > dragThreshold)) {
+      // 超过阈值，确认为拖拽模式，阻止页面滚动
+      isDragging = true;
+      e.preventDefault();
+    }
+
+    if (!isDragging) return;
+
+    // 拖拽移动逻辑
+    let newLeft = clientX - (btn.offsetWidth / 2);
+    let newTop = clientY - (btn.offsetHeight / 2);
     const bound = 10;
     const maxLeft = window.innerWidth - btn.offsetWidth - bound;
     const maxTop = window.innerHeight - btn.offsetHeight - bound;
-
     newLeft = Math.max(bound, Math.min(newLeft, maxLeft));
     newTop = Math.max(bound, Math.min(newTop, maxTop));
 
-    // 拖动时，清除吸附用的 right 和 bottom，只用 left 和 top
     btn.style.right = 'auto';
     btn.style.bottom = 'auto';
-
     btn.style.left = newLeft + 'px';
     btn.style.top = newTop + 'px';
   }
 
-  function handleEnd() {
-    if (!isDragging) {
-        return;
-    }
-    isDragging = false;
+  function handleEnd(e) {
     btn.style.cursor = 'move';
+    btn.style.transition = 'left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
     const rect = btn.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
-    btn.style.transition = 'left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-
     if (centerX < window.innerWidth / 2) {
       btn.style.left = '16px';
       btn.style.right = 'auto';
@@ -136,15 +128,17 @@ function initDraggableMenu() {
       btn.style.left = 'auto';
       btn.style.right = '16px';
     }
+
+    // 如果没有发生拖拽，说明是纯点击，手动触发侧边栏切换
+    if (!isDragging) {
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) sidebar.classList.toggle('open');
+    }
+
+    isDragging = false;
   }
 
-  // ✅【关键修复】点击开关侧边栏（不影响拖动）
-  btn.addEventListener('click', (e) => {
-    if (isDragging) return;
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar) sidebar.classList.toggle('open');
-  });
-
+  // 绑定触摸与鼠标事件
   btn.addEventListener('touchstart', handleStart, { passive: false });
   btn.addEventListener('mousedown', handleStart);
   document.addEventListener('touchmove', handleMove, { passive: false });
