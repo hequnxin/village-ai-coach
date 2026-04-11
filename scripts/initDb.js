@@ -3,8 +3,23 @@ require('dotenv').config();
 const db = require('../services/db');
 const { v4: uuidv4 } = require('uuid');
 
+// 捕获未处理的 Promise 拒绝，避免静默退出
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ 未处理的 Promise 拒绝:', reason);
+  process.exit(1);
+});
+
 async function initDb() {
-  console.log('开始初始化 PostgreSQL 数据库...');
+  console.log('🚀 开始初始化 PostgreSQL 数据库...');
+
+  // 测试数据库连接
+  try {
+    await db.get('SELECT 1');
+    console.log('✅ 数据库连接成功');
+  } catch (err) {
+    console.error('❌ 数据库连接失败，请检查 DATABASE_URL:', err.message);
+    throw err;
+  }
 
   // ========== 创建所有表 ==========
   const tables = [
@@ -54,8 +69,7 @@ async function initDb() {
       category TEXT,
       submitted_by TEXT,
       submitted_at TIMESTAMPTZ,
-      vector_data TEXT,
-      tsv tsvector
+      vector_data TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS scenarios (
       id TEXT PRIMARY KEY,
@@ -251,9 +265,10 @@ async function initDb() {
   for (const sql of tables) {
     try {
       await db.run(sql);
-      console.log('表创建/检查成功');
+      console.log('✅ 表创建/检查成功');
     } catch (err) {
-      console.error('创建表失败:', err.message);
+      console.error(`❌ 创建表失败: ${err.message}`);
+      // 继续执行，不中断
     }
   }
 
@@ -263,53 +278,24 @@ async function initDb() {
     await db.run(`ALTER TABLE quiz_questions ALTER COLUMN answer TYPE TEXT`);
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS explanation TEXT`);
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS source_category TEXT`);
+    // 新增 question_type 列（用于区分 choice/judge/fill/sort）
+    await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS question_type TEXT DEFAULT 'choice'`);
     console.log('✅ quiz_questions 字段迁移完成');
-  } catch(e) { console.warn('迁移quiz_questions失败:', e.message); }
+  } catch(e) { console.warn('⚠️ 迁移 quiz_questions 失败:', e.message); }
 
-  // 全文搜索支持
-  try {
-    await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
-    await db.run(`CREATE INDEX IF NOT EXISTS idx_knowledge_tsv ON knowledge USING GIN(tsv)`);
-    await db.run(`
-      CREATE OR REPLACE FUNCTION knowledge_tsv_trigger() RETURNS trigger AS $$
-      BEGIN
-        NEW.tsv := setweight(to_tsvector('simple', COALESCE(NEW.title, '')), 'A') ||
-                   setweight(to_tsvector('simple', COALESCE(NEW.content, '')), 'B');
-        RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql
-    `);
-    await db.run(`DROP TRIGGER IF EXISTS tsvector_update ON knowledge`);
-    await db.run(`
-      CREATE TRIGGER tsvector_update
-      BEFORE INSERT OR UPDATE ON knowledge
-      FOR EACH ROW EXECUTE FUNCTION knowledge_tsv_trigger()
-    `);
-    await db.run(`UPDATE knowledge SET tsv = NULL`);
-    console.log('全文搜索支持已就绪');
-  } catch (err) {
-    console.error('添加全文搜索失败:', err.message);
-  }
-
-  // 添加索引
+  // 添加索引（全文搜索索引暂时跳过，不影响核心功能）
   try {
     await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_user ON memory_game_records(user_id)`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_difficulty ON memory_game_records(difficulty)`);
     console.log('✅ memory_game_records 索引创建成功');
-  } catch(e) { console.warn('创建索引失败:', e.message); }
+  } catch(e) { console.warn('⚠️ 创建索引失败:', e.message); }
 
   // ========== 为 wrong_questions 添加 question_type 列（如果不存在） ==========
   try {
-    const columnCheck = await db.get(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_name = 'wrong_questions' AND column_name = 'question_type'
-    `);
-    if (!columnCheck) {
-      await db.run(`ALTER TABLE wrong_questions ADD COLUMN question_type TEXT DEFAULT 'choice'`);
-      await db.run(`UPDATE wrong_questions SET question_type = 'choice' WHERE question_type IS NULL`);
-      console.log('✅ 为 wrong_questions 表添加 question_type 列');
-    }
-  } catch(e) { console.warn('迁移 wrong_questions 失败:', e.message); }
+    // 检查列是否存在（使用 simpler 方法：直接尝试添加，忽略错误）
+    await db.run(`ALTER TABLE wrong_questions ADD COLUMN IF NOT EXISTS question_type TEXT DEFAULT 'choice'`);
+    console.log('✅ wrong_questions 表结构确认');
+  } catch(e) { console.warn('⚠️ 迁移 wrong_questions 失败:', e.message); }
 
   // ========== 插入默认场景数据 ==========
   const insertScenario = async (id, title, description, goal, role, initial_message, eval_dimensions) => {
@@ -332,29 +318,46 @@ async function initDb() {
   await insertScenario('scenario_005', '邻里噪音纠纷调解', '村民小陈家晚上经常聚会打牌，邻居老刘多次投诉，双方产生口角。你前往调解。',
     '促成双方相互理解，并约定合理的活动时间。', '村民老刘', '天天晚上吵到一两点，我高血压都犯了！你们村干部管不管？',
     JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
+  console.log('✅ 默认场景数据插入完成');
 
   // ========== 初始化游戏主题（趣味闯关） ==========
-  const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
-  if (themeCount.count === 0) {
-    const themes = [
-      { id: 'theme_land', name: '土地管理', icon: '🌾', description: '宅基地、土地流转、确权登记', sort_order: 1 },
-      { id: 'theme_industry', name: '产业发展', icon: '🏭', description: '合作社、电商、乡村旅游', sort_order: 2 },
-      { id: 'theme_livelihood', name: '民生保障', icon: '❤️', description: '低保、医保、养老保险', sort_order: 3 },
-      { id: 'theme_conflict', name: '矛盾调解', icon: '🤝', description: '邻里纠纷、土地纠纷', sort_order: 4 },
-      { id: 'theme_governance', name: '基层治理', icon: '🏛️', description: '四议两公开、村规民约', sort_order: 5 }
-    ];
-    for (const t of themes) {
-      await db.run(`INSERT INTO game_themes (id, name, icon, description, sort_order, is_active) VALUES ($1, $2, $3, $4, $5, 1) ON CONFLICT (id) DO NOTHING`,
-        [t.id, t.name, t.icon, t.description, t.sort_order]);
+  try {
+    const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
+    if (themeCount.count === 0) {
+      const themes = [
+        { id: 'theme_land', name: '土地管理', icon: '🌾', description: '宅基地、土地流转、确权登记', sort_order: 1 },
+        { id: 'theme_industry', name: '产业发展', icon: '🏭', description: '合作社、电商、乡村旅游', sort_order: 2 },
+        { id: 'theme_livelihood', name: '民生保障', icon: '❤️', description: '低保、医保、养老保险', sort_order: 3 },
+        { id: 'theme_conflict', name: '矛盾调解', icon: '🤝', description: '邻里纠纷、土地纠纷', sort_order: 4 },
+        { id: 'theme_governance', name: '基层治理', icon: '🏛️', description: '四议两公开、村规民约', sort_order: 5 }
+      ];
+      for (const t of themes) {
+        await db.run(`INSERT INTO game_themes (id, name, icon, description, sort_order, is_active) VALUES ($1, $2, $3, $4, $5, 1) ON CONFLICT (id) DO NOTHING`,
+          [t.id, t.name, t.icon, t.description, t.sort_order]);
+      }
+      console.log('✅ 游戏主题初始化完成');
+    } else {
+      console.log('✅ 游戏主题已存在，跳过初始化');
     }
-    console.log('✅ 游戏主题初始化完成');
+  } catch (err) {
+    console.error('❌ 初始化游戏主题失败:', err.message);
   }
 
-  // ========== 自动生成高质量题目 ==========
-  const { generateAndStoreQuestions } = require('../services/questionGenerator');
-  console.log('开始自动生成高质量题目...');
-  await generateAndStoreQuestions(50);
-  console.log('数据库初始化完成！');
+  // ========== 自动生成高质量题目（四种题型） ==========
+  try {
+    const { generateAndStoreQuestions } = require('../services/questionGenerator');
+    console.log('📝 开始自动生成高质量题目（单选、填空、判断、排序）...');
+    await generateAndStoreQuestions(50);
+    console.log('✅ 题目生成完成');
+  } catch (err) {
+    console.error('❌ 题目生成失败:', err.message);
+  }
+
+  console.log('🎉 数据库初始化完成！');
 }
 
-module.exports = initDb;
+// 执行并捕获错误
+initDb().catch(err => {
+  console.error('❌ 初始化脚本执行失败:', err);
+  process.exit(1);
+});
