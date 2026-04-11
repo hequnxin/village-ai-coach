@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/src/styles/style.css">
 </head>
 <body>
-  <!-- 菜单按钮（仅移动端显示） -->
-  <button class="menu-toggle" id="menuToggle">☰</button>
+
+<button class="menu-toggle" id="menuToggle">☰</button>
 
   <div id="authContainer" class="auth-container">
     <div class="auth-box">
@@ -70,8 +70,7 @@
     </main>
   </div>
 
-  <!-- 底部导航栏（移动端） -->
-  <div class="bottom-nav" id="bottomNav" style="display: none;">
+  <div class="bottom-nav" id="bottomNav">
     <button class="bottom-nav-item" data-view="chat">
       <span class="icon">💬</span>
       <span>问答</span>
@@ -97,13 +96,6 @@
       <span>我的</span>
     </button>
   </div>
-
-  <!-- 音效资源（预加载） -->
-  <audio id="soundSend" preload="auto" src="/sounds/send.mp3" style="display:none;"></audio>
-  <audio id="soundComplete" preload="auto" src="/sounds/complete.mp3" style="display:none;"></audio>
-  <audio id="soundError" preload="auto" src="/sounds/error.mp3" style="display:none;"></audio>
-  <audio id="soundReward" preload="auto" src="/sounds/reward.mp3" style="display:none;"></audio>
-  <audio id="soundEmotion" preload="auto" src="/sounds/emotion.mp3" style="display:none;"></audio>
 
   <script type="module" src="/src/main.js"></script>
 </body>

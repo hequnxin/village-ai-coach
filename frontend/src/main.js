@@ -11,21 +11,9 @@ import { renderGameView } from './modules/game';
 import { setupSessionTabs } from './modules/ui';
 import { initDailyTasks, initParticles, setupGlobalEventListeners, setActiveNavByView } from './utils/helpers';
 
-// 移动端菜单折叠
+// 移动端菜单折叠（已清空，避免冲突）
 function initMobileMenu() {
-  const menuToggle = document.getElementById('menuToggle');
-  const sidebar = document.getElementById('sidebar');
-  if (menuToggle && sidebar) {
-    menuToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      sidebar.classList.toggle('open');
-    });
-    document.addEventListener('click', (e) => {
-      if (window.innerWidth <= 768 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuToggle) {
-        sidebar.classList.remove('open');
-      }
-    });
-  }
+  // 已清空，防止事件冲突
 }
 
 // 移动端底部导航
@@ -64,7 +52,6 @@ function initBottomNav() {
       setActiveNavByView(view);
     });
   });
-  // 监听视图变化同步底部导航激活状态
   const observer = new MutationObserver(() => {
     const currentView = appState.currentView;
     navItems.forEach(item => {
@@ -72,9 +59,100 @@ function initBottomNav() {
       else item.classList.remove('active');
     });
   });
-  observer.observe(document.getElementById('dynamicContent'), { attributes: true, childList: true, subtree: true });
+  const dynamicContent = document.getElementById('dynamicContent');
+  if (dynamicContent) {
+    observer.observe(dynamicContent, { attributes: true, childList: true, subtree: true });
+  }
 }
 
+// ========== 🚀 终极修复：手机端悬浮按钮拖拽逻辑 ==========
+function initDraggableMenu() {
+  // 检查屏幕宽度
+  if (window.innerWidth > 768) {
+    return;
+  }
+
+  const btn = document.getElementById('menuToggle');
+  if (!btn) {
+    console.error("错误: 未找到 ID 为 'menuToggle' 的按钮元素");
+    return;
+  }
+
+  let isDragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  function handleStart(e) {
+    e.preventDefault();
+    isDragging = true;
+    const rect = btn.getBoundingClientRect();
+    const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+    btn.style.transition = 'none';
+    btn.style.cursor = 'grabbing';
+  }
+
+  function handleMove(e) {
+    if (!isDragging) {
+        return;
+    }
+    e.preventDefault();
+    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+    let newLeft = clientX - offsetX;
+    let newTop = clientY - offsetY;
+    const bound = 10;
+    const maxLeft = window.innerWidth - btn.offsetWidth - bound;
+    const maxTop = window.innerHeight - btn.offsetHeight - bound;
+
+    newLeft = Math.max(bound, Math.min(newLeft, maxLeft));
+    newTop = Math.max(bound, Math.min(newTop, maxTop));
+
+    // 拖动时，清除吸附用的 right 和 bottom，只用 left 和 top
+    btn.style.right = 'auto';
+    btn.style.bottom = 'auto';
+
+    btn.style.left = newLeft + 'px';
+    btn.style.top = newTop + 'px';
+  }
+
+  function handleEnd() {
+    if (!isDragging) {
+        return;
+    }
+    isDragging = false;
+    btn.style.cursor = 'move';
+    const rect = btn.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    btn.style.transition = 'left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
+
+    if (centerX < window.innerWidth / 2) {
+      btn.style.left = '16px';
+      btn.style.right = 'auto';
+    } else {
+      btn.style.left = 'auto';
+      btn.style.right = '16px';
+    }
+  }
+
+  // ✅【关键修复】点击开关侧边栏（不影响拖动）
+  btn.addEventListener('click', (e) => {
+    if (isDragging) return;
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) sidebar.classList.toggle('open');
+  });
+
+  btn.addEventListener('touchstart', handleStart, { passive: false });
+  btn.addEventListener('mousedown', handleStart);
+  document.addEventListener('touchmove', handleMove, { passive: false });
+  document.addEventListener('mousemove', handleMove);
+  document.addEventListener('touchend', handleEnd);
+  document.addEventListener('mouseup', handleEnd);
+}
+  
 export async function initApp() {
   await loadSessions();
   await loadMessageFavorites();
@@ -84,8 +162,16 @@ export async function initApp() {
   setupGlobalEventListeners();
   setupSessionTabs();
 
-  initMobileMenu();
+  // 旧菜单已禁用
+  // initMobileMenu();
   initBottomNav();
+
+  // 初始化拖动按钮
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDraggableMenu);
+  } else {
+    initDraggableMenu();
+  }
 
   let emptyChatSession = appState.sessions.find(s => s.type === 'chat' && (!s.messages || s.messages.length === 0));
   if (emptyChatSession) {
