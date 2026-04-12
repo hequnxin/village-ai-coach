@@ -25,7 +25,7 @@ async function importKnowledge() {
     // 导入完成后自动生成高质量题目
     console.log('开始从知识库自动生成题目...');
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
-    await generateAndStoreQuestions(50);
+    await generateAndStoreQuestions(100);
     console.log('题目生成完成');
 }
 
