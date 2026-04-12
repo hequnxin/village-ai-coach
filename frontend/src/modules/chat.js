@@ -53,16 +53,12 @@ function addStopButton() {
 // 格式化 AI 回复：移除 Markdown 加粗符号，并将纯文本标题行加粗
 function formatAssistantContent(content) {
   if (!content) return '';
-  // 1. 移除 Markdown 加粗 **xxx** 和 *xxx*
   let cleaned = content.replace(/\*\*(.*?)\*\*/g, '$1');
   cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
-  // 2. 移除 Markdown 标题标记 # ## 等
   cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
-
   const lines = cleaned.split('\n');
   const processedLines = lines.map(line => {
     const trimmed = line.trim();
-    // 匹配纯文本标题模式：一、二、 / 1. 2. / （一）（二） / （1）（2） / ①②③
     if (/^[一二三四五六七八九十]+、/.test(trimmed) ||
         /^\d+\./.test(trimmed) ||
         /^（[一二三四五六七八九十]+）/.test(trimmed) ||
@@ -81,7 +77,6 @@ function createMessageElement(role, content, messageId) {
   if (messageId) msgDiv.dataset.messageId = messageId;
   const contentDiv = document.createElement('div');
   contentDiv.className = 'message-content';
-
   let displayContent = content;
   if (role === 'assistant') {
     displayContent = formatAssistantContent(content);
@@ -157,27 +152,22 @@ async function regenerateAnswer(msgDiv) {
 async function sendUserMessage(text) {
   if (isTyping) return;
   if (!text || !appState.currentSessionId) return;
-
   const messagesDiv = document.getElementById('messages');
   if (!messagesDiv) return;
-
   const userMsgDiv = createMessageElement('user', text);
   messagesDiv.appendChild(userMsgDiv);
   addActionIcons(userMsgDiv, null);
   scrollToBottom();
-
   const typingIndicator = document.getElementById('typingIndicator');
   if (typingIndicator) typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
   stopTypingFlag = false;
   addStopButton();
-
   const assistantMsgDiv = createMessageElement('assistant', '');
   const contentDiv = assistantMsgDiv.querySelector('.message-content');
   contentDiv.innerHTML = '';
   messagesDiv.appendChild(assistantMsgDiv);
   scrollToBottom();
-
   let token = localStorage.getItem('token');
   if (!token) {
     if (typingIndicator) typingIndicator.classList.add('hidden');
@@ -185,7 +175,6 @@ async function sendUserMessage(text) {
     isTyping = false;
     throw new Error('未登录');
   }
-
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
@@ -195,12 +184,10 @@ async function sendUserMessage(text) {
       },
       body: JSON.stringify({ sessionId: appState.currentSessionId, message: text })
     });
-
     if (!response.ok) {
       const errText = await response.text();
       throw new Error(errText || '请求失败');
     }
-
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       const data = await response.json();
@@ -216,14 +203,12 @@ async function sendUserMessage(text) {
       scrollToBottom();
       return;
     }
-
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let fullReply = '';
     let assistantMessageId = null;
     let sessionTitle = null;
     let knowledgeRefs = null;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -254,12 +239,10 @@ async function sendUserMessage(text) {
         }
       }
     }
-
     if (typingIndicator) typingIndicator.classList.add('hidden');
     stopTyping();
     addActionIcons(assistantMsgDiv, assistantMessageId);
     scrollToBottom();
-
     await loadSessions();
     const curr = appState.sessions.find(s => s.id === appState.currentSessionId);
     if (curr) {
@@ -270,7 +253,6 @@ async function sendUserMessage(text) {
     showComboEffect();
     updateTaskProgress('chat', 1);
     playSound('send');
-
   } catch (err) {
     console.error(err);
     if (typingIndicator) typingIndicator.classList.add('hidden');
@@ -320,6 +302,30 @@ function displayMessages(messages) {
   scrollToBottom();
 }
 
+// 移动端摘要模态框
+function showMobileSummaryModal(contentHtml) {
+  const existingModal = document.getElementById('mobileSummaryModal');
+  if (existingModal) existingModal.remove();
+  const modal = document.createElement('div');
+  modal.id = 'mobileSummaryModal';
+  modal.className = 'mobile-summary-modal';
+  modal.innerHTML = `
+    <div class="mobile-summary-overlay"></div>
+    <div class="mobile-summary-drawer">
+      <div class="mobile-summary-header">
+        <span>📋 信息提取</span>
+        <button class="mobile-summary-close">&times;</button>
+      </div>
+      <div class="mobile-summary-content">${contentHtml}</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const closeBtn = modal.querySelector('.mobile-summary-close');
+  const overlay = modal.querySelector('.mobile-summary-overlay');
+  const closeModal = () => modal.remove();
+  closeBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', closeModal);
+}
 export async function renderChatView(existingSession = null) {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -353,8 +359,11 @@ export async function renderChatView(existingSession = null) {
           </div>
         </footer>
       </div>
-      <div class="info-panel" id="infoPanel">
-        <h3>📋信息提取</h3>
+      <div class="info-panel" id="infoPanel" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3>📋信息提取</h3>
+          <button id="closeInfoPanel" style="background:none; border:none; font-size:1.2rem; cursor:pointer;">&times;</button>
+        </div>
         <div id="infoContent" class="info-content"></div>
       </div>
     </div>
@@ -364,15 +373,14 @@ export async function renderChatView(existingSession = null) {
   const sendBtn = document.getElementById('sendBtn');
   const exportBtn = document.getElementById('exportBtn');
   const summaryBtn = document.getElementById('summaryBtn');
-
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.onclick = () => { userInput.value = btn.dataset.question; sendMessage(); };
   });
-
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
-
   exportBtn.onclick = exportCurrentChat;
+
+  // 生成摘要逻辑（电脑端显示面板，移动端弹窗）
   summaryBtn.onclick = async () => {
     const sessionId = appState.currentSessionId;
     if (!sessionId) return;
@@ -380,7 +388,8 @@ export async function renderChatView(existingSession = null) {
     summaryBtn.textContent = '生成中...';
     try {
       const res = await fetchWithAuth('/api/chat/summarize', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId })
       });
       const data = await res.json();
@@ -392,7 +401,16 @@ export async function renderChatView(existingSession = null) {
       if (summary.suggestions.length) html += `<div><strong>💡 建议</strong><ul>${summary.suggestions.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
       if (summary.references.length) html += `<div><strong>📚 参考</strong><ul>${summary.references.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
       html += `</div>`;
-      document.getElementById('infoContent').innerHTML = html;
+
+      const isMobile = window.innerWidth <= 768;
+      if (isMobile) {
+        showMobileSummaryModal(html);
+      } else {
+        const infoPanel = document.getElementById('infoPanel');
+        const infoContent = document.getElementById('infoContent');
+        if (infoContent) infoContent.innerHTML = html;
+        if (infoPanel) infoPanel.style.display = 'block';
+      }
     } catch(e) {
       alert('生成摘要失败');
     } finally {
@@ -400,6 +418,15 @@ export async function renderChatView(existingSession = null) {
       summaryBtn.textContent = '📋 生成摘要';
     }
   };
+
+  // 关闭电脑端信息面板
+  const closeInfoBtn = document.getElementById('closeInfoPanel');
+  if (closeInfoBtn) {
+    closeInfoBtn.onclick = () => {
+      const panel = document.getElementById('infoPanel');
+      if (panel) panel.style.display = 'none';
+    };
+  }
 
   setupVoiceInput(userInput, document.getElementById('voiceBtn'));
 

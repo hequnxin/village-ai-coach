@@ -972,7 +972,7 @@ export async function renderGameView() {
   if (rankBtn) rankBtn.onclick = showContestRanking;
   setActiveNavByView('game');
 }
-
+export { startWrongClear };
 async function loadModuleStats() {
   try {
     const dailyRes = await fetchWithAuth('/api/game/daily/status');
