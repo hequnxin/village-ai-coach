@@ -90,9 +90,9 @@ async function fixQuizQuestions() {
 
   const fillCount = await db.get(`SELECT COUNT(*) as c FROM fill_questions`);
   if (fillCount.c < 50) {
-    console.log(`⚠️ 填空题数量不足 (${fillCount.c}/30)，开始补充生成...`);
+    console.log(`⚠️ 填空题数量不足 (${fillCount.c}/50)，开始补充生成...`);
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
-    await generateAndStoreQuestions(50, true);
+    await generateAndStoreQuestions(100, true);
   } else {
     console.log(`✅ 已有 ${fillCount.c} 道填空题`);
   }
