@@ -79,7 +79,7 @@ async function ensureMissingTables() {
 
 async function fixQuizQuestions() {
   const count = await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE type = 'choice'`);
-  const targetCount = 50;
+  const targetCount = 100;
   if (count.c < targetCount) {
     console.log(`⚠️ 选择题数量不足 (${count.c}/${targetCount})，开始补充生成...`);
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
@@ -89,7 +89,7 @@ async function fixQuizQuestions() {
   }
 
   const fillCount = await db.get(`SELECT COUNT(*) as c FROM fill_questions`);
-  if (fillCount.c < 30) {
+  if (fillCount.c < 50) {
     console.log(`⚠️ 填空题数量不足 (${fillCount.c}/30)，开始补充生成...`);
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
     await generateAndStoreQuestions(50, true);
