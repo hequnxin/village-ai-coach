@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const errorHandler = require('./middlewares/errorHandler');
 const db = require('./services/db');
-
+const dailyTasksRoutes = require('./routes/dailyTasks');
 // 路由导入
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
@@ -55,7 +55,8 @@ app.use('/api/simulate', authenticate, simulateRoutes);
 app.use('/api/knowledge', authenticate, knowledgeRoutes);
 app.use('/api/user', authenticate, userRoutes);
 app.use('/api/meeting', authenticate, meetingRoutes);
-app.use('/api/game', authenticate, gameRoutes);  // 新增，替代原 quiz
+app.use('/api/game', authenticate, gameRoutes);
+app.use('/api/daily-tasks', authenticate, dailyTasksRoutes);
 console.log('✅ gameRoutes loaded, routes:', gameRoutes.stack?.map(r => r.route?.path).filter(Boolean));
 // 错误处理中间件
 app.use(errorHandler);

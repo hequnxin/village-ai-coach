@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../services/db');
 const { chat } = require('../services/openai');
 const { generateChoice, generateFill } = require('../services/questionGenerator');
+const pointsService = require('../services/pointsService');
 
 const router = express.Router();
 
@@ -33,6 +34,7 @@ router.get('/policy-themes', async (req, res) => {
 router.get('/fun-level-questions', async (req, res) => {
   const { theme, difficulty, count = 5 } = req.query;
   if (!theme) return res.status(400).json({ error: '缺少主题参数' });
+
   let questions = await db.all(`
     SELECT id, question, options, answer, explanation, type
     FROM quiz_questions
@@ -40,7 +42,9 @@ router.get('/fun-level-questions', async (req, res) => {
     ORDER BY RANDOM()
     LIMIT $1
   `, [parseInt(count)]);
+
   questions = questions.map(q => ({ ...q, options: JSON.parse(q.options) }));
+
   if (questions.length < parseInt(count)) {
     const extra = await db.all(`
       SELECT id, question, options, answer, explanation, type
@@ -52,7 +56,8 @@ router.get('/fun-level-questions', async (req, res) => {
     const parsedExtra = extra.map(q => ({ ...q, options: JSON.parse(q.options) }));
     questions = [...questions, ...parsedExtra];
   }
-  // 随机将部分题目转换为判断题或排序题（优化逻辑）
+
+  // 随机转换题型
   if (questions.length >= 2) {
     const newQuestions = [];
     for (let i = 0; i < questions.length; i++) {
@@ -75,8 +80,7 @@ router.get('/fun-level-questions', async (req, res) => {
             explanation: q.explanation || (isTrue ? '该说法符合政策规定。' : '该说法与政策不符。')
           };
         } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3 &&
-                   (q.question.includes('顺序') || q.question.includes('流程') || q.question.includes('步骤') || q.category === '流程')) {
-          // 仅当题目包含顺序关键词时才转换为排序题
+          (q.question.includes('顺序') || q.question.includes('流程') || q.question.includes('步骤') || q.category === '流程')) {
           const correctOrder = [...Array(q.options.length).keys()];
           const shuffled = [...correctOrder];
           for (let j = shuffled.length - 1; j > 0; j--) {
@@ -104,6 +108,7 @@ router.get('/fun-level-questions', async (req, res) => {
   } else {
     questions = questions.map(q => ({ ...q, question_type: 'choice' }));
   }
+
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
   res.json({ questions, event: randomEvent });
@@ -114,20 +119,19 @@ router.post('/policy-submit', async (req, res) => {
   const userId = req.user.userId;
   const passingScore = Math.ceil(total * 0.6);
   const passed = score >= passingScore;
-  const reward = passed ? 50 : 0;
+  const reward = passed ? pointsService.FUN_LEVEL_PASS : 0;
+
   if (passed) {
     await db.run(`INSERT INTO user_theme_progress (id, user_id, theme_id, completed, completed_at) VALUES ($1, $2, $3, 1, NOW()) ON CONFLICT (user_id, theme_id) DO UPDATE SET completed = 1, completed_at = NOW()`,
       [uuidv4(), userId, themeId]);
     if (reward > 0) {
-      await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, NOW())`,
-        [uuidv4(), userId, reward, `通关主题: ${themeId}`]);
+      await pointsService.addPoints(userId, reward, `通关主题: ${themeId}`);
     }
   }
   res.json({ passed, reward });
 });
 
 // ==================== 翻牌配对（记忆匹配） ====================
-
 router.get('/memory-pairs', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 8;
@@ -172,7 +176,6 @@ router.get('/memory-pairs', async (req, res) => {
     const j = Math.floor(Math.random() * (i + 1));
     [cards[i], cards[j]] = [cards[j], cards[i]];
   }
-
   res.json({ cards, pairCount, gridCols });
 });
 
@@ -185,10 +188,9 @@ router.post('/memory-submit', async (req, res) => {
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
   `, [recordId, userId, difficulty, score, timeUsed, moves, matchedCount, totalPairs]);
 
-  const rewardPoints = Math.floor(score / 10);
+  const rewardPoints = Math.floor(score / pointsService.MEMORY_GAME_BASE_SCORE_DIVISOR);
   if (rewardPoints > 0) {
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), userId, rewardPoints, `翻牌配对得分${score}`, new Date().toISOString()]);
+    await pointsService.addPoints(userId, rewardPoints, `翻牌配对得分${score}`);
   }
   res.json({ success: true, rewardPoints });
 });
@@ -211,6 +213,7 @@ router.get('/memory-rank', async (req, res) => {
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
+
   let daily = await db.get(`SELECT * FROM daily_quiz WHERE user_id = $1 AND quiz_date = $2`, [userId, today]);
   if (daily && daily.completed) {
     const questions = await db.all(`
@@ -220,6 +223,7 @@ router.get('/daily', async (req, res) => {
       WHERE dq.quiz_id = $1`, [daily.id]);
     return res.json({ quizId: daily.id, questions: questions.map(q => ({ ...q, options: q.options ? JSON.parse(q.options) : [] })), completed: true, score: daily.score });
   }
+
   let questions = [];
   const choiceQuestions = await db.all(`
     SELECT id, type, question, options, answer, explanation
@@ -240,6 +244,7 @@ router.get('/daily', async (req, res) => {
     const extra = await db.all(`SELECT id, sentence as question, correct_word as answer, hint FROM fill_questions ORDER BY RANDOM() LIMIT $1`, [2 - fillQuestions.length]);
     fillQuestions = [...fillQuestions, ...extra];
   }
+
   let finalChoice = [...choiceQuestions];
   if (finalChoice.length < 3) {
     const extra = await db.all(`SELECT id, type, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' ORDER BY RANDOM() LIMIT $1`, [3 - finalChoice.length]);
@@ -251,7 +256,9 @@ router.get('/daily', async (req, res) => {
   for (let f of fillQuestions) {
     questions.push({ id: f.id, type: 'fill', question: f.question, answer: f.answer, hint: f.hint, explanation: `正确答案是"${f.answer}"` });
   }
+
   if (questions.length === 0) return res.status(404).json({ error: '无可用题目' });
+
   const quizId = uuidv4();
   await db.run(`INSERT INTO daily_quiz (id, user_id, quiz_date, score, completed, created_at) VALUES ($1, $2, $3, 0, 0, $4)`, [quizId, userId, today, new Date().toISOString()]);
   for (const q of questions) {
@@ -272,9 +279,10 @@ router.post('/daily/submit', async (req, res) => {
   const daily = await db.get(`SELECT * FROM daily_quiz WHERE id = $1 AND user_id = $2`, [quizId, userId]);
   if (!daily || daily.completed) return res.status(400).json({ error: '无效或已提交' });
   await db.run(`UPDATE daily_quiz SET score = $1, completed = 1 WHERE id = $2`, [score, quizId]);
-  const rewardPoints = score * 10 + (score === total ? 20 : 0);
-  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-    [uuidv4(), userId, rewardPoints, `每日一练得分${score}/${total}`, new Date().toISOString()]);
+
+  const rewardPoints = score * pointsService.DAILY_QUIZ_PER_QUESTION + (score === total ? pointsService.DAILY_QUIZ_BONUS_FULL : 0);
+  await pointsService.addPoints(userId, rewardPoints, `每日一练得分${score}/${total}`);
+
   res.json({ score, total, rewardPoints });
 });
 
@@ -291,7 +299,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛（带缓存） ====================
+// ==================== 每周竞赛 ====================
 let cachedWeeklyContest = null;
 let cachedWeekStart = null;
 
@@ -299,18 +307,22 @@ router.get('/weekly/status', async (req, res) => {
   const userId = req.user.userId;
   const tableExists = await db.get(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weekly_contest_attempts')`);
   if (!tableExists.exists) return res.json({ participated: false, attemptsLeft: 3 });
+
   const now = new Date();
   const day = now.getDay();
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
   weekStart.setHours(0,0,0,0);
   const startStr = weekStart.toISOString().slice(0,10);
+
   const contest = await db.get(`SELECT id, questions FROM weekly_contest WHERE week_start = $1`, [startStr]);
   if (!contest) return res.json({ participated: false, attemptsLeft: 3 });
+
   const attempts = await db.all(`SELECT * FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 ORDER BY submitted_at DESC`, [contest.id, userId]);
   const attemptsCount = attempts.length;
   const attemptsLeft = Math.max(0, 3 - attemptsCount);
   if (attemptsCount === 0) return res.json({ participated: false, attemptsLeft: 3 });
+
   let best = null;
   let bestScore = 0;
   let bestTotal = 0;
@@ -360,6 +372,7 @@ router.get('/weekly/current', async (req, res) => {
       questions = questions.map(q => ({ ...q, options: JSON.parse(q.options) }));
     }
   }
+
   if (questions.length === 0) {
     let fallback = await db.all(`SELECT id, question, options, answer, explanation FROM quiz_questions WHERE type = 'choice' AND (source_category IN ('政策', '常见问题') OR category IN ('政策', '常见问题')) ORDER BY RANDOM() LIMIT 10`);
     fallback = fallback.map(q => ({ ...q, options: JSON.parse(q.options) }));
@@ -380,6 +393,7 @@ router.get('/weekly/current', async (req, res) => {
       questions = fallback;
     }
     if (questions.length === 0) return res.status(500).json({ error: '无法生成竞赛题目' });
+
     const contestId = uuidv4();
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
@@ -390,6 +404,7 @@ router.get('/weekly/current', async (req, res) => {
     cachedWeeklyContest = { id: contestId, questions: JSON.stringify(questions.map(q => q.id)) };
     cachedWeekStart = startStr;
   }
+
   const attemptsCount = (await db.get(`SELECT COUNT(*) as count FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2`, [contest.id, userId])).count;
   if (attemptsCount >= 3) return res.status(403).json({ error: '本周参赛次数已达上限（3次）' });
   const attemptNumber = attemptsCount + 1;
@@ -403,18 +418,21 @@ router.post('/weekly/submit', async (req, res) => {
   if (!contest) return res.status(400).json({ error: '竞赛已结束' });
   const existing = await db.get(`SELECT id FROM weekly_contest_attempts WHERE contest_id = $1 AND user_id = $2 AND attempt_number = $3`, [contestId, userId, attemptNumber]);
   if (existing) return res.status(400).json({ error: '已提交过本次竞赛' });
+
   let correct = 0;
   const totalQuestions = answers.length;
   for (const ans of answers) {
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
     if (q && q.answer == ans.selected) correct++;
   }
+
   const attemptId = uuidv4();
   await db.run(`INSERT INTO weekly_contest_attempts (id, contest_id, user_id, attempt_number, score, total_questions, time_used, submitted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
     [attemptId, contestId, userId, attemptNumber, correct, totalQuestions, timeUsed]);
-  const points = correct * 5;
-  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
-    [uuidv4(), userId, points, `每周竞赛得分${correct}/${totalQuestions}`, new Date().toISOString()]);
+
+  const points = correct * pointsService.WEEKLY_CONTEST_PER_CORRECT;
+  await pointsService.addPoints(userId, points, `每周竞赛得分${correct}/${totalQuestions}`);
+
   for (let i = 0; i < answers.length; i++) {
     const ans = answers[i];
     const q = await db.get(`SELECT answer FROM quiz_questions WHERE id = $1`, [ans.questionId]);
@@ -440,7 +458,7 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;
   const wrongs = await db.all(`
-    SELECT w.id, w.question_id, w.question_type, w.wrong_count, 
+    SELECT w.id, w.question_id, w.question_type, w.wrong_count,
            q.question, q.options, q.answer, q.explanation,
            f.sentence as fill_question, f.correct_word as fill_answer, f.hint as fill_hint
     FROM wrong_questions w
@@ -448,6 +466,7 @@ router.get('/wrong-questions', async (req, res) => {
     LEFT JOIN fill_questions f ON w.question_id = f.id AND w.question_type = 'fill'
     WHERE w.user_id = $1 AND w.question_type IN ('choice', 'fill')
     ORDER BY w.last_wrong_date DESC`, [userId]);
+
   const formatted = wrongs.map(w => {
     if (w.question_type === 'choice') return { id: w.id, question_id: w.question_id, type: 'choice', question: w.question, options: w.options ? JSON.parse(w.options) : [], answer: w.answer, explanation: w.explanation, wrong_count: w.wrong_count };
     else return { id: w.id, question_id: w.question_id, type: 'fill', question: w.fill_question, answer: w.fill_answer, hint: w.fill_hint, wrong_count: w.wrong_count };
@@ -474,9 +493,9 @@ router.post('/wrong-questions/clear', async (req, res) => {
       }
     }
   }
-  const reward = clearedCount * 10;
+  const reward = clearedCount * pointsService.WRONG_CLEAR_PER_QUESTION;
   if (reward > 0) {
-    await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, reward, `错题闯关答对${clearedCount}题`, new Date().toISOString()]);
+    await pointsService.addPoints(userId, reward, `错题闯关答对${clearedCount}题`);
   }
   res.json({ clearedCount, rewardPoints: reward });
 });
@@ -506,7 +525,7 @@ router.post('/wrong-questions/record', async (req, res) => {
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;
-  await db.run(`INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`, [uuidv4(), userId, points, reason, new Date().toISOString()]);
+  await pointsService.addPoints(userId, points, reason);
   res.json({ success: true });
 });
 

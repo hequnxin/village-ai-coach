@@ -57,7 +57,6 @@ let memoryGameTotalPairs = 0;
 let memoryGameScore = 0;
 
 // ==================== 辅助函数 ====================
-
 function formatAnswerLabel(question, answerIndex) {
   if (!question.options) return answerIndex;
   const text = question.options[answerIndex];
@@ -65,7 +64,6 @@ function formatAnswerLabel(question, answerIndex) {
 }
 
 // ==================== 通用全屏答题组件 ====================
-
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -292,7 +290,7 @@ function renderGenericQuiz(config) {
         } else if (isSort && correctLabel) {
           feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctLabel)}</div>`;
         }
-        // 更新按钮显示（不重新渲染）
+        // 更新按钮显示
         const prevBtn = document.getElementById('quizPrevBtn');
         const nextBtn = document.getElementById('quizNextBtn');
         const finishBtn = document.getElementById('quizFinishBtn');
@@ -324,9 +322,7 @@ function renderGenericQuiz(config) {
     };
   }
 }
-
 // ==================== 每日一练 ====================
-
 async function startDailyQuiz() {
   const startBtn = document.getElementById('startDailyBtn');
   if (startBtn) {
@@ -349,6 +345,7 @@ async function startDailyQuiz() {
     const userAnswers = new Array(questions.length).fill(null);
     const userScores = new Array(questions.length).fill(false);
     let totalScore = 0;
+
     const onSubmit = async (index, userAnswer) => {
       const q = questions[index];
       let isCorrect = false;
@@ -378,6 +375,7 @@ async function startDailyQuiz() {
       }
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
+
     const onFinish = async (finalScore) => {
       const total = questions.length;
       const rewardPoints = finalScore;
@@ -388,9 +386,10 @@ async function startDailyQuiz() {
       });
       alert(`练习完成！得分 ${finalScore/10}/${total}，获得 ${rewardPoints} 积分`);
       addPoints(rewardPoints, '每日一练');
-      updateTaskProgress('quiz', 1);
+      await updateTaskProgress('daily_quiz', 1);
       await loadModuleStats();
     };
+
     renderGenericQuiz({
       questions,
       currentIndex: 0,
@@ -412,8 +411,8 @@ async function startDailyQuiz() {
     }
   }
 }
-// ==================== 每周竞赛（修复倒计时清除、排行榜刷新） ====================
 
+// ==================== 每周竞赛 ====================
 async function startWeeklyContest() {
   const startBtn = document.getElementById('startContestBtn');
   if (startBtn) {
@@ -438,9 +437,11 @@ async function startWeeklyContest() {
     currentContestAnswers = new Array(currentContestQuestions.length).fill(null);
     contestStartTime = Date.now();
     currentAttemptNumber = data.attemptNumber;
+
     const userAnswers = new Array(currentContestQuestions.length).fill(null);
     const userScores = new Array(currentContestQuestions.length).fill(false);
     let totalScore = 0;
+
     const onSubmit = async (index, userAnswer) => {
       const q = currentContestQuestions[index];
       const correctIndex = parseInt(q.answer);
@@ -461,6 +462,7 @@ async function startWeeklyContest() {
       }
       return { correct: isCorrect, correctLabel, explanation: q.explanation };
     };
+
     const onFinish = async (finalScore) => {
       if (contestTimerInterval) {
         clearInterval(contestTimerInterval);
@@ -477,6 +479,7 @@ async function startWeeklyContest() {
       if (result.score !== undefined) {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒，获得 ${result.rewardPoints} 积分`);
         addPoints(result.rewardPoints, '每周竞赛');
+        await updateTaskProgress('contest', 1);
         await loadModuleStats();
         const rankModal = document.querySelector('.modal');
         if (rankModal && rankModal.style.display === 'flex') {
@@ -488,6 +491,7 @@ async function startWeeklyContest() {
       }
       await loadModuleStats();
     };
+
     let interval = null;
     function updateTimerDisplay() {
       const elapsed = Math.floor((Date.now() - contestStartTime) / 1000);
@@ -505,6 +509,7 @@ async function startWeeklyContest() {
     interval = setInterval(updateTimerDisplay, 1000);
     contestTimerInterval = interval;
     updateTimerDisplay();
+
     renderGenericQuiz({
       questions: currentContestQuestions,
       currentIndex: 0,
@@ -528,8 +533,7 @@ async function startWeeklyContest() {
   }
 }
 
-// ==================== 错题本（修复结束按钮、实时更新错题数） ====================
-
+// ==================== 错题本 ====================
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   const data = await res.json();
@@ -662,8 +666,7 @@ async function startWrongClear() {
   }, 100);
 }
 
-// ==================== 翻牌配对（记忆匹配） ====================
-
+// ==================== 翻牌配对 ====================
 async function startMemoryGame() {
   const difficulty = await new Promise((resolve) => {
     const modal = document.createElement('div');
@@ -689,7 +692,6 @@ async function startMemoryGame() {
     modal.onclick = (e) => { if(e.target === modal) closeModal(); };
   });
   if (!difficulty) return;
-
   memoryGameActive = true;
   memoryGameDifficulty = difficulty;
   memoryGameOpenedCards = [];
@@ -699,7 +701,6 @@ async function startMemoryGame() {
   memoryGameLockBoard = false;
   if (memoryGameTimer) clearInterval(memoryGameTimer);
   memoryGameStartTime = Date.now();
-
   try {
     const res = await fetchWithAuth(`/api/game/memory-pairs?difficulty=${difficulty}`);
     const data = await res.json();
@@ -823,6 +824,7 @@ async function finishMemoryGame() {
   const data = await res.json();
   alert(`🎉 游戏完成！得分：${memoryGameScore}，步数：${memoryGameMoves}，用时：${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}，获得 ${data.rewardPoints} 积分`);
   addPoints(data.rewardPoints, '翻牌配对');
+  await updateTaskProgress('memory', 1);
   memoryGameActive = false;
   renderGameView();
 }
@@ -881,7 +883,6 @@ async function showMemoryRanking() {
 }
 
 // ==================== 排行榜 ====================
-
 async function showContestRanking() {
   try {
     const now = new Date();
@@ -933,7 +934,6 @@ async function showContestRanking() {
 }
 
 // ==================== 主渲染 ====================
-
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -962,17 +962,24 @@ export async function renderGameView() {
     </div>
   `;
   await loadModuleStats();
-  document.getElementById('openFunBtn').onclick = () => showFunLevelsModal();
-  document.getElementById('startDailyBtn').onclick = startDailyQuiz;
-  document.getElementById('startContestBtn').onclick = startWeeklyContest;
-  document.getElementById('startMemoryBtn').onclick = startMemoryGame;
-  document.getElementById('memoryRankBtn').onclick = showMemoryRanking;
-  document.getElementById('startWrongClearBtn').onclick = startWrongClear;
+  const safeBind = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = handler;
+    else console.warn(`[renderGameView] 元素 #${id} 不存在`);
+  };
+  safeBind('openFunBtn', () => showFunLevelsModal());
+  safeBind('startDailyBtn', startDailyQuiz);
+  safeBind('startContestBtn', startWeeklyContest);
+  safeBind('startMemoryBtn', startMemoryGame);
+  safeBind('memoryRankBtn', showMemoryRanking);
+  safeBind('startWrongClearBtn', startWrongClear);
   const rankBtn = document.getElementById('rankContestBtn');
   if (rankBtn) rankBtn.onclick = showContestRanking;
   setActiveNavByView('game');
 }
+
 export { startWrongClear };
+
 async function loadModuleStats() {
   try {
     const dailyRes = await fetchWithAuth('/api/game/daily/status');
@@ -1117,20 +1124,23 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     }
     return { correct: isCorrect, correctLabel, explanation: q.explanation, pointsGain, livesRemaining: lives };
   };
+
   const onFinish = async (finalScore) => {
     if (isFinishing) return;
     isFinishing = true;
     const total = questions.length;
     const passingScore = Math.ceil(total * 0.6);
     const passed = (totalScore / 10) >= passingScore;
-    const reward = passed ? 50 : 0;
+    const reward = passed ? 30 : 0;
     await fetchWithAuth('/api/game/policy-submit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ themeId, score: totalScore / 10, total })
     });
     if (reward) addPoints(reward, '趣味闯关');
+    if (passed) await updateTaskProgress('fun', 1);
     alert(`闯关结束！得分 ${totalScore/10}/${total}，${passed ? '通关成功！' : '再接再厉！'}${reward ? ` 获得 ${reward} 积分` : ''}`);
   };
+
   let timerInterval = null;
   let timeLeft = 15;
   function updateTimerDisplay() {
@@ -1154,6 +1164,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     }, 1000);
   }
   function clearTimer() { if (timerInterval) clearInterval(timerInterval); }
+
   const customRender = (cfg) => {
     const extra = `
       <div class="fun-lives" id="funLivesDisplay">❤️ ${lives}</div>

@@ -5,10 +5,12 @@ const { searchKnowledge } = require('../services/vectorSearch');
 const { webSearch, keywordSearch } = require('../services/knowledgeService');
 const { getSession, updateSession, addMessage } = require('../services/sessionService');
 const db = require('../services/db');
+const pointsService = require('../services/pointsService');
+const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 
-// ---------- 内存缓存 ----------
+// 内存缓存
 const answerCache = new Map();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
@@ -22,7 +24,7 @@ function getCacheKey(message, knowledgeContext) {
   return `chat_${hash}`;
 }
 
-// ==================== 系统提示词（含长度控制） ====================
+// 系统提示词
 const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也是基层干部的"AI伙伴"。你的任务是用中文回答村官提出的各种实际问题。你的回答必须遵循以下原则：
 
 1. **有条理**：使用纯文本序号组织内容，例如：
@@ -41,7 +43,7 @@ const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也
 
 5. **必要时苏格拉底式引导**：如果用户的问题含糊不清，你可以先反问几个问题。
 
-6. **长度控制**：如果回答内容预计会很长（超过1500字），请主动拆分为多个部分，并在第一部分末尾明确询问用户：“内容较长，是否继续了解剩余部分？请回复“继续”。”
+6. **长度控制**：如果回答内容预计会很长（超过1500字），请主动拆分为多个部分，并在第一部分末尾明确询问用户："内容较长，是否继续了解剩余部分？请回复"继续"。"
 
 请输出纯文本，不要包含任何Markdown语法。`;
 
@@ -53,11 +55,10 @@ async function offlineReply(message, knowledgeContext) {
   }
 }
 
-// ==================== 主聊天接口（流式 + 缓存） ====================
+// 主聊天接口（流式 + 缓存）
 router.post('/', async (req, res) => {
   const { sessionId, message } = req.body;
   const userId = req.user.userId;
-
   if (!sessionId || !message) {
     return res.status(400).json({ error: '缺少 sessionId 或 message' });
   }
@@ -114,6 +115,7 @@ router.post('/', async (req, res) => {
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content
   }));
+
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history,
@@ -126,6 +128,8 @@ router.post('/', async (req, res) => {
     const reply = cached.answer;
     const assistantMsgId = (await addMessage(sessionId, 'assistant', reply, Date.now())).messageId;
     const finalSession = await getSession(userId, sessionId);
+    // 添加对话积分
+    await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${message.substring(0,30)}`);
     return res.json({
       reply,
       assistantMessageId: assistantMsgId,
@@ -152,21 +156,17 @@ router.post('/', async (req, res) => {
   };
 
   try {
-    // max_tokens 提高到 2500
     await chatStream(messages, { temperature: 0.7, max_tokens: 2500 }, (chunk) => {
       fullReply += chunk;
       sendChunk(chunk);
     });
-
     const assistantMsgId = (await addMessage(sessionId, 'assistant', fullReply, Date.now())).messageId;
     const finalSession = await getSession(userId, sessionId);
-
     if (fullReply.length > 50 && !errorOccurred) {
-      answerCache.set(cacheKey, {
-        answer: fullReply,
-        timestamp: Date.now()
-      });
+      answerCache.set(cacheKey, { answer: fullReply, timestamp: Date.now() });
     }
+    // 添加对话积分
+    await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${message.substring(0,30)}`);
     sendEnd(assistantMsgId, finalSession.title);
   } catch (err) {
     console.error('DeepSeek API 调用失败，进入离线模式:', err.message);
@@ -175,15 +175,16 @@ router.post('/', async (req, res) => {
     sendChunk(fullReply);
     const assistantMsgId = (await addMessage(sessionId, 'assistant', fullReply, Date.now())).messageId;
     const finalSession = await getSession(userId, sessionId);
+    // 离线模式也添加积分（虽然可能没有 AI 回复，但用户发起了对话）
+    await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话(离线): ${message.substring(0,30)}`);
     sendEnd(assistantMsgId, finalSession.title);
   }
 });
 
-// ==================== 对话摘要接口 ====================
+// 对话摘要接口
 router.post('/summarize', async (req, res) => {
   const { sessionId, messages: providedMessages } = req.body;
   const userId = req.user.userId;
-
   let conversationMessages = [];
   if (sessionId) {
     const session = await getSession(userId, sessionId);

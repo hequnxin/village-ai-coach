@@ -259,6 +259,16 @@ async function initDb() {
       matched_count INTEGER NOT NULL,
       total_pairs INTEGER NOT NULL,
       created_at TIMESTAMPTZ NOT NULL
+    )`,
+    // 新增 daily_tasks 表
+    `CREATE TABLE IF NOT EXISTS daily_tasks (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      task_date DATE NOT NULL,
+      task_data JSONB NOT NULL,
+      completed BOOLEAN DEFAULT FALSE,
+      reward_claimed BOOLEAN DEFAULT FALSE,
+      UNIQUE(user_id, task_date)
     )`
   ];
 
@@ -278,21 +288,19 @@ async function initDb() {
     await db.run(`ALTER TABLE quiz_questions ALTER COLUMN answer TYPE TEXT`);
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS explanation TEXT`);
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS source_category TEXT`);
-    // 新增 question_type 列（用于区分 choice/judge/fill/sort）
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS question_type TEXT DEFAULT 'choice'`);
     console.log('✅ quiz_questions 字段迁移完成');
   } catch(e) { console.warn('⚠️ 迁移 quiz_questions 失败:', e.message); }
 
-  // 添加索引（全文搜索索引暂时跳过，不影响核心功能）
+  // 添加索引
   try {
     await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_user ON memory_game_records(user_id)`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_memory_records_difficulty ON memory_game_records(difficulty)`);
     console.log('✅ memory_game_records 索引创建成功');
   } catch(e) { console.warn('⚠️ 创建索引失败:', e.message); }
 
-  // ========== 为 wrong_questions 添加 question_type 列（如果不存在） ==========
+  // 为 wrong_questions 添加 question_type 列
   try {
-    // 检查列是否存在（使用 simpler 方法：直接尝试添加，忽略错误）
     await db.run(`ALTER TABLE wrong_questions ADD COLUMN IF NOT EXISTS question_type TEXT DEFAULT 'choice'`);
     console.log('✅ wrong_questions 表结构确认');
   } catch(e) { console.warn('⚠️ 迁移 wrong_questions 失败:', e.message); }
@@ -320,7 +328,7 @@ async function initDb() {
     JSON.stringify(['情绪安抚', '沟通技巧', '矛盾调解', '规则引导']));
   console.log('✅ 默认场景数据插入完成');
 
-  // ========== 初始化游戏主题（趣味闯关） ==========
+  // ========== 初始化游戏主题 ==========
   try {
     const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
     if (themeCount.count === 0) {
@@ -343,7 +351,7 @@ async function initDb() {
     console.error('❌ 初始化游戏主题失败:', err.message);
   }
 
-  // ========== 自动生成高质量题目（四种题型） ==========
+  // ========== 自动生成高质量题目 ==========
   try {
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
     console.log('📝 开始自动生成高质量题目（单选、填空、判断、排序）...');
@@ -356,7 +364,6 @@ async function initDb() {
   console.log('🎉 数据库初始化完成！');
 }
 
-// 执行并捕获错误
 initDb().catch(err => {
   console.error('❌ 初始化脚本执行失败:', err);
   process.exit(1);

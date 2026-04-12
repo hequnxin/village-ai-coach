@@ -1,4 +1,5 @@
 // frontend/src/utils/helpers.js
+import { getDailyTasks, updateDailyTaskProgress, claimDailyReward } from './api';
 
 export function escapeHtml(str) {
   if (!str) return '';
@@ -84,27 +85,31 @@ export function initParticles() {
   animateParticles();
 }
 
-let taskList = [];
-export function initDailyTasks() {
-  const today = new Date().toLocaleDateString();
-  const saved = localStorage.getItem('dailyTasks');
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    if (parsed.date === today) {
-      taskList = parsed.tasks;
-      renderTaskPanel();
-      return;
+let currentDailyTasks = [];  // 存储当前任务列表
+
+// 初始化每日任务（从后端获取）
+export async function initDailyTasks() {
+  try {
+    const data = await getDailyTasks();
+    currentDailyTasks = data.tasks;
+    renderTaskPanel();
+    // 检查是否有已完成但未领取奖励的任务
+    if (data.completed && !data.reward_claimed) {
+      // 自动领取奖励？或者显示提示按钮
+      showToast('🎉 今日任务全部完成！点击领取奖励', 'success');
     }
+  } catch (err) {
+    console.error('加载每日任务失败', err);
+    // 降级：使用本地默认任务（但不保存进度）
+    currentDailyTasks = [
+      { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 10, type: 'chat', completed: false },
+      { id: 2, name: '完成1次趣味闯关', target: 1, current: 0, reward: 15, type: 'fun', completed: false },
+      { id: 3, name: '完成每日一练', target: 1, current: 0, reward: 10, type: 'daily_quiz', completed: false },
+      { id: 4, name: '完成1次翻牌配对', target: 1, current: 0, reward: 10, type: 'memory', completed: false },
+      { id: 5, name: '参加每周竞赛', target: 1, current: 0, reward: 15, type: 'contest', completed: false }
+    ];
+    renderTaskPanel();
   }
-  taskList = [
-    { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 30, completed: false },
-    { id: 2, name: '完成1次政策闯关', target: 1, current: 0, reward: 20, completed: false },
-    { id: 3, name: '完成1次模拟对练', target: 1, current: 0, reward: 50, completed: false },
-    { id: 4, name: '完成每日一练', target: 1, current: 0, reward: 40, completed: false },
-    { id: 5, name: '参加会议', target: 1, current: 0, reward: 60, completed: false }
-  ];
-  localStorage.setItem('dailyTasks', JSON.stringify({ date: today, tasks: taskList }));
-  renderTaskPanel();
 }
 
 function renderTaskPanel() {
@@ -117,7 +122,7 @@ function renderTaskPanel() {
     panel.appendChild(taskListDiv);
   }
   taskListDiv.innerHTML = '';
-  taskList.forEach(task => {
+  currentDailyTasks.forEach(task => {
     const percent = (task.current / task.target) * 100;
     const item = document.createElement('div');
     item.className = 'task-item';
@@ -129,62 +134,95 @@ function renderTaskPanel() {
     if (task.completed) item.style.opacity = '0.6';
     taskListDiv.appendChild(item);
   });
-}
-
-export function updateTaskProgress(type, delta = 1) {
-  let updated = false;
-  taskList.forEach(task => {
-    if (task.completed) return;
-    if (type === 'chat' && task.name === '发起3次对话') {
-      task.current += delta;
-      if (task.current >= task.target) { task.completed = true; showTaskCompleteToast(task); addPoints(task.reward, task.name); }
-      updated = true;
-    } else if (type === 'policyLevel' && task.name === '完成1次政策闯关') {
-      task.current += delta;
-      if (task.current >= task.target) { task.completed = true; showTaskCompleteToast(task); addPoints(task.reward, task.name); }
-      updated = true;
-    } else if (type === 'simulate' && task.name === '完成1次模拟对练') {
-      task.current += delta;
-      if (task.current >= task.target) { task.completed = true; showTaskCompleteToast(task); addPoints(task.reward, task.name); }
-      updated = true;
-    } else if (type === 'quiz' && task.name === '完成每日一练') {
-      task.current += delta;
-      if (task.current >= task.target) { task.completed = true; showTaskCompleteToast(task); addPoints(task.reward, task.name); }
-      updated = true;
-    } else if (type === 'meeting' && task.name === '参加会议') {
-      task.current += delta;
-      if (task.current >= task.target) { task.completed = true; showTaskCompleteToast(task); addPoints(task.reward, task.name); }
-      updated = true;
+  // 如果有已完成但未领取奖励，显示领取按钮
+  const allCompleted = currentDailyTasks.every(t => t.completed);
+  const rewardClaimed = window._dailyRewardClaimed; // 需要从后端获取，简单起见检查是否有领取按钮
+  if (allCompleted && !rewardClaimed) {
+    let claimBtn = document.getElementById('claimDailyRewardBtn');
+    if (!claimBtn) {
+      claimBtn = document.createElement('button');
+      claimBtn.id = 'claimDailyRewardBtn';
+      claimBtn.textContent = '🎁 领取今日奖励';
+      claimBtn.style.width = '100%';
+      claimBtn.style.marginTop = '8px';
+      claimBtn.style.padding = '6px';
+      claimBtn.style.backgroundColor = '#ff9800';
+      claimBtn.style.color = 'white';
+      claimBtn.style.border = 'none';
+      claimBtn.style.borderRadius = '20px';
+      claimBtn.style.cursor = 'pointer';
+      claimBtn.onclick = async () => {
+        try {
+          const result = await claimDailyReward();
+          if (result.success) {
+            showToast(`领取成功！获得 ${result.points} 积分`, 'success');
+            claimBtn.remove();
+            // 刷新任务状态
+            await initDailyTasks();
+          } else {
+            showToast(result.message || '领取失败', 'error');
+          }
+        } catch (err) {
+          showToast('领取失败', 'error');
+        }
+      };
+      panel.appendChild(claimBtn);
     }
-  });
-  if (updated) {
-    const today = new Date().toLocaleDateString();
-    localStorage.setItem('dailyTasks', JSON.stringify({ date: today, tasks: taskList }));
-    renderTaskPanel();
+  } else {
+    const btn = document.getElementById('claimDailyRewardBtn');
+    if (btn) btn.remove();
   }
 }
 
-function showTaskCompleteToast(task) {
+export async function updateTaskProgress(taskType, delta = 1) {
+  try {
+    const result = await updateDailyTaskProgress(taskType, delta);
+    if (result.updated) {
+      // 更新本地任务列表
+      currentDailyTasks = result.tasks;
+      renderTaskPanel();
+      // 如果某个任务刚刚完成，显示通知
+      const completedTask = result.tasks.find(t => t.type === taskType && t.completed);
+      if (completedTask) {
+        showToast(`✅ 任务“${completedTask.name}”完成！`, 'success');
+        playSound('complete');
+      }
+    }
+    return result;
+  } catch (err) {
+    console.error('更新任务进度失败', err);
+    // 降级：本地更新（不推荐）
+    const task = currentDailyTasks.find(t => t.type === taskType);
+    if (task && !task.completed) {
+      task.current += delta;
+      if (task.current >= task.target) {
+        task.completed = true;
+        renderTaskPanel();
+      }
+    }
+  }
+}
+
+function showToast(message, type = 'info') {
   const toast = document.createElement('div');
-  toast.className = 'task-toast';
-  toast.innerHTML = `🎉 任务完成！获得 ${task.reward} 积分 🎉`;
+  toast.className = 'toast';
+  toast.textContent = message;
   toast.style.position = 'fixed';
-  toast.style.top = '20%';
+  toast.style.bottom = '20px';
   toast.style.left = '50%';
   toast.style.transform = 'translateX(-50%)';
-  toast.style.backgroundColor = '#4caf50';
+  toast.style.backgroundColor = type === 'error' ? '#f44336' : '#4caf50';
   toast.style.color = 'white';
-  toast.style.padding = '12px 24px';
-  toast.style.borderRadius = '40px';
-  toast.style.fontWeight = 'bold';
-  toast.style.zIndex = '1000';
-  toast.style.animation = 'bounceIn 0.5s ease-out';
+  toast.style.padding = '8px 16px';
+  toast.style.borderRadius = '30px';
+  toast.style.zIndex = '2000';
+  toast.style.fontSize = '0.8rem';
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
-  playSound('complete');
 }
 
 export async function addPoints(points, reason = '游戏奖励') {
+  // 前端只显示动画，实际积分由后端记录，不需要额外调用 add-points（后端已经记录）
   const pointDiv = document.createElement('div');
   pointDiv.textContent = `+${points}`;
   pointDiv.style.position = 'fixed';
@@ -198,14 +236,7 @@ export async function addPoints(points, reason = '游戏奖励') {
   pointDiv.style.zIndex = '999';
   document.body.appendChild(pointDiv);
   setTimeout(() => pointDiv.remove(), 1000);
-  try {
-    const { fetchWithAuth } = await import('./api');
-    await fetchWithAuth('/api/game/add-points', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ points, reason })
-    });
-  } catch(e) { console.error('积分记录失败', e); }
+  // 注意：不再调用 /api/game/add-points，因为后端已经在各业务接口中调用了 pointsService.addPoints
 }
 
 export function showComboEffect() {
@@ -242,7 +273,6 @@ export function setActiveNavByView(viewName) {
     const btn = document.getElementById(id);
     if (btn) btn.classList.add('active');
   }
-  // 同步底部导航
   const bottomItems = document.querySelectorAll('.bottom-nav-item');
   if (bottomItems.length) {
     bottomItems.forEach(item => {

@@ -1,3 +1,4 @@
+// frontend/src/utils/api.js
 let refreshPromise = null;
 
 export async function refreshToken() {
@@ -53,4 +54,30 @@ export async function fetchWithAuth(url, options = {}) {
     }
   }
   return res;
+}
+
+// ========== 每日任务 API ==========
+export async function getDailyTasks() {
+  const res = await fetchWithAuth('/api/daily-tasks');
+  if (!res.ok) throw new Error('获取每日任务失败');
+  return res.json();
+}
+
+export async function updateDailyTaskProgress(taskType, delta = 1) {
+  const res = await fetchWithAuth('/api/daily-tasks/progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskType, delta })
+  });
+  if (!res.ok) throw new Error('更新任务进度失败');
+  return res.json();
+}
+
+export async function claimDailyReward() {
+  const res = await fetchWithAuth('/api/daily-tasks/claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!res.ok) throw new Error('领取奖励失败');
+  return res.json();
 }
