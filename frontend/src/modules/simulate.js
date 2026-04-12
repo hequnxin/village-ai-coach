@@ -1,7 +1,7 @@
 // frontend/src/modules/simulate.js
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
-import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
+import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration } from '../utils/helpers';
 
 let currentScenario = null;
 let currentMultiVillagers = [];
@@ -13,7 +13,7 @@ let currentTargetVillager = null;
 
 // ==================== 场景多人模式村民配置（硬编码，可扩展） ====================
 const scenarioMultiConfig = {
-  'scenario_001': {  // 调解邻里土地纠纷
+  'scenario_001': {
     title: '调解邻里土地纠纷',
     description: '村民张三和李四因宅基地边界发生争执，双方情绪激动，需要你作为村干部进行调解。',
     villagers: [
@@ -22,7 +22,7 @@ const scenarioMultiConfig = {
       { id: 'v3', name: '王婶', avatar: '👵', personality: '热心、和事佬', coreDemand: '希望双方和解，村里安宁', initialStance: '中立', stanceValue: 0.5 }
     ]
   },
-  'scenario_002': {  // 推动垃圾分类
+  'scenario_002': {
     title: '推动垃圾分类',
     description: '村里推行垃圾分类，但很多村民不配合，甚至乱扔垃圾。你需要入户宣传，说服村民参与。',
     villagers: [
@@ -31,7 +31,7 @@ const scenarioMultiConfig = {
       { id: 'v3', name: '王叔', avatar: '👨', personality: '理性、观望', coreDemand: '担心费用和公平性', initialStance: '中立', stanceValue: 0.5 }
     ]
   },
-  'scenario_003': {  // 人居环境整治（乱堆乱放）
+  'scenario_003': {
     title: '人居环境整治（乱堆乱放）',
     description: '村民老赵在自家院外长期堆放柴草和废品，影响村容村貌，邻居投诉。你需上门劝导，动员清理。',
     villagers: [
@@ -40,7 +40,7 @@ const scenarioMultiConfig = {
       { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '理性、讲道理', coreDemand: '希望有公平的清理方案', initialStance: '中立', stanceValue: 0.5 }
     ]
   },
-  'scenario_004': {  // 产业发展项目申报动员会
+  'scenario_004': {
     title: '产业发展项目申报动员会',
     description: '村里想申请乡村振兴衔接资金发展特色农产品加工，但部分村民担心失败不愿配合。',
     villagers: [
@@ -49,7 +49,7 @@ const scenarioMultiConfig = {
       { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '精明、算得清', coreDemand: '要看到详细财务预测', initialStance: '中立', stanceValue: 0.5 }
     ]
   },
-  'scenario_005': {  // 邻里噪音纠纷调解
+  'scenario_005': {
     title: '邻里噪音纠纷调解',
     description: '村民小陈家晚上经常聚会打牌，邻居老刘多次投诉，双方产生口角。你前往调解。',
     villagers: [
@@ -144,11 +144,9 @@ async function sendSimulateMessage(sessionId, text, container, typingIndicator, 
   const userMsg = createSimulateMessageElement('user', '村官', '👨‍🌾', text, 'neutral');
   container.appendChild(userMsg);
   scrollSimulate();
-
   isTyping = true;
   typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
-
   try {
     let res;
     if (targetVillager) {
@@ -166,7 +164,6 @@ async function sendSimulateMessage(sessionId, text, container, typingIndicator, 
     }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-
     typingIndicator.classList.add('hidden');
     const speakerName = targetVillager ? targetVillager.name : roleName;
     const speakerAvatar = targetVillager ? targetVillager.avatar : (roleName.includes('村民') ? '👵' : '🤖');
@@ -175,7 +172,6 @@ async function sendSimulateMessage(sessionId, text, container, typingIndicator, 
     if (data.strategyTip) showTip(data.strategyTip);
     updateSidebarStatus(data, targetVillager?.name);
     scrollSimulate();
-
     if (data.timeExpired) {
       alert('时间到！模拟结束。');
       document.getElementById('finishSimulateBtn')?.click();
@@ -236,7 +232,7 @@ async function startPollingStatus(sessionId) {
   }, 3000);
 }
 
-// ==================== 场景列表（增强模式切换预览） ====================
+// ==================== 场景列表 ====================
 export async function renderSimulateView(forceList = false) {
   if (forceList || !appState.currentSessionId || appState.sessions.find(s => s.id === appState.currentSessionId)?.type !== 'simulate') {
     const res = await fetchWithAuth('/api/simulate/scenarios');
@@ -286,8 +282,6 @@ export async function renderSimulateView(forceList = false) {
     });
     html += `</div>`;
     document.getElementById('dynamicContent').innerHTML = html;
-
-    // 为每个卡片的模式选择添加切换预览事件
     document.querySelectorAll('.scenario-card').forEach(card => {
       const modeSelect = card.querySelector('.mode-select');
       const singlePreview = card.querySelector('.single-preview');
@@ -302,7 +296,6 @@ export async function renderSimulateView(forceList = false) {
         }
       });
     });
-
     document.querySelectorAll('.start-simulate').forEach(btn => {
       btn.onclick = () => {
         const card = btn.closest('.scenario-card');
@@ -316,13 +309,11 @@ export async function renderSimulateView(forceList = false) {
     setActiveNavByView('simulate');
     return;
   }
-
   const sessionRes = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
   const session = await sessionRes.json();
   renderSimulateChat(session);
 }
 
-// ==================== 开始模拟 ====================
 async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit = null) {
   try {
     simulateMode = mode;
@@ -333,7 +324,6 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-
     const sessionRes = await fetchWithAuth(`/api/session/${data.sessionId}`);
     const session = await sessionRes.json();
     if (!session.messages) session.messages = [];
@@ -342,18 +332,11 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
     renderSessionList();
     appState.currentSessionId = data.sessionId;
     appState.currentView = 'simulate';
-
-    // 根据模式初始化村民列表
     if (mode === 'multi') {
       const multiConfig = scenarioMultiConfig[scenarioId];
       if (multiConfig && multiConfig.villagers) {
-        currentMultiVillagers = multiConfig.villagers.map(v => ({
-          ...v,
-          satisfaction: 50,
-          emotion: 'neutral'
-        }));
+        currentMultiVillagers = multiConfig.villagers.map(v => ({ ...v, satisfaction: 50, emotion: 'neutral' }));
       } else {
-        // 默认村民
         currentMultiVillagers = [
           { id: 'v1', name: '村民甲', avatar: '👤', personality: '普通', coreDemand: '', initialStance: '中立', satisfaction: 50, emotion: 'neutral' },
           { id: 'v2', name: '村民乙', avatar: '👤', personality: '普通', coreDemand: '', initialStance: '中立', satisfaction: 50, emotion: 'neutral' },
@@ -365,7 +348,6 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
       currentMultiVillagers = [];
       currentTargetVillager = null;
     }
-
     renderSimulateChat(session);
     startPollingStatus(data.sessionId);
     startRandomEvents(data.sessionId);
@@ -374,11 +356,9 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
   }
 }
 
-// ==================== 渲染模拟聊天界面（含开场白系统消息） ====================
 export async function renderSimulateChat(session) {
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (eventInterval) clearInterval(eventInterval);
-
   const scenariosRes = await fetchWithAuth('/api/simulate/scenarios');
   const scenarios = await scenariosRes.json();
   const scenario = scenarios.find(s => s.id === (JSON.parse(session.scenarioId || '{}').scenarioId || session.scenarioId));
@@ -388,26 +368,18 @@ export async function renderSimulateChat(session) {
     setActiveNavByView('simulate');
     return;
   }
-
   let extra = {};
   if (session.scenarioId) {
     try { extra = JSON.parse(session.scenarioId); } catch(e) { extra = { stages: [], satisfaction: 50, villagersState: {} }; }
   }
   const satisfaction = extra.satisfaction || 50;
   const villagersState = extra.villagersState || {};
-
   let currentMode = simulateMode;
   let villagers = [];
-  let systemOpening = ''; // 开场白
-
+  let systemOpening = '';
   if (currentMode === 'multi' && currentMultiVillagers.length) {
-    villagers = currentMultiVillagers.map(v => ({
-      ...v,
-      satisfaction: villagersState[v.name]?.satisfaction ?? 50,
-      emotion: villagersState[v.name]?.emotion ?? 'neutral'
-    }));
+    villagers = currentMultiVillagers.map(v => ({ ...v, satisfaction: villagersState[v.name]?.satisfaction ?? 50, emotion: villagersState[v.name]?.emotion ?? 'neutral' }));
     if (!currentTargetVillager && villagers.length) currentTargetVillager = villagers[0];
-    // 构建开场白
     const config = scenarioMultiConfig[scenario.id];
     if (config) {
       systemOpening = `🏛️ 【场景介绍】${config.description}\n👥 参会人员：${config.villagers.map(v => v.name).join('、')}\n📌 目标：${scenario.goal}\n💬 请开始你的调解/对话。`;
@@ -420,7 +392,6 @@ export async function renderSimulateChat(session) {
     currentTargetVillager = null;
     systemOpening = `🏛️ 【场景介绍】${scenario.description}\n👤 对话角色：${scenario.role}\n📌 目标：${scenario.goal}\n💬 请开始你的对话。`;
   }
-
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="simulate-view" style="display:flex; flex-direction:column; height:100%;">
@@ -439,26 +410,24 @@ export async function renderSimulateChat(session) {
         </div>
         <div style="font-size:0.75rem; color:#888; margin-top:4px;">${escapeHtml(scenario.description)}</div>
       </div>
-
       <div style="display:flex; flex:1; overflow:hidden;">
         ${currentMode === 'multi' ? `
-        <div class="simulate-villager-sidebar" style="width:160px; background:#f5f5f5; border-right:1px solid #ddd; overflow-y:auto; padding:8px;">
-          <h4 style="text-align:center; margin-bottom:8px;">👥 村民</h4>
-          <div id="villagerList">
-            ${villagers.map(v => `
-              <div class="villager-item" data-name="${v.name}" style="padding:8px; margin-bottom:8px; background:white; border-radius:12px; cursor:pointer; text-align:center; ${currentTargetVillager && currentTargetVillager.name === v.name ? 'border:2px solid #2e5d34;' : 'border:1px solid #eee;'}">
-                <div style="font-size:1.8rem;">${v.avatar}</div>
-                <div style="font-weight:bold;">${escapeHtml(v.name)}</div>
-                <div class="villager-satisfaction" style="font-size:0.7rem;">满意度: ${v.satisfaction}%</div>
-                <div class="villager-emotion" style="font-size:0.7rem;">${getEmotionIcon(v.emotion)}</div>
-                <div class="satisfaction-bar" style="background:#eee; border-radius:4px; height:4px; margin-top:4px;"><div class="satisfaction-fill" style="width:${v.satisfaction}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>
-                <div class="villager-core" style="font-size:0.65rem; color:#666; margin-top:4px;">💬 ${escapeHtml(v.coreDemand || '')}</div>
-              </div>
-            `).join('')}
+          <div class="simulate-villager-sidebar" style="width:160px; background:#f5f5f5; border-right:1px solid #ddd; overflow-y:auto; padding:8px;">
+            <h4 style="text-align:center; margin-bottom:8px;">👥 村民</h4>
+            <div id="villagerList">
+              ${villagers.map(v => `
+                <div class="villager-item" data-name="${v.name}" style="padding:8px; margin-bottom:8px; background:white; border-radius:12px; cursor:pointer; text-align:center; ${currentTargetVillager && currentTargetVillager.name === v.name ? 'border:2px solid #2e5d34;' : 'border:1px solid #eee;'}">
+                  <div style="font-size:1.8rem;">${v.avatar}</div>
+                  <div style="font-weight:bold;">${escapeHtml(v.name)}</div>
+                  <div class="villager-satisfaction" style="font-size:0.7rem;">满意度: ${v.satisfaction}%</div>
+                  <div class="villager-emotion" style="font-size:0.7rem;">${getEmotionIcon(v.emotion)}</div>
+                  <div class="satisfaction-bar" style="background:#eee; border-radius:4px; height:4px; margin-top:4px;"><div class="satisfaction-fill" style="width:${v.satisfaction}%; background:#4caf50; height:4px; border-radius:4px;"></div></div>
+                  <div class="villager-core" style="font-size:0.65rem; color:#666; margin-top:4px;">💬 ${escapeHtml(v.coreDemand || '')}</div>
+                </div>
+              `).join('')}
+            </div>
           </div>
-        </div>
         ` : ''}
-
         <div class="simulate-chat-container" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
           <div id="simulateMessagesContainer" style="flex:1; overflow-y:auto; padding:16px;">
             <div id="simulateMessages"></div>
@@ -476,8 +445,6 @@ export async function renderSimulateChat(session) {
       </div>
     </div>
   `;
-
-  // 绑定事件
   document.getElementById('backToListBtn').onclick = () => renderSimulateView(true);
   const finishBtn = document.getElementById('finishSimulateBtn');
   const hintBtn = document.getElementById('hintBtn');
@@ -486,31 +453,19 @@ export async function renderSimulateChat(session) {
   const voiceBtn = document.getElementById('simulateVoiceBtn');
   const typingIndicator = document.getElementById('simulateTyping');
   const messagesContainer = document.getElementById('simulateMessages');
-
   const sendMessage = async () => {
     const text = input.value.trim();
     if (!text || isTyping) return;
     input.value = '';
     input.style.height = 'auto';
     let target = null;
-    if (currentMode === 'multi' && currentTargetVillager) {
-      target = currentTargetVillager;
-    }
+    if (currentMode === 'multi' && currentTargetVillager) target = currentTargetVillager;
     await sendSimulateMessage(session.id, text, messagesContainer, typingIndicator, scenario.role, target);
   };
   sendBtn.onclick = sendMessage;
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !isTyping) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-  input.addEventListener('input', () => {
-    input.style.height = 'auto';
-    input.style.height = Math.min(80, input.scrollHeight) + 'px';
-  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } });
+  input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(80, input.scrollHeight) + 'px'; });
   setupVoiceInput(input, voiceBtn);
-
   if (currentMode === 'multi') {
     document.querySelectorAll('.villager-item').forEach(el => {
       el.onclick = () => {
@@ -522,9 +477,6 @@ export async function renderSimulateChat(session) {
       };
     });
   }
-
-  // 显示历史消息（先显示系统开场白，再显示已有消息）
-  // 检查是否已有系统消息，如果没有则手动添加开场白
   const hasSystemMsg = session.messages.some(m => m.role === 'system');
   if (!hasSystemMsg && systemOpening) {
     const sysDiv = document.createElement('div');
@@ -532,11 +484,9 @@ export async function renderSimulateChat(session) {
     sysDiv.innerHTML = `<div class="simulate-message-bubble" style="background:#e3f2fd; color:#1565c0;">📢 ${escapeHtml(systemOpening)}</div>`;
     messagesContainer.appendChild(sysDiv);
   }
-  // 显示其他消息（去重避免重复显示开场白）
   let lastMsgContent = '';
   session.messages.forEach(msg => {
     if (msg.role === 'system') {
-      // 如果已有系统消息且内容相似，跳过避免重复
       if (msg.content === systemOpening) return;
       const sysDiv = document.createElement('div');
       sysDiv.className = 'simulate-message system';
@@ -553,7 +503,6 @@ export async function renderSimulateChat(session) {
       speakerName = '村官';
       speakerAvatar = '👨‍🌾';
     } else {
-      // 尝试解析发言人
       const colonIndex = msg.content.indexOf('：');
       if (colonIndex > 0 && colonIndex < 30) {
         speakerName = msg.content.substring(0, colonIndex);
@@ -568,33 +517,19 @@ export async function renderSimulateChat(session) {
       else if (msg.content.includes('难过')) emotion = 'sad';
     }
     const displayContent = msg.displayContent || msg.content;
-    const msgDiv = createSimulateMessageElement(
-      msg.role === 'user' ? 'user' : 'assistant',
-      speakerName,
-      speakerAvatar,
-      displayContent,
-      emotion,
-      undefined,
-      msg.messageId
-    );
+    const msgDiv = createSimulateMessageElement(msg.role === 'user' ? 'user' : 'assistant', speakerName, speakerAvatar, displayContent, emotion, undefined, msg.messageId);
     messagesContainer.appendChild(msgDiv);
   });
   scrollSimulate();
-
-  // 智能提示
   let debounceTimer;
   input.addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       const text = e.target.value.trim();
-      if (text.length < 3) {
-        document.getElementById('inputTip').innerHTML = '';
-        return;
-      }
+      if (text.length < 3) { document.getElementById('inputTip').innerHTML = ''; return; }
       try {
         const res = await fetchWithAuth('/api/simulate/analyze-input', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, scenarioId: scenario.id })
         });
         const data = await res.json();
@@ -603,18 +538,19 @@ export async function renderSimulateChat(session) {
       } catch(e) { console.warn(e); }
     }, 800);
   });
-
   finishBtn.onclick = async () => {
     if (isTyping) return;
     finishBtn.disabled = true;
     try {
       const res = await fetchWithAuth('/api/simulate/finish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: session.id })
       });
       const reportData = await res.json();
       if (!res.ok) throw new Error(reportData.error);
+      if (reportData.finalScore >= 80) {
+        showCelebration(window.innerWidth/2, window.innerHeight/2);
+      }
       const sRes = await fetchWithAuth(`/api/session/${session.id}`);
       const updated = await sRes.json();
       const idx = appState.sessions.findIndex(s => s.id === session.id);
@@ -628,7 +564,6 @@ export async function renderSimulateChat(session) {
       finishBtn.disabled = false;
     }
   };
-
   hintBtn.onclick = async () => {
     if (isTyping) return;
     hintBtn.disabled = true;
@@ -639,8 +574,7 @@ export async function renderSimulateChat(session) {
     scrollSimulate();
     try {
       const res = await fetchWithAuth('/api/chat/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: session.id })
       });
       const data = await res.json();
@@ -656,6 +590,5 @@ export async function renderSimulateChat(session) {
       scrollSimulate();
     }
   };
-
   setActiveNavByView('simulate');
 }

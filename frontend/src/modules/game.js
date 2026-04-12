@@ -1,7 +1,7 @@
 // frontend/src/modules/game.js
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
-import { escapeHtml, playSound, addPoints, updateTaskProgress, setActiveNavByView } from '../utils/helpers';
+import { escapeHtml, playSound, addPoints, updateTaskProgress, setActiveNavByView, showCelebration } from '../utils/helpers';
 
 // 全局状态
 let currentThemes = [];
@@ -278,7 +278,6 @@ function renderGenericQuiz(config) {
             return;
           }
         }
-        // 高亮正确/错误选项（仅选择题和判断题）
         if (!isSort && !isFill) {
           const opts = document.querySelectorAll('.quiz-option-item');
           const correctIndex = q.answer;
@@ -290,7 +289,6 @@ function renderGenericQuiz(config) {
         } else if (isSort && correctLabel) {
           feedbackDiv.innerHTML += `<div class="sort-correct-order">正确顺序：${escapeHtml(correctLabel)}</div>`;
         }
-        // 更新按钮显示
         const prevBtn = document.getElementById('quizPrevBtn');
         const nextBtn = document.getElementById('quizNextBtn');
         const finishBtn = document.getElementById('quizFinishBtn');
@@ -322,6 +320,7 @@ function renderGenericQuiz(config) {
     };
   }
 }
+
 // ==================== 每日一练 ====================
 async function startDailyQuiz() {
   const startBtn = document.getElementById('startDailyBtn');
@@ -825,6 +824,7 @@ async function finishMemoryGame() {
   alert(`🎉 游戏完成！得分：${memoryGameScore}，步数：${memoryGameMoves}，用时：${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}，获得 ${data.rewardPoints} 积分`);
   addPoints(data.rewardPoints, '翻牌配对');
   await updateTaskProgress('memory', 1);
+  showCelebration(window.innerWidth/2, window.innerHeight/2);
   memoryGameActive = false;
   renderGameView();
 }
@@ -1137,7 +1137,10 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
       body: JSON.stringify({ themeId, score: totalScore / 10, total })
     });
     if (reward) addPoints(reward, '趣味闯关');
-    if (passed) await updateTaskProgress('fun', 1);
+    if (passed) {
+      await updateTaskProgress('fun', 1);
+      showCelebration(window.innerWidth/2, window.innerHeight/2);
+    }
     alert(`闯关结束！得分 ${totalScore/10}/${total}，${passed ? '通关成功！' : '再接再厉！'}${reward ? ` 获得 ${reward} 积分` : ''}`);
   };
 

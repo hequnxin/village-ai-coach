@@ -1,7 +1,7 @@
 // frontend/src/modules/meeting.js
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
-import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
+import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration } from '../utils/helpers';
 
 // ==================== 预设会议模板（5个主题） ====================
 const presetTemplates = {
@@ -20,7 +20,6 @@ const presetTemplates = {
     ],
     systemOpening: '🏛️ 欢迎参加【人居环境整治】专题会议。目前村内垃圾乱倒、柴草乱堆问题突出，村民投诉较多。今天的任务是：讨论并通过一份可行的整治方案。请您作为主持人，引导大家发言。'
   },
-  
   '土地流转协调': {
     description: '村东头50亩连片耕地，部分村民想流转给种植大户，但少数村民担心失去土地不愿意。需要协调矛盾，达成流转协议。',
     agenda: [
@@ -140,7 +139,6 @@ function appendMeetingMessage(role, name, avatar, content) {
   container.appendChild(msgDiv);
   container.scrollTop = container.scrollHeight;
 
-  // 保存到会话消息记录
   if (currentMeeting) {
     const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
     if (session) {
@@ -182,7 +180,6 @@ async function sendSystemMessage(sessionId, content) {
   return res.ok;
 }
 
-// 自动更新村民立场（核心新增：讨论中自动变化）
 function updateVillagerStance(villager, newValue) {
   if (!villager) return;
   villager.stanceValue = Math.max(0, Math.min(1, newValue));
@@ -234,7 +231,6 @@ function updateMeetingUI() {
   }
 }
 
-// 自动村民发言（简短）+ 立场动态变化
 async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   try {
     const res = await fetchWithAuth('/api/meeting/chat', {
@@ -248,15 +244,12 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
       })
     });
     const data = await res.json();
-
-    // 🔥 核心新增：村民立场自动变化
     if (data.stanceValue !== undefined) {
       updateVillagerStance(villager, data.stanceValue);
     }
     if (data.satisfaction !== undefined && currentMeeting) {
       currentMeeting.satisfaction = data.satisfaction;
     }
-
     return data.reply || `${villager.name}：我没什么意见。`;
   } catch(e) {
     console.error('自动发言失败', e);
@@ -264,15 +257,12 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   }
 }
 
-// 轮流发言（开场白后自动触发）
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType) {
   roundRobinInProgress = true;
   meetingStage = 'roundRobin';
   updateMeetingUI();
-
   await sendSystemMessage(sessionId, systemOpening);
   await delay(1000);
-
   let lastMessage = systemOpening;
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
@@ -281,7 +271,6 @@ async function startRoundRobin(sessionId, villagers, systemOpening, meetingType)
     lastMessage = reply;
     await delay(1500);
   }
-
   roundRobinInProgress = false;
   meetingStage = 'discussion';
   updateMeetingUI();
@@ -299,8 +288,6 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     });
     const data = await res.json();
     const sessionId = data.sessionId;
-
-    // 保存会议完整配置到会话（永久记录）
     const session = {
       id: sessionId,
       title: topic,
@@ -314,12 +301,10 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
         isFinished: false
       })
     };
-
     appState.sessions.unshift(session);
     const { renderSessionList } = await import('./ui');
     renderSessionList();
     await switchSession(sessionId);
-
     currentMeeting = {
       sessionId, villagers: roles, agenda,
       currentAgendaIndex: 0, votes: {},
@@ -330,10 +315,8 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     votingInProgress = false;
     votesReceived = {};
     currentMeetingType = meetingType;
-
     renderMeetingChatArea();
     startMeetingPolling(sessionId);
-
     if (isPreset && presetTemplates[topic]) {
       let opening = presetTemplates[topic].systemOpening;
       if (meetingType === 'cadre') opening = opening.replace(/村民/g, '村干部');
@@ -445,7 +428,6 @@ function renderMeetingChatArea() {
       </div>
     </div>
     <button id="toggleSidebarBtn" style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#2e5d34; color:white; border:none; border-radius:20px; padding:8px 16px; z-index:999; display:none;">📋 参会人员</button>
-
     <style>
       @media(max-width:768px){
         .meeting-layout{flex-direction:column !important;}
@@ -459,10 +441,8 @@ function renderMeetingChatArea() {
       .stance-neutral{color:#ff9800;}
     </style>
   `;
-
   renderMeetingVillagers();
   updateMeetingUI();
-
   const meetingInput = document.getElementById('meetingInput');
   const sendBtn = document.getElementById('sendMeetingBtn');
   const exitBtn = document.getElementById('exitMeetingBtn');
@@ -476,8 +456,6 @@ function renderMeetingChatArea() {
   const refreshTipBtn = document.getElementById('refreshTipBtn');
   const closeTipBtn = document.getElementById('closeTipBtn');
   const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
-
-  // 移动端侧边栏开关
   if (toggleSidebarBtn) {
     toggleSidebarBtn.onclick = () => {
       const sidebar = document.getElementById('meetingSidebar');
@@ -488,7 +466,6 @@ function renderMeetingChatArea() {
       }
     };
   }
-
   if (refreshTipBtn) {
     refreshTipBtn.onclick = () => {
       const randomTip = meetingTips[Math.floor(Math.random() * meetingTips.length)];
@@ -501,7 +478,6 @@ function renderMeetingChatArea() {
       tipContainer.style.display = 'none';
     };
   }
-
   sendBtn.onclick = () => sendMeetingMessage(meetingInput.value.trim(), false);
   meetingInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(meetingInput.value.trim(), false); } };
   exitBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
@@ -509,7 +485,6 @@ function renderMeetingChatArea() {
   exportBtn.onclick = () => exportMeetingMinutes();
   nextAgendaBtn.onclick = () => nextAgenda();
   voteBtn.onclick = () => startVoting();
-
   if (voiceBtn) setupVoiceInput(meetingInput, voiceBtn);
   setActiveNavByView('meeting');
   loadMeetingHistory();
@@ -538,7 +513,6 @@ function renderMeetingVillagers() {
         </div>
       </div>
     `;
-
     card.onclick = async () => {
       currentMeeting.activeVillagerId = v.id;
       document.querySelectorAll('.villager-card').forEach(c => c.classList.remove('active'));
@@ -560,7 +534,6 @@ function renderMeetingVillagers() {
   }
 }
 
-// 加载历史会议记录
 async function loadMeetingHistory() {
   const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
   if (session && session.messages) {
@@ -588,7 +561,6 @@ async function loadMeetingHistory() {
   }
 }
 
-// 发送消息
 async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null) {
   if (!text || meetingTyping) return;
   const input = document.getElementById('meetingInput');
@@ -606,8 +578,6 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
     const data = await res.json();
     const reply = data.reply || '嗯...我再想想。';
     appendMeetingMessage('assistant', activeVillager.name, activeVillager.avatar, reply);
-
-    // 🔥 村民立场实时更新
     if (data.stanceValue !== undefined) {
       updateVillagerStance(activeVillager, data.stanceValue);
     }
@@ -615,7 +585,6 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
       currentMeeting.satisfaction = data.satisfaction;
       updateMeetingUI();
     }
-
     playSound('send');
     updateTaskProgress('meeting', 1);
   } catch(err) {
@@ -626,7 +595,6 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
   }
 }
 
-// 发起投票
 async function startVoting() {
   if (votingInProgress || meetingStage !== 'discussion') return;
   const currentAgenda = currentMeeting.agenda[currentAgendaIndex];
@@ -715,7 +683,6 @@ async function nextAgenda() {
   await sendSystemMessage(currentMeeting.sessionId, `📌 进入下一议程：${currentMeeting.agenda[currentAgendaIndex].name}`);
 }
 
-// 结束会议 + 保存纪要
 async function finishMeeting() {
   if (!confirm('结束会议并生成会议纪要？')) return;
   try {
@@ -725,8 +692,6 @@ async function finishMeeting() {
       body: JSON.stringify({ sessionId: currentMeeting.sessionId })
     });
     const data = await res.json();
-
-    // 保存会议纪要到会话
     const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
     if (session && data.summary) {
       session.minutes = data.summary;
@@ -737,10 +702,12 @@ async function finishMeeting() {
         finalScore: data.finalScore || 0
       });
     }
-
     if (data.summary) {
       showMeetingResolution(data.summary);
       alert(`会议结束！最终得分：${data.finalScore || 0} / 100`);
+      if (data.finalScore >= 80) {
+        showCelebration(window.innerWidth/2, window.innerHeight/2);
+      }
     } else {
       alert('会议纪要生成失败');
     }
@@ -751,7 +718,6 @@ async function finishMeeting() {
   }
 }
 
-// 导出会议纪要（TXT文件）
 function exportMeetingMinutes() {
   const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
   if (!session || !session.minutes) {
@@ -773,7 +739,6 @@ ${m.minutes || ''}
 
 改进建议：${m.suggestions || '无'}
   `.trim();
-
   const blob = new Blob([content], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -841,13 +806,11 @@ export async function renderMeetingSetupView() {
       <button id="startMeetingBtn" style="width:100%; padding:12px; background:#2e5d34; color:white; border:none; border-radius:8px; font-size:1rem; font-weight:bold;">开始会议</button>
     </div>
   `;
-
   const typeSelect = document.getElementById('meetingTypeSelect');
   const topicSelect = document.getElementById('meetingTopicSelect');
   const customInput = document.getElementById('customTopicInput');
   const agendaInput = document.getElementById('agendaInput');
   const rolesInput = document.getElementById('customRolesInput');
-
   typeSelect.addEventListener('change', () => {
     if (!rolesInput.value.trim()) {
       const defaultRoles = defaultRolesByType[typeSelect.value];
@@ -857,7 +820,6 @@ export async function renderMeetingSetupView() {
       }
     }
   });
-
   topicSelect.addEventListener('change', () => {
     const selected = topicSelect.value;
     agendaInput.value = '';
@@ -871,7 +833,6 @@ export async function renderMeetingSetupView() {
       customInput.style.display = 'block';
     }
   });
-
   if (!rolesInput.value.trim()) {
     const defaultRoles = defaultRolesByType[typeSelect.value];
     if (defaultRoles) {
@@ -879,7 +840,6 @@ export async function renderMeetingSetupView() {
       rolesInput.value = rolesText;
     }
   }
-
   document.getElementById('startMeetingBtn').onclick = async () => {
     const meetingType = typeSelect.value;
     let topic = topicSelect.value;

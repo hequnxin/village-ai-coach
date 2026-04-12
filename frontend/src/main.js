@@ -9,7 +9,7 @@ import { renderKnowledgeView } from './modules/knowledge';
 import { renderProfileView } from './modules/profile';
 import { renderGameView } from './modules/game';
 import { setupSessionTabs } from './modules/ui';
-import { initDailyTasks, initParticles, setupGlobalEventListeners, setActiveNavByView } from './utils/helpers';
+import { initDailyTasks, initParticles, setupGlobalEventListeners, setActiveNavByView, bindRippleEffect } from './utils/helpers';
 
 // 移动端底部导航
 function initBottomNav() {
@@ -133,11 +133,22 @@ export async function initApp() {
   await loadSessions();
   await loadMessageFavorites();
   await loadLevelProgress();
-  await initDailyTasks();   // 异步加载每日任务
+  await initDailyTasks();
   initParticles();
   setupGlobalEventListeners();
   setupSessionTabs();
   initBottomNav();
+  bindRippleEffect();  // 全局按钮涟漪效果
+
+  // 监听动态内容变化，重新绑定涟漪（确保新渲染的按钮也有特效）
+  const observer = new MutationObserver(() => {
+    bindRippleEffect();
+  });
+  const dynamicContent = document.getElementById('dynamicContent');
+  if (dynamicContent) {
+    observer.observe(dynamicContent, { childList: true, subtree: true });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDraggableMenu);
   } else {

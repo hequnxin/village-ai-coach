@@ -4,28 +4,17 @@ const { v4: uuidv4 } = require('uuid');
 
 // ==================== 积分常量 ====================
 const POINTS = {
-  // 每日一练
   DAILY_QUIZ_PER_QUESTION: 5,
   DAILY_QUIZ_BONUS_FULL: 10,
-  // 趣味闯关
   FUN_LEVEL_PASS: 30,
-  // 每周竞赛
   WEEKLY_CONTEST_PER_CORRECT: 3,
-  // 翻牌配对
   MEMORY_GAME_BASE_SCORE_DIVISOR: 20,
-  // 错题本
   WRONG_CLEAR_PER_QUESTION: 5,
-  // 对话
   CHAT_MESSAGE: 5,
-  // 收藏消息
   FAVORITE_MESSAGE: 1,
-  // 收藏会话
   FAVORITE_SESSION: 2,
-  // 知识上传被采纳
   KNOWLEDGE_APPROVED: 10,
-  // 每日任务奖励（单任务基础奖励）
   DAILY_TASK_REWARD: 10,
-  // 每日任务全部完成额外奖励
   DAILY_TASK_BONUS_ALL: 30
 };
 
@@ -40,19 +29,32 @@ async function addPoints(userId, points, reason) {
 
 // ==================== 每日任务配置 ====================
 const DEFAULT_TASKS = [
-  { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 10, type: 'chat' },
-  { id: 2, name: '完成1次趣味闯关', target: 1, current: 0, reward: 15, type: 'fun' },
-  { id: 3, name: '完成每日一练', target: 1, current: 0, reward: 10, type: 'daily_quiz' },
-  { id: 4, name: '完成1次翻牌配对', target: 1, current: 0, reward: 10, type: 'memory' },
-  { id: 5, name: '参加每周竞赛', target: 1, current: 0, reward: 15, type: 'contest' }
+  { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 10, type: 'chat', completed: false },
+  { id: 2, name: '完成1次趣味闯关', target: 1, current: 0, reward: 15, type: 'fun', completed: false },
+  { id: 3, name: '完成每日一练', target: 1, current: 0, reward: 10, type: 'daily_quiz', completed: false },
+  { id: 4, name: '完成1次翻牌配对', target: 1, current: 0, reward: 10, type: 'memory', completed: false },
+  { id: 5, name: '参加每周竞赛', target: 1, current: 0, reward: 15, type: 'contest', completed: false }
 ];
+
+// 辅助函数：安全解析 task_data
+function parseTaskData(data) {
+  if (!data) return DEFAULT_TASKS.map(t => ({ ...t, current: 0, completed: false }));
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      console.error('解析 task_data 失败，使用默认任务', e);
+      return DEFAULT_TASKS.map(t => ({ ...t, current: 0, completed: false }));
+    }
+  }
+  // 已经是对象
+  return data;
+}
 
 // ==================== 每日任务业务逻辑 ====================
 
 /**
  * 获取或创建用户当日的每日任务记录
- * @param {string} userId
- * @returns {Promise<{ id: number, tasks: Array, completed: boolean, reward_claimed: boolean }>}
  */
 async function getOrCreateDailyTasks(userId) {
   const today = new Date().toISOString().slice(0, 10);
@@ -73,7 +75,7 @@ async function getOrCreateDailyTasks(userId) {
   }
   return {
     id: row.id,
-    tasks: JSON.parse(row.task_data),
+    tasks: parseTaskData(row.task_data),
     completed: row.completed === 1,
     reward_claimed: row.reward_claimed === 1
   };
@@ -81,10 +83,6 @@ async function getOrCreateDailyTasks(userId) {
 
 /**
  * 更新用户某类任务的进度
- * @param {string} userId
- * @param {string} taskType - 'chat', 'fun', 'daily_quiz', 'memory', 'contest'
- * @param {number} delta - 增量，默认1
- * @returns {Promise<{ updated: boolean, allCompleted: boolean, tasks: Array }>}
  */
 async function updateTaskProgress(userId, taskType, delta = 1) {
   const { id, tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
@@ -110,8 +108,6 @@ async function updateTaskProgress(userId, taskType, delta = 1) {
 
 /**
  * 领取每日任务奖励
- * @param {string} userId
- * @returns {Promise<{ success: boolean, points?: number, message?: string }>}
  */
 async function claimDailyReward(userId) {
   const { id, tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
@@ -129,8 +125,6 @@ async function claimDailyReward(userId) {
 
 /**
  * 获取用户当日的任务列表及状态（供前端使用）
- * @param {string} userId
- * @returns {Promise<{ tasks: Array, completed: boolean, reward_claimed: boolean }>}
  */
 async function getUserDailyTasks(userId) {
   const { tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
@@ -139,9 +133,7 @@ async function getUserDailyTasks(userId) {
 
 // ==================== 导出 ====================
 module.exports = {
-  // 常量
   ...POINTS,
-  // 函数
   addPoints,
   getOrCreateDailyTasks,
   updateTaskProgress,

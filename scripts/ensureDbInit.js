@@ -55,6 +55,20 @@ async function ensureMissingTables() {
   `);
   console.log('✅ simulate_mistakes 表已确保存在');
 
+  // 确保 daily_tasks 表存在（新增）
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS daily_tasks (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      task_date DATE NOT NULL,
+      task_data JSONB NOT NULL,
+      completed BOOLEAN DEFAULT FALSE,
+      reward_claimed BOOLEAN DEFAULT FALSE,
+      UNIQUE(user_id, task_date)
+    )
+  `);
+  console.log('✅ daily_tasks 表已确保存在');
+
   // 清理无效的每日一练题目关联
   await db.run(`
     DELETE FROM daily_quiz_questions
@@ -74,7 +88,6 @@ async function fixQuizQuestions() {
     console.log(`✅ 已有 ${count.c} 道选择题，跳过生成`);
   }
 
-  // 检查填空题数量
   const fillCount = await db.get(`SELECT COUNT(*) as c FROM fill_questions`);
   if (fillCount.c < 30) {
     console.log(`⚠️ 填空题数量不足 (${fillCount.c}/30)，开始补充生成...`);
@@ -97,7 +110,7 @@ async function addSourceCategoryColumn() {
 async function ensureWrongQuestionsColumn() {
   try {
     const columnCheck = await db.get(`
-      SELECT column_name FROM information_schema.columns 
+      SELECT column_name FROM information_schema.columns
       WHERE table_name = 'wrong_questions' AND column_name = 'question_type'
     `);
     if (!columnCheck) {
@@ -118,14 +131,11 @@ async function ensureWrongQuestionsColumn() {
     try {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
-
       await addSourceCategoryColumn();
       await ensureMissingTables();
       await ensureWrongQuestionsColumn();
-
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
-
       if (!themesExist || !quizExist) {
         console.log('⚠️ 缺失关键表，执行完整初始化...');
         const initDb = require('./initDb');
@@ -136,7 +146,6 @@ async function ensureWrongQuestionsColumn() {
         await fixQuizQuestions();
         console.log('✅ 趣味闯关已启用主题模式');
       }
-
       console.log('✅ 数据库准备就绪');
       initialized = true;
       break;

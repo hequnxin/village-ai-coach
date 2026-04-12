@@ -1,7 +1,7 @@
 // frontend/src/modules/chat.js
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
-import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput, setActiveNavByView } from '../utils/helpers';
+import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput, setActiveNavByView, flyPaperAirplane } from '../utils/helpers';
 import { renderSessionList } from './ui';
 
 let isTyping = false;
@@ -158,6 +158,18 @@ async function sendUserMessage(text) {
   messagesDiv.appendChild(userMsgDiv);
   addActionIcons(userMsgDiv, null);
   scrollToBottom();
+
+  // 纸飞机动画
+  const inputRect = document.getElementById('userInput').getBoundingClientRect();
+  const lastMsg = document.querySelector('#messages .message:last-child');
+  if (lastMsg) {
+    const msgRect = lastMsg.getBoundingClientRect();
+    flyPaperAirplane(
+      inputRect.right - 20, inputRect.top,
+      msgRect.left + 20, msgRect.top
+    );
+  }
+
   const typingIndicator = document.getElementById('typingIndicator');
   if (typingIndicator) typingIndicator.classList.remove('hidden');
   setInputEnabled(false);
@@ -178,10 +190,7 @@ async function sendUserMessage(text) {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ sessionId: appState.currentSessionId, message: text })
     });
     if (!response.ok) {
@@ -326,6 +335,7 @@ function showMobileSummaryModal(contentHtml) {
   closeBtn.addEventListener('click', closeModal);
   overlay.addEventListener('click', closeModal);
 }
+
 export async function renderChatView(existingSession = null) {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -368,7 +378,6 @@ export async function renderChatView(existingSession = null) {
       </div>
     </div>
   `;
-
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
   const exportBtn = document.getElementById('exportBtn');
@@ -379,8 +388,6 @@ export async function renderChatView(existingSession = null) {
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
   exportBtn.onclick = exportCurrentChat;
-
-  // 生成摘要逻辑（电脑端显示面板，移动端弹窗）
   summaryBtn.onclick = async () => {
     const sessionId = appState.currentSessionId;
     if (!sessionId) return;
@@ -388,8 +395,7 @@ export async function renderChatView(existingSession = null) {
     summaryBtn.textContent = '生成中...';
     try {
       const res = await fetchWithAuth('/api/chat/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId })
       });
       const data = await res.json();
@@ -401,7 +407,6 @@ export async function renderChatView(existingSession = null) {
       if (summary.suggestions.length) html += `<div><strong>💡 建议</strong><ul>${summary.suggestions.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
       if (summary.references.length) html += `<div><strong>📚 参考</strong><ul>${summary.references.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
       html += `</div>`;
-
       const isMobile = window.innerWidth <= 768;
       if (isMobile) {
         showMobileSummaryModal(html);
@@ -418,18 +423,11 @@ export async function renderChatView(existingSession = null) {
       summaryBtn.textContent = '📋 生成摘要';
     }
   };
-
-  // 关闭电脑端信息面板
   const closeInfoBtn = document.getElementById('closeInfoPanel');
   if (closeInfoBtn) {
-    closeInfoBtn.onclick = () => {
-      const panel = document.getElementById('infoPanel');
-      if (panel) panel.style.display = 'none';
-    };
+    closeInfoBtn.onclick = () => { const panel = document.getElementById('infoPanel'); if (panel) panel.style.display = 'none'; };
   }
-
   setupVoiceInput(userInput, document.getElementById('voiceBtn'));
-
   if (appState.currentSessionId && !existingSession) {
     const res = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
     const session = await res.json();
@@ -441,7 +439,6 @@ export async function renderChatView(existingSession = null) {
     displayMessages(existingSession.messages || []);
     document.getElementById('infoContent').innerHTML = '<div style="color:#888;">点击"生成摘要"获取分析</div>';
   }
-
   document.getElementById('policyQuickSearch')?.addEventListener('click', showPolicyQuickSearch);
   setActiveNavByView('chat');
 }
@@ -524,8 +521,6 @@ export function switchToChat() {
   if (appState.currentSessionId && appState.sessions.find(s => s.id === appState.currentSessionId)?.type === 'chat') {
     renderChatView();
   } else {
-    createNewSession('新会话').then(() => {
-      renderChatView();
-    });
+    createNewSession('新会话').then(() => { renderChatView(); });
   }
 }

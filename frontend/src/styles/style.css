@@ -94,11 +94,12 @@ body {
   border-radius: 30px;
   cursor: pointer;
   font-size: 0.8rem;
-  transition: transform 0.2s, background 0.2s;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .new-session:hover {
   background: rgba(255,255,255,0.3);
-  transform: scale(1.02);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 
 .session-list {
@@ -106,50 +107,72 @@ body {
   overflow-y: auto;
   padding: 10px 8px;
 }
+
+/* 会话分组 */
+.session-group {
+  margin-bottom: 16px;
+}
+.session-group-title {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.6);
+  padding: 8px 12px 4px;
+  letter-spacing: 1px;
+}
+
+/* 会话项（复选框移到右侧） */
 .session-item {
-  padding: 10px 12px;
-  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin: 2px 8px;
   border-radius: 8px;
+  background: rgba(255,255,255,0.05);
   cursor: pointer;
   transition: 0.2s;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(255,255,255,0.05);
-  animation: fadeInUp 0.3s ease-out;
 }
 .session-item:hover {
   background: rgba(255,255,255,0.15);
-  transform: translateX(4px);
+  transform: translateX(2px);
 }
 .session-item.active {
   background: #1f4423;
   font-weight: 500;
 }
 .session-title {
-  font-size: 0.9rem;
+  flex: 1;
+  font-size: 0.85rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  margin-right: 8px;
+}
+.session-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.session-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  margin: 0;
 }
 .favorite-btn, .delete-session {
   background: none;
   border: none;
-  color: rgba(255,255,255,0.6);
+  color: white;
   font-size: 1rem;
   cursor: pointer;
-  padding: 0 4px;
-  transition: color 0.2s, transform 0.1s;
-}
-.favorite-btn:hover, .delete-session:hover {
-  color: white;
-  transform: scale(1.1);
+  padding: 0 2px;
+  line-height: 1;
 }
 .favorite-btn.favorited {
   color: gold;
 }
 
+/* 会话标签页 */
 .session-tabs {
   display: flex;
   border-bottom: 1px solid rgba(255,255,255,0.2);
@@ -190,7 +213,7 @@ body {
   transform: translateX(4px);
 }
 
-/* 任务面板（移动端隐藏） */
+/* 任务面板 */
 .task-panel {
   padding: 12px 16px;
   background: rgba(255,255,255,0.1);
@@ -223,11 +246,55 @@ body {
   transition: width 0.3s;
 }
 
+/* 任务面板可折叠样式 */
+.task-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.task-panel-title {
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+.task-panel-toggle {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.task-panel-toggle:hover {
+  opacity: 0.8;
+}
+
+/* 等级进度条区域 */
 .level-progress-container {
   padding: 12px 16px;
   border-top: 1px solid rgba(255,255,255,0.2);
   border-bottom: 1px solid rgba(255,255,255,0.2);
   margin: 10px 0;
+}
+.level-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+}
+.level-badge {
+  font-weight: bold;
+  background: rgba(255,255,255,0.2);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.points-text {
+  font-size: 0.7rem;
+  opacity: 0.8;
 }
 .level-progress-bar {
   background: rgba(255,255,255,0.3);
@@ -264,6 +331,89 @@ body {
   transform: scale(1.02);
 }
 
+/* 全选栏样式 */
+.session-select-all {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 0 8px 8px 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+.select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.select-all-info {
+  opacity: 0.7;
+}
+
+/* 分组头部可折叠样式 */
+.session-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.group-toggle {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.6);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.group-toggle:hover {
+  color: white;
+}
+
+/* 会话分组内容区 - 动画版本（通过 max-height 实现平滑展开/折叠） */
+.session-group-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 展开时由 JS 动态设置 max-height 为一个足够大的值（如 2000px）或实际内容高度 */
+
+/* 多选删除栏 */
+.multi-delete-bar {
+  position: sticky;
+  bottom: 0;
+  background: #1f4423;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.8rem;
+}
+.multi-delete-bar button {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-left: 8px;
+  cursor: pointer;
+}
+.multi-delete-bar .danger {
+  background: #f44336;
+}
+
+/* 空会话提示 */
+.empty-sessions {
+  padding: 20px;
+  text-align: center;
+  color: rgba(255,255,255,0.5);
+  font-size: 0.8rem;
+}
+
 /* ========== 主内容区 ========== */
 .main-content {
   flex: 1;
@@ -273,6 +423,20 @@ body {
   overflow: hidden;
   position: relative;
   z-index: 2;
+}
+
+/* 动态内容入场动画 */
+.dynamic-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  -webkit-overflow-scrolling: touch;
+  animation: contentGlow 0.3s ease-out;
+  background: #f5f5f5;
+}
+@keyframes contentGlow {
+  0% { opacity: 0; filter: blur(2px); }
+  100% { opacity: 1; filter: blur(0); }
 }
 
 /* ========== 顶部导航 ========== */
@@ -346,15 +510,6 @@ body {
 }
 .bottom-nav-item:hover { transform: translateY(-1px); }
 
-.dynamic-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  -webkit-overflow-scrolling: touch;
-  animation: fadeIn 0.4s ease-out;
-  background: #f5f5f5;
-}
-
 /* ========== 问答界面 ========== */
 .chat-view {
   display: flex;
@@ -406,11 +561,12 @@ body {
   padding: 4px 12px;
   cursor: pointer;
   font-size: 0.8rem;
-  transition: 0.2s;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .summary-btn:hover {
   background: #e4e4e4;
-  transform: scale(1.02);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
 .chat-container {
   flex: 1;
@@ -433,7 +589,11 @@ body {
   word-wrap: break-word;
   white-space: pre-wrap;
   font-size: 15px;
-  animation: fadeInUp 0.3s ease-out;
+  animation: slideInMessage 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+}
+@keyframes slideInMessage {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .message.user {
   align-self: flex-end;
@@ -500,11 +660,12 @@ body {
   padding: 0 20px;
   font-weight: 500;
   cursor: pointer;
-  transition: 0.2s;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
 }
 #sendBtn:hover {
   background: #1f4423;
-  transform: scale(1.02);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 
 /* ========== 知识库界面 ========== */
@@ -545,12 +706,15 @@ body {
   border-radius: 12px;
   padding: 14px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
   animation: fadeInUp 0.3s ease-out;
   position: relative;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
-.knowledge-item:hover { transform: translateY(-1px); }
+.knowledge-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+}
 .knowledge-item .title {
   font-weight: 600;
   color: #2e5d34;
@@ -574,8 +738,12 @@ body {
   padding: 15px;
   margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  transition: 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
   animation: fadeInUp 0.3s ease-out;
+}
+.scenario-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
 }
 
 /* ========== 会议模式界面 ========== */
@@ -620,7 +788,7 @@ body {
   display: flex;
   gap: 10px;
   margin-bottom: 12px;
-  animation: fadeInUp 0.3s ease-out;
+  animation: slideInMessage 0.25s ease-out;
 }
 .meeting-message.user { justify-content: flex-end; }
 .meeting-message .message-avatar { font-size: 1.5rem; }
@@ -701,7 +869,8 @@ body {
   animation: scaleUp 0.3s ease-out;
 }
 .game-module:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
 }
 .module-icon { font-size: 28px; margin-bottom: 8px; }
 .module-title {
@@ -734,12 +903,13 @@ body {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
   width: 100%;
 }
 .module-btn:hover {
   background: #1f4423;
-  transform: scale(1.02);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 /* ========== 趣味闯关主题选择 ========== */
 .fullscreen-fun-selector {
@@ -787,12 +957,13 @@ body {
   width: 140px;
   text-align: center;
   box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
   cursor: pointer;
   animation: scaleUp 0.3s ease-out;
 }
 .fun-theme-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
 }
 .fun-theme-card.completed {
   background: #e8f5e9;
@@ -948,11 +1119,12 @@ body {
   border-radius: 40px;
   font-size: 15px;
   cursor: pointer;
-  transition: 0.2s;
+  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .submit-btn:hover {
   background: #1f4423;
-  transform: scale(1.02);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 .submit-btn.success { background: #4caf50; }
 
@@ -1122,9 +1294,15 @@ body {
     transform: translateY(0);
   }
 }
-@keyframes floatUp {
-  0% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-60px); }
+@keyframes floatUpPoints {
+  0% { opacity: 1; transform: translateY(0) scale(0.8); }
+  50% { transform: translateY(-40px) scale(1.2); }
+  100% { opacity: 0; transform: translateY(-100px) scale(1); }
+}
+@keyframes starBurst {
+  0% { opacity: 1; transform: scale(0) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.2) rotate(180deg); }
+  100% { opacity: 0; transform: scale(0) rotate(360deg); }
 }
 @keyframes bounceIn {
   0% { opacity: 0; transform: translateX(-50%) scale(0.5); }
@@ -1258,7 +1436,7 @@ body {
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
-  animation: fadeInUp 0.3s ease-out;
+  animation: slideInMessage 0.25s ease-out;
 }
 .simulate-message.user { justify-content: flex-end; }
 .simulate-message.user .simulate-message-bubble {
@@ -1340,14 +1518,12 @@ body {
   .simulate-input-area button { padding: 0 12px; }
 }
 
-/* ========== 我的界面优化版（已删除旧样式，保留新版） ========== */
+/* ========== 我的界面优化版 ========== */
 .profile-new {
   max-width: 800px;
   margin: 0 auto;
   padding: 12px;
 }
-
-/* 用户卡片 */
 .profile-user-card {
   background: linear-gradient(135deg, #2e5d34, #1f4423);
   border-radius: 20px;
@@ -1386,8 +1562,6 @@ body {
   font-size: 0.8rem;
   margin-left: auto;
 }
-
-/* 积分卡片 */
 .profile-points-card {
   background: white;
   border-radius: 16px;
@@ -1416,25 +1590,6 @@ body {
   font-weight: bold;
   color: #2e5d34;
 }
-.level-progress-bar {
-  background: #eee;
-  border-radius: 8px;
-  height: 6px;
-  overflow: hidden;
-}
-.level-progress-fill {
-  background: #ff9800;
-  height: 100%;
-  transition: width 0.5s;
-}
-.level-progress-text {
-  font-size: 0.65rem;
-  color: #888;
-  margin-top: 4px;
-  text-align: right;
-}
-
-/* 统计小卡片网格 */
 .stats-mini-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1468,8 +1623,6 @@ body {
   font-weight: bold;
   color: #2e5d34;
 }
-
-/* 功能按钮网格 */
 .action-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
@@ -1497,25 +1650,19 @@ body {
   transform: translateY(-2px);
   box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
-.action-btn-new:after {
+.action-btn-new:active:after {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 0;
-  height: 0;
+  width: 200%;
+  height: 200%;
   border-radius: 50%;
   background: rgba(46, 93, 52, 0.3);
   transform: translate(-50%, -50%);
   transition: width 0.3s, height 0.3s;
 }
-.action-btn-new:active:after {
-  width: 200%;
-  height: 200%;
-}
 .btn-icon { font-size: 1.1rem; }
-
-/* 勋章横向滚动 */
 .badges-container {
   overflow-x: auto;
   white-space: nowrap;
@@ -1571,8 +1718,6 @@ body {
   color: #4caf50;
   margin-top: 4px;
 }
-
-/* 成长曲线容器 */
 .growth-chart-container {
   background: white;
   border-radius: 16px;
@@ -1590,8 +1735,6 @@ body {
   height: auto;
   max-height: 160px;
 }
-
-/* 游戏设置卡片 */
 .settings-card {
   background: white;
   border-radius: 16px;
@@ -1608,8 +1751,6 @@ body {
   cursor: pointer;
   font-size: 0.85rem;
 }
-
-/* 分区标题 */
 .profile-section-title {
   font-size: 0.9rem;
   font-weight: bold;
@@ -1618,8 +1759,6 @@ body {
   padding-left: 4px;
   border-left: 3px solid #2e5d34;
 }
-
-/* 移动端适配 */
 @media (max-width: 768px) {
   .profile-new { padding: 8px; }
   .profile-avatar-large {
@@ -1636,13 +1775,10 @@ body {
   .growth-chart-container { padding: 6px; }
   #growthChart { max-height: 140px; }
 }
-
-/* 吐司提示动画 */
 .toast {
   animation: slideUp 0.3s ease-out;
 }
-
-/* 手机端绿色悬浮按钮相关（已保留原有样式，无需删除） */
+/* 手机端绿色悬浮按钮 */
 @media (max-width: 768px) {
   .sidebar {
     position: fixed !important;
@@ -1679,7 +1815,6 @@ body {
   #menuToggle:active { transform: scale(0.92) !important; }
   .main-content { position: relative !important; z-index: 1 !important; }
 }
-
 /* 手机端隐藏底部导航的会议、案例库 */
 @media (max-width: 768px) {
   .bottom-nav-item[data-view="meeting"],
@@ -1687,7 +1822,6 @@ body {
     display: none !important;
   }
 }
-
 /* 移动端摘要模态框 */
 .mobile-summary-modal {
   position: fixed;
@@ -1743,19 +1877,91 @@ body {
   overflow-y: auto;
   flex: 1;
 }
-/* 优化学习工具和账户管理排版 */
 .action-grid-tools,
 .action-grid-account {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
-.action-btn-new {
-  justify-content: center;
-  padding: 8px 12px;
-  font-size: 0.85rem;
-}
-/* 确保按钮图标和文字不换行 */
 .action-btn-new .btn-icon {
   margin-right: 4px;
+}
+
+/* ========== 特效专用样式 ========== */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  transform: scale(0);
+  animation: rippleAnim 0.6s linear;
+  pointer-events: none;
+}
+@keyframes rippleAnim {
+  to { transform: scale(4); opacity: 0; }
+}
+
+.paper-airplane {
+  position: fixed;
+  font-size: 28px;
+  z-index: 10000;
+  pointer-events: none;
+  transition: all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+.points-float {
+  position: fixed;
+  font-weight: bold;
+  font-size: 1.8rem;
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 10px rgba(255,215,0,0.5);
+  z-index: 10000;
+  pointer-events: none;
+  animation: floatUpPoints 1.2s ease-out forwards;
+}
+
+.celebration-star {
+  position: fixed;
+  font-size: 20px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: starBurst 0.8s ease-out forwards;
+}
+.module-btn,
+.action-btn,
+.new-session,
+.summary-btn {
+  transition:
+          transform 0.2s,
+          box-shadow 0.2s,
+          background 0.2s !important;
+}
+.module-btn:hover,
+.action-btn:hover,
+.new-session:hover,
+.summary-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+.module-btn:active,
+.action-btn:active {
+  transform: translateY(1px);
+}
+
+/* ========== 卡片悬停微动效 ========== */
+.game-module,
+.scenario-card,
+.knowledge-item,
+.fun-theme-card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.game-module:hover,
+.scenario-card:hover,
+.knowledge-item:hover,
+.fun-theme-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }

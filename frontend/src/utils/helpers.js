@@ -85,22 +85,18 @@ export function initParticles() {
   animateParticles();
 }
 
-let currentDailyTasks = [];  // 存储当前任务列表
+let currentDailyTasks = [];
 
-// 初始化每日任务（从后端获取）
 export async function initDailyTasks() {
   try {
     const data = await getDailyTasks();
     currentDailyTasks = data.tasks;
     renderTaskPanel();
-    // 检查是否有已完成但未领取奖励的任务
     if (data.completed && !data.reward_claimed) {
-      // 自动领取奖励？或者显示提示按钮
       showToast('🎉 今日任务全部完成！点击领取奖励', 'success');
     }
   } catch (err) {
     console.error('加载每日任务失败', err);
-    // 降级：使用本地默认任务（但不保存进度）
     currentDailyTasks = [
       { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 10, type: 'chat', completed: false },
       { id: 2, name: '完成1次趣味闯关', target: 1, current: 0, reward: 15, type: 'fun', completed: false },
@@ -115,12 +111,51 @@ export async function initDailyTasks() {
 function renderTaskPanel() {
   const panel = document.getElementById('taskPanel');
   if (!panel) return;
+
+  // 删除可能存在的静态标题
+  const staticTitle = panel.querySelector('h4');
+  if (staticTitle) staticTitle.remove();
+
+  const isCollapsed = localStorage.getItem('taskPanelCollapsed') === 'true';
+
   let taskListDiv = panel.querySelector('#taskList');
   if (!taskListDiv) {
     taskListDiv = document.createElement('div');
     taskListDiv.id = 'taskList';
     panel.appendChild(taskListDiv);
   }
+
+  let header = panel.querySelector('.task-panel-header');
+  if (header) header.remove();
+
+  const completedCount = currentDailyTasks.filter(t => t.completed).length;
+  const totalTasks = currentDailyTasks.length;
+
+  header = document.createElement('div');
+  header.className = 'task-panel-header';
+  header.innerHTML = `
+    <span class="task-panel-title">📋 今日任务 (${completedCount}/${totalTasks})</span>
+    <button class="task-panel-toggle">${isCollapsed ? '▼' : '▲'}</button>
+  `;
+  panel.insertBefore(header, taskListDiv);
+
+  if (isCollapsed) {
+    taskListDiv.style.display = 'none';
+    const claimBtn = document.getElementById('claimDailyRewardBtn');
+    if (claimBtn) claimBtn.style.display = 'none';
+  } else {
+    taskListDiv.style.display = 'block';
+    const claimBtn = document.getElementById('claimDailyRewardBtn');
+    if (claimBtn) claimBtn.style.display = 'block';
+  }
+
+  const toggleBtn = header.querySelector('.task-panel-toggle');
+  toggleBtn.onclick = () => {
+    const newCollapsed = !isCollapsed;
+    localStorage.setItem('taskPanelCollapsed', newCollapsed);
+    renderTaskPanel();
+  };
+
   taskListDiv.innerHTML = '';
   currentDailyTasks.forEach(task => {
     const percent = (task.current / task.target) * 100;
@@ -134,11 +169,10 @@ function renderTaskPanel() {
     if (task.completed) item.style.opacity = '0.6';
     taskListDiv.appendChild(item);
   });
-  // 如果有已完成但未领取奖励，显示领取按钮
+
   const allCompleted = currentDailyTasks.every(t => t.completed);
-  const rewardClaimed = window._dailyRewardClaimed; // 需要从后端获取，简单起见检查是否有领取按钮
-  if (allCompleted && !rewardClaimed) {
-    let claimBtn = document.getElementById('claimDailyRewardBtn');
+  let claimBtn = document.getElementById('claimDailyRewardBtn');
+  if (allCompleted && !window._dailyRewardClaimed) {
     if (!claimBtn) {
       claimBtn = document.createElement('button');
       claimBtn.id = 'claimDailyRewardBtn';
@@ -157,8 +191,8 @@ function renderTaskPanel() {
           if (result.success) {
             showToast(`领取成功！获得 ${result.points} 积分`, 'success');
             claimBtn.remove();
-            // 刷新任务状态
             await initDailyTasks();
+            showCelebration(window.innerWidth/2, window.innerHeight/2);
           } else {
             showToast(result.message || '领取失败', 'error');
           }
@@ -168,9 +202,10 @@ function renderTaskPanel() {
       };
       panel.appendChild(claimBtn);
     }
+    if (isCollapsed) claimBtn.style.display = 'none';
+    else claimBtn.style.display = 'block';
   } else {
-    const btn = document.getElementById('claimDailyRewardBtn');
-    if (btn) btn.remove();
+    if (claimBtn) claimBtn.remove();
   }
 }
 
@@ -178,26 +213,25 @@ export async function updateTaskProgress(taskType, delta = 1) {
   try {
     const result = await updateDailyTaskProgress(taskType, delta);
     if (result.updated) {
-      // 更新本地任务列表
       currentDailyTasks = result.tasks;
       renderTaskPanel();
-      // 如果某个任务刚刚完成，显示通知
       const completedTask = result.tasks.find(t => t.type === taskType && t.completed);
       if (completedTask) {
         showToast(`✅ 任务“${completedTask.name}”完成！`, 'success');
         playSound('complete');
+        showCelebration(window.innerWidth/2, window.innerHeight/2);
       }
     }
     return result;
   } catch (err) {
     console.error('更新任务进度失败', err);
-    // 降级：本地更新（不推荐）
     const task = currentDailyTasks.find(t => t.type === taskType);
     if (task && !task.completed) {
       task.current += delta;
       if (task.current >= task.target) {
         task.completed = true;
         renderTaskPanel();
+        showCelebration(window.innerWidth/2, window.innerHeight/2);
       }
     }
   }
@@ -221,22 +255,83 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.remove(), 3000);
 }
 
+// ========== 特效函数 ==========
+export function showPointsFloat(points, x, y) {
+  const div = document.createElement('div');
+  div.className = 'points-float';
+  div.textContent = `+${points}`;
+  div.style.left = `${x}px`;
+  div.style.top = `${y}px`;
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 1200);
+}
+
+export function showCelebration(x, y) {
+  for (let i = 0; i < 12; i++) {
+    const star = document.createElement('div');
+    star.className = 'celebration-star';
+    star.innerHTML = ['✨', '⭐', '🌟', '💫', '🎉', '🏆'][Math.floor(Math.random() * 6)];
+    const angle = (i / 12) * Math.PI * 2;
+    const radius = 60 + Math.random() * 40;
+    const tx = Math.cos(angle) * radius;
+    const ty = Math.sin(angle) * radius;
+    star.style.left = `${x + tx}px`;
+    star.style.top = `${y + ty}px`;
+    star.style.animationDelay = `${Math.random() * 0.2}s`;
+    document.body.appendChild(star);
+    setTimeout(() => star.remove(), 800);
+  }
+}
+
+export function flyPaperAirplane(fromX, fromY, toX, toY) {
+  const plane = document.createElement('div');
+  plane.className = 'paper-airplane';
+  plane.innerHTML = '✈️';
+  plane.style.left = `${fromX}px`;
+  plane.style.top = `${fromY}px`;
+  document.body.appendChild(plane);
+  requestAnimationFrame(() => {
+    plane.style.transform = `translate(${toX - fromX}px, ${toY - fromY}px) rotate(20deg)`;
+    plane.style.opacity = '0';
+  });
+  setTimeout(() => plane.remove(), 800);
+}
+
+export function bindRippleEffect() {
+  document.querySelectorAll('.action-btn, .module-btn, .new-session, .summary-btn, .submit-btn').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      const rect = this.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      ripple.style.width = ripple.style.height = `${size}px`;
+      ripple.style.left = `${e.clientX - rect.left - size/2}px`;
+      ripple.style.top = `${e.clientY - rect.top - size/2}px`;
+      this.style.position = 'relative';
+      this.style.overflow = 'hidden';
+      this.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    });
+  });
+}
+
+// ========== 积分飘浮特效（加强版） ==========
 export async function addPoints(points, reason = '游戏奖励') {
-  // 前端只显示动画，实际积分由后端记录，不需要额外调用 add-points（后端已经记录）
-  const pointDiv = document.createElement('div');
-  pointDiv.textContent = `+${points}`;
-  pointDiv.style.position = 'fixed';
-  pointDiv.style.bottom = '30%';
-  pointDiv.style.right = '30px';
-  pointDiv.style.color = '#ffd700';
-  pointDiv.style.fontSize = '1.5rem';
-  pointDiv.style.fontWeight = 'bold';
-  pointDiv.style.textShadow = '0 0 2px black';
-  pointDiv.style.animation = 'floatUp 1s ease-out';
-  pointDiv.style.zIndex = '999';
-  document.body.appendChild(pointDiv);
-  setTimeout(() => pointDiv.remove(), 1000);
-  // 注意：不再调用 /api/game/add-points，因为后端已经在各业务接口中调用了 pointsService.addPoints
+  const x = window.innerWidth / 2;
+  const y = window.innerHeight - 100;
+  showPointsFloat(points, x, y);
+  if (points >= 30) {
+    showCelebration(x, y);
+  }
+  // 后端记录积分（可选，如果后端已记录则无需重复调用）
+  // try {
+  //   const { fetchWithAuth } = await import('./api');
+  //   await fetchWithAuth('/api/game/add-points', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({ points, reason })
+  //   });
+  // } catch(e) { console.error('积分记录失败', e); }
 }
 
 export function showComboEffect() {
@@ -391,7 +486,10 @@ export function updateSidebarLevel(level, points, nextLevelPoints) {
   levelContainer.style.display = 'block';
   const percent = (points / nextLevelPoints) * 100;
   levelContainer.innerHTML = `
-    <div class="level-info"><span>Lv.${level}</span><span>${points}/${nextLevelPoints}</span></div>
+    <div class="level-info-header">
+      <span class="level-badge">Lv.${level}</span>
+      <span class="points-text">${points} / ${nextLevelPoints}</span>
+    </div>
     <div class="level-progress-bar"><div class="level-progress-fill" style="width: ${percent}%"></div></div>
   `;
 }

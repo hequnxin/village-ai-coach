@@ -62,17 +62,33 @@ router.delete('/session/:sessionId', async (req, res) => {
   }
 });
 
+// 批量删除会话
+router.post('/sessions/batch-delete', async (req, res) => {
+  try {
+    const { sessionIds } = req.body;
+    const userId = req.user.userId;
+    if (!sessionIds || !sessionIds.length) {
+      return res.status(400).json({ error: '未提供会话ID' });
+    }
+    const placeholders = sessionIds.map((_, i) => `$${i+2}`).join(',');
+    const sql = `DELETE FROM sessions WHERE user_id = $1 AND id IN (${placeholders})`;
+    await db.run(sql, [userId, ...sessionIds]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('批量删除失败:', err);
+    res.status(500).json({ error: '删除失败' });
+  }
+});
+
 router.post('/session/:sessionId/favorite', async (req, res) => {
   try {
     const { favorite } = req.body;
     const userId = req.user.userId;
     const sessionId = req.params.sessionId;
     await sessionService.setSessionFavorite(userId, sessionId, favorite);
-    // 添加积分
     if (favorite) {
       await pointsService.addPoints(userId, pointsService.FAVORITE_SESSION, '收藏会话');
     }
-    // 取消收藏不扣除积分
     res.json({ success: true });
   } catch (err) {
     console.error('设置收藏失败:', err);
