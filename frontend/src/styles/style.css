@@ -1965,3 +1965,181 @@ body {
   transform: translateY(-4px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
+/* ========== 移动端顶部栏和菜单优化 ========== */
+@media (max-width: 768px) {
+  /* 隐藏原来的绿色悬浮按钮 */
+  #menuToggle {
+    display: none !important;
+  }
+
+  /* 聊天头部：使用 flex 换行改为不换行，压缩间距 */
+  .chat-header {
+    padding: 8px 12px;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .chat-header::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 左侧区域：容纳汉堡菜单和标题 */
+  .chat-header > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* 汉堡菜单按钮 */
+  .mobile-menu-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #2e5d34;
+  }
+
+  /* 会话标题字号缩小 */
+  .chat-header h1 {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  /* 右侧按钮组：缩小按钮文字，允许滚动 */
+  .chat-header > div:last-child {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .summary-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    white-space: nowrap;
+  }
+
+  /* 隐藏预设问题按钮区域，避免拥挤 */
+  .preset-questions {
+    display: none !important;
+  }
+
+  /* 输入框区域优化 */
+  .chat-footer {
+    padding: 8px 12px;
+  }
+  #userInput {
+    min-height: 36px;
+    max-height: 80px;
+    font-size: 14px;
+    padding: 8px 12px;
+  }
+  #sendBtn {
+    padding: 0 16px;
+    font-size: 14px;
+  }
+  .voice-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 16px;
+  }
+}
+/* ========== 移动端进一步优化 ========== */
+@media (max-width: 768px) {
+  /* 侧边栏底部留出空间，避免被底部导航遮挡 */
+  .sidebar {
+    padding-bottom: 70px !important;
+  }
+
+  /* 主内容区底部留出空间 */
+  .main-content {
+    margin-bottom: 56px;
+  }
+
+  /* 底部导航条本身样式微调 */
+  .bottom-nav {
+    height: 56px;
+    padding: 6px 0;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid #eaeaea;
+  }
+
+  .bottom-nav-item {
+    font-size: 10px;
+  }
+  .bottom-nav-item .icon {
+    font-size: 20px;
+  }
+
+  /* 全局移动端字体缩小 */
+  body, .app, .main-content, .chat-view, .message, button, input, textarea {
+    font-size: 14px;
+  }
+
+  /* 输入框更矮 */
+  #userInput {
+    min-height: 32px;
+    max-height: 70px;
+    font-size: 14px;
+    padding: 6px 10px;
+  }
+
+  /* 发送按钮、语音按钮尺寸缩小 */
+  #sendBtn {
+    padding: 0 14px;
+    font-size: 13px;
+    height: 36px;
+  }
+  .voice-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+
+  /* 聊天消息字体稍小 */
+  .message {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  /* 闪电按钮样式（快捷提问） */
+  .lightning-btn {
+    background: #f0f0f0;
+    border: none;
+    border-radius: 30px;
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+  }
+  .lightning-btn:active {
+    background: #e0e0e0;
+  }
+
+  /* 快捷提问弹窗中的按钮样式 */
+  .quick-q-btn {
+    text-align: left;
+    font-size: 13px;
+    padding: 10px;
+    margin: 6px 0;
+    background: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 30px;
+    width: 100%;
+    cursor: pointer;
+  }
+}

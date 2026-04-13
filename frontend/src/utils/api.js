@@ -81,3 +81,33 @@ export async function claimDailyReward() {
   if (!res.ok) throw new Error('领取奖励失败');
   return res.json();
 }
+// 轮询消息状态（返回一个可取消的轮询对象）
+export function pollMessageStatus(messageId, onComplete, onPending, interval = 2000) {
+  let timer = null;
+  let stopped = false;
+
+  const check = async () => {
+    if (stopped) return;
+    try {
+      const res = await fetchWithAuth(`/api/chat-async/status/${messageId}`);
+      const data = await res.json();
+      if (data.status === 'completed') {
+        if (onComplete) onComplete(data.content);
+        if (timer) clearInterval(timer);
+      } else {
+        if (onPending) onPending();
+      }
+    } catch (err) {
+      console.error('轮询失败', err);
+    }
+  };
+
+  timer = setInterval(check, interval);
+  check(); // 立即执行一次
+
+  // 返回取消函数
+  return () => {
+    stopped = true;
+    if (timer) clearInterval(timer);
+  };
+}

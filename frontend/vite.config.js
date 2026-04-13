@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import path from 'path';
 
 export default defineConfig({
   root: '.',
@@ -12,8 +11,14 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/sounds': 'http://localhost:3001'
-    }
+      '/api': {
+        target: 'http://127.0.0.1:3001',  // 使用 127.0.0.1 而不是 localhost
+        changeOrigin: true,               // 重要：修改请求头中的 origin
+        secure: false,
+        rewrite: (path) => path          // 保持原路径
+      }
+    },
+    host: '0.0.0.0',                     // 确保监听所有网络接口
+    port: 5173
   }
 });

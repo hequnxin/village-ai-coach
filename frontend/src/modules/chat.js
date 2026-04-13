@@ -1,4 +1,5 @@
 // frontend/src/modules/chat.js
+
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, showComboEffect, setupVoiceInput, setActiveNavByView, flyPaperAirplane } from '../utils/helpers';
@@ -8,7 +9,6 @@ let isTyping = false;
 let typingInterval = null;
 let stopTypingFlag = false;
 let typingSpeed = 15;
-
 function scrollToBottom() {
   const container = document.getElementById('chatContainer');
   if (container) container.scrollTop = container.scrollHeight;
@@ -119,7 +119,14 @@ function addActionIcons(msgDiv, messageId) {
   actions.appendChild(fav);
   msgDiv.appendChild(actions);
 }
-
+async function typewriteMessage(element, fullText, speed = 15) {
+  if (!element) return;
+  element.innerHTML = '';
+  for (let i = 0; i < fullText.length; i++) {
+    element.innerHTML += fullText[i];
+    await new Promise(r => setTimeout(r, speed));
+  }
+}
 async function toggleMessageFavorite(messageId, action) {
   try {
     const res = await fetchWithAuth('/api/user/favorite', {
@@ -148,21 +155,23 @@ async function regenerateAnswer(msgDiv) {
   await sendUserMessage(userText);
 }
 
-// 发送消息（流式 + 缓存）
 async function sendUserMessage(text) {
   if (isTyping) return;
   if (!text || !appState.currentSessionId) return;
+
   const messagesDiv = document.getElementById('messages');
   if (!messagesDiv) return;
+
+  // 显示用户消息
   const userMsgDiv = createMessageElement('user', text);
   messagesDiv.appendChild(userMsgDiv);
   addActionIcons(userMsgDiv, null);
   scrollToBottom();
 
   // 纸飞机动画
-  const inputRect = document.getElementById('userInput').getBoundingClientRect();
+  const inputRect = document.getElementById('userInput')?.getBoundingClientRect();
   const lastMsg = document.querySelector('#messages .message:last-child');
-  if (lastMsg) {
+  if (lastMsg && inputRect) {
     const msgRect = lastMsg.getBoundingClientRect();
     flyPaperAirplane(
       inputRect.right - 20, inputRect.top,
@@ -170,25 +179,23 @@ async function sendUserMessage(text) {
     );
   }
 
-  const typingIndicator = document.getElementById('typingIndicator');
-  if (typingIndicator) typingIndicator.classList.remove('hidden');
-  setInputEnabled(false);
-  stopTypingFlag = false;
-  addStopButton();
-  const assistantMsgDiv = createMessageElement('assistant', '');
+  // 显示占位 assistant 消息
+  const assistantMsgDiv = createMessageElement('assistant', '正在思考中...');
+  assistantMsgDiv.classList.add('pending-message');
   const contentDiv = assistantMsgDiv.querySelector('.message-content');
-  contentDiv.innerHTML = '';
+  contentDiv.innerHTML = '正在思考中...';
   messagesDiv.appendChild(assistantMsgDiv);
   scrollToBottom();
-  let token = localStorage.getItem('token');
+
+  setInputEnabled(false);
+  const token = localStorage.getItem('token');
   if (!token) {
-    if (typingIndicator) typingIndicator.classList.add('hidden');
     setInputEnabled(true);
-    isTyping = false;
     throw new Error('未登录');
   }
+
   try {
-    const response = await fetch('/api/chat', {
+    const response = await fetch('/api/chat-async', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ sessionId: appState.currentSessionId, message: text })
@@ -197,90 +204,90 @@ async function sendUserMessage(text) {
       const errText = await response.text();
       throw new Error(errText || '请求失败');
     }
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      contentDiv.innerHTML = formatAssistantContent(data.reply).replace(/\n/g, '<br>');
-      addActionIcons(assistantMsgDiv, data.assistantMessageId);
-      await loadSessions();
-      await loadMessageFavorites();
-      showComboEffect();
-      updateTaskProgress('chat', 1);
-      playSound('send');
-      if (typingIndicator) typingIndicator.classList.add('hidden');
-      stopTyping();
-      scrollToBottom();
-      return;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullReply = '';
-    let assistantMessageId = null;
-    let sessionTitle = null;
-    let knowledgeRefs = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
-        if (trimmedLine.startsWith('data:')) {
-          let jsonStr = trimmedLine.substring(5).trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.content) {
-              fullReply += parsed.content;
-              contentDiv.innerHTML = formatAssistantContent(fullReply).replace(/\n/g, '<br>');
-              scrollToBottom();
-            } else if (parsed.done) {
-              assistantMessageId = parsed.assistantMessageId;
-              sessionTitle = parsed.sessionTitle;
-              knowledgeRefs = parsed.knowledgeRefs;
-            } else if (parsed.error) {
-              throw new Error(parsed.error);
-            }
-          } catch (e) {
-            console.warn('解析流数据失败，原始行:', line, e);
-          }
+    const data = await response.json();
+    const assistantMessageId = data.assistantMessageId;
+
+    // 轮询检查完成
+    let pollTimer;
+    const checkCompletion = async () => {
+      try {
+        const statusRes = await fetchWithAuth(`/api/chat-async/status/${assistantMessageId}`);
+        const statusData = await statusRes.json();
+        if (statusData.status === 'completed') {
+          if (pollTimer) clearInterval(pollTimer);
+          const fullContent = statusData.content;
+          // 清空占位内容，开始打字机效果
+          contentDiv.innerHTML = '';
+          await typewriteMessage(contentDiv, formatAssistantContent(fullContent), 15);
+          assistantMsgDiv.classList.remove('pending-message');
+          addActionIcons(assistantMsgDiv, assistantMessageId);
+          scrollToBottom();
+          setInputEnabled(true);
+          // 刷新会话列表以更新标题等
+          await loadSessions();
+          await loadMessageFavorites();
+          updateTaskProgress('chat', 1);
+          playSound('send');
         }
+      } catch (err) {
+        console.error('轮询出错', err);
       }
-    }
-    if (typingIndicator) typingIndicator.classList.add('hidden');
-    stopTyping();
-    addActionIcons(assistantMsgDiv, assistantMessageId);
-    scrollToBottom();
-    await loadSessions();
-    const curr = appState.sessions.find(s => s.id === appState.currentSessionId);
-    if (curr) {
-      const titleElem = document.getElementById('currentSessionTitle');
-      if (titleElem) titleElem.textContent = curr.title;
-    }
-    await loadMessageFavorites();
-    showComboEffect();
-    updateTaskProgress('chat', 1);
-    playSound('send');
+    };
+    pollTimer = setInterval(checkCompletion, 2000);
+    checkCompletion(); // 立即检查一次
+    // 存储轮询定时器以便页面卸载时清理（可选）
+    if (!window._pendingPollTimers) window._pendingPollTimers = [];
+    window._pendingPollTimers.push(pollTimer);
   } catch (err) {
     console.error(err);
-    if (typingIndicator) typingIndicator.classList.add('hidden');
-    assistantMsgDiv.remove();
-    const errorMsg = createMessageElement('assistant', `❌ 发送失败：${err.message}`);
-    messagesDiv.appendChild(errorMsg);
-    scrollToBottom();
-    alert('发送失败：' + err.message);
-  } finally {
+    contentDiv.innerHTML = `❌ 发送失败：${err.message}`;
     setInputEnabled(true);
-    isTyping = false;
+    alert('发送失败：' + err.message);
   }
 }
 
+// 恢复未完成的消息（切回界面时调用）
+async function resumePendingMessages(sessionId) {
+  try {
+    const res = await fetchWithAuth(`/api/session/${sessionId}`);
+    const session = await res.json();
+    const pendingMsg = (session.messages || []).find(m => m.role === 'assistant' && m.status === 'pending');
+    if (pendingMsg) {
+      const msgElement = document.querySelector(`.message[data-message-id="${pendingMsg.messageId}"]`);
+      if (msgElement) {
+        const contentDiv = msgElement.querySelector('.message-content');
+        // 启动轮询
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetchWithAuth(`/api/chat-async/status/${pendingMsg.messageId}`);
+            const statusData = await statusRes.json();
+            if (statusData.status === 'completed') {
+              clearInterval(pollInterval);
+              contentDiv.innerHTML = '';
+              await typewriteMessage(contentDiv, formatAssistantContent(statusData.content), 15);
+              msgElement.classList.remove('pending-message');
+              addActionIcons(msgElement, pendingMsg.messageId);
+              scrollToBottom();
+              // 刷新会话列表
+              await loadSessions();
+              await loadMessageFavorites();
+            }
+          } catch (err) {
+            console.error('恢复轮询出错', err);
+          }
+        }, 2000);
+      }
+    }
+  } catch (err) {
+    console.error('恢复 pending 消息失败', err);
+  }
+}
 export async function sendMessage() {
   const input = document.getElementById('userInput');
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
+
   if (!appState.currentSessionId) {
     await createNewSession();
     input.value = text;
@@ -315,6 +322,7 @@ function displayMessages(messages) {
 function showMobileSummaryModal(contentHtml) {
   const existingModal = document.getElementById('mobileSummaryModal');
   if (existingModal) existingModal.remove();
+
   const modal = document.createElement('div');
   modal.id = 'mobileSummaryModal';
   modal.className = 'mobile-summary-modal';
@@ -337,6 +345,9 @@ function showMobileSummaryModal(contentHtml) {
 }
 
 export async function renderChatView(existingSession = null) {
+  // 提前定义移动端判断
+  const isMobile = window.innerWidth <= 768;
+
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="chat-view">
@@ -378,13 +389,16 @@ export async function renderChatView(existingSession = null) {
       </div>
     </div>
   `;
+
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
   const exportBtn = document.getElementById('exportBtn');
   const summaryBtn = document.getElementById('summaryBtn');
+
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.onclick = () => { userInput.value = btn.dataset.question; sendMessage(); };
   });
+
   sendBtn.onclick = sendMessage;
   userInput.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !isTyping) { e.preventDefault(); sendMessage(); } };
   exportBtn.onclick = exportCurrentChat;
@@ -407,8 +421,8 @@ export async function renderChatView(existingSession = null) {
       if (summary.suggestions.length) html += `<div><strong>💡 建议</strong><ul>${summary.suggestions.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
       if (summary.references.length) html += `<div><strong>📚 参考</strong><ul>${summary.references.map(r=>`<li>${escapeHtml(r)}</li>`).join('')}</ul></div>`;
       html += `</div>`;
-      const isMobile = window.innerWidth <= 768;
-      if (isMobile) {
+      const isMobileInner = window.innerWidth <= 768;
+      if (isMobileInner) {
         showMobileSummaryModal(html);
       } else {
         const infoPanel = document.getElementById('infoPanel');
@@ -423,11 +437,14 @@ export async function renderChatView(existingSession = null) {
       summaryBtn.textContent = '📋 生成摘要';
     }
   };
+
   const closeInfoBtn = document.getElementById('closeInfoPanel');
   if (closeInfoBtn) {
     closeInfoBtn.onclick = () => { const panel = document.getElementById('infoPanel'); if (panel) panel.style.display = 'none'; };
   }
+
   setupVoiceInput(userInput, document.getElementById('voiceBtn'));
+
   if (appState.currentSessionId && !existingSession) {
     const res = await fetchWithAuth(`/api/session/${appState.currentSessionId}`);
     const session = await res.json();
@@ -439,8 +456,135 @@ export async function renderChatView(existingSession = null) {
     displayMessages(existingSession.messages || []);
     document.getElementById('infoContent').innerHTML = '<div style="color:#888;">点击"生成摘要"获取分析</div>';
   }
+
   document.getElementById('policyQuickSearch')?.addEventListener('click', showPolicyQuickSearch);
   setActiveNavByView('chat');
+
+  // ========== 移动端适配（统一使用 isMobile） ==========
+  if (isMobile) {
+    // 1. 隐藏原来的绿色悬浮按钮
+    const oldMenuToggle = document.getElementById('menuToggle');
+    if (oldMenuToggle) oldMenuToggle.style.display = 'none';
+
+    // 2. 添加顶部栏汉堡菜单
+    const headerLeftDiv = document.querySelector('.chat-header > div:first-child');
+    if (headerLeftDiv && !document.querySelector('.mobile-menu-btn')) {
+      const menuBtn = document.createElement('button');
+      menuBtn.className = 'mobile-menu-btn';
+      menuBtn.innerHTML = '☰';
+      menuBtn.setAttribute('aria-label', '菜单');
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) sidebar.classList.toggle('open');
+      };
+      headerLeftDiv.insertBefore(menuBtn, headerLeftDiv.firstChild);
+    }
+
+    // 3. 点击侧边栏外部关闭
+    const closeSidebarOnOutsideClick = (e) => {
+      const sidebar = document.getElementById('sidebar');
+      const menuBtn = document.querySelector('.mobile-menu-btn');
+      if (!sidebar || !sidebar.classList.contains('open')) return;
+      if (!sidebar.contains(e.target) && e.target !== menuBtn && !menuBtn?.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    };
+    document.removeEventListener('click', closeSidebarOnOutsideClick);
+    document.addEventListener('click', closeSidebarOnOutsideClick);
+
+    // 4. 将右侧三个按钮合并为“更多”菜单
+    const enableMoreMenu = true;
+    if (enableMoreMenu) {
+      const rightBtnGroup = document.querySelector('.chat-header > div:last-child');
+      if (rightBtnGroup && !document.getElementById('moreMenuBtn')) {
+        const btns = Array.from(rightBtnGroup.children);
+        if (btns.length >= 2) {
+          const moreBtn = document.createElement('button');
+          moreBtn.id = 'moreMenuBtn';
+          moreBtn.className = 'summary-btn';
+          moreBtn.textContent = '⋯ 更多';
+          moreBtn.onclick = () => {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'flex';
+            modal.innerHTML = `
+              <div class="modal-content" style="width:200px; text-align:center;">
+                <button class="modal-close" style="position:absolute;right:8px;top:8px;">&times;</button>
+                <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+                  <button id="summaryBtnMobile" class="summary-btn">📋 生成摘要</button>
+                  <button id="exportBtnMobile" class="summary-btn">📥 导出</button>
+                  <button id="policyQuickSearchMobile" class="summary-btn">📜 政策速查</button>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(modal);
+            modal.querySelector('.modal-close').onclick = () => modal.remove();
+            modal.querySelector('#summaryBtnMobile').onclick = () => {
+              modal.remove();
+              document.getElementById('summaryBtn')?.click();
+            };
+            modal.querySelector('#exportBtnMobile').onclick = () => {
+              modal.remove();
+              document.getElementById('exportBtn')?.click();
+            };
+            modal.querySelector('#policyQuickSearchMobile').onclick = () => {
+              modal.remove();
+              document.getElementById('policyQuickSearch')?.click();
+            };
+          };
+          rightBtnGroup.innerHTML = '';
+          rightBtnGroup.appendChild(moreBtn);
+        }
+      }
+    }
+
+    // 5. 添加闪电按钮（快捷提问），插入到语音按钮之前
+    const inputArea = document.querySelector('.input-area');
+    if (inputArea && !document.querySelector('.lightning-btn')) {
+      const lightningBtn = document.createElement('button');
+      lightningBtn.className = 'lightning-btn';
+      lightningBtn.innerHTML = '⚡';
+      lightningBtn.title = '快捷提问';
+      lightningBtn.onclick = () => {
+        const questions = [
+          '村里闲置小学可以改造成什么？',
+          '土地流转合同要注意哪些条款？',
+          '如何申请高标准农田项目？',
+          '村民不配合垃圾分类怎么办？',
+          '想发展民宿需要办哪些手续？'
+        ];
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+          <div class="modal-content" style="width:280px; text-align:center;">
+            <button class="modal-close" style="position:absolute;right:8px;top:8px;">&times;</button>
+            <h4 style="margin:0 0 12px;">⚡ 快捷提问</h4>
+            ${questions.map(q => `<button class="quick-q-btn" style="display:block; width:100%; margin:8px 0; padding:8px; background:#f5f5f5; border:none; border-radius:20px; text-align:left;">${escapeHtml(q)}</button>`).join('')}
+          </div>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelector('.modal-close').onclick = () => modal.remove();
+        modal.querySelectorAll('.quick-q-btn').forEach(btn => {
+          btn.onclick = () => {
+            const input = document.getElementById('userInput');
+            if (input) input.value = btn.textContent;
+            modal.remove();
+            sendMessage();
+          };
+        });
+      };
+      const voiceBtn = inputArea.querySelector('#voiceBtn');
+      if (voiceBtn) {
+        inputArea.insertBefore(lightningBtn, voiceBtn);
+      } else {
+        inputArea.prepend(lightningBtn);
+      }
+    }
+  }
+    // ========== 恢复未完成的消息（切回界面时调用） ==========
+  await resumePendingMessages(appState.currentSessionId);
 }
 
 async function exportCurrentChat() {

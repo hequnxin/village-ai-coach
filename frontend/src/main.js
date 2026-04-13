@@ -1,4 +1,5 @@
 // frontend/src/main.js
+
 import './styles/style.css';
 import { initAuth, bindAuthEvents } from './modules/auth';
 import { appState, loadSessions, loadMessageFavorites, loadLevelProgress, createNewSession, switchSession } from './modules/state';
@@ -15,6 +16,7 @@ import { initDailyTasks, initParticles, setupGlobalEventListeners, setActiveNavB
 function initBottomNav() {
   const bottomNav = document.getElementById('bottomNav');
   if (!bottomNav) return;
+
   const navItems = bottomNav.querySelectorAll('.bottom-nav-item');
   navItems.forEach(item => {
     item.addEventListener('click', () => {
@@ -47,6 +49,7 @@ function initBottomNav() {
       setActiveNavByView(view);
     });
   });
+
   const observer = new MutationObserver(() => {
     const currentView = appState.currentView;
     navItems.forEach(item => {
@@ -60,73 +63,47 @@ function initBottomNav() {
   }
 }
 
-// 手机端悬浮按钮拖拽逻辑
+// 手机端菜单按钮：固定位置，点击弹出侧边栏，点击外部关闭
 function initDraggableMenu() {
   if (window.innerWidth > 768) return;
+
   const btn = document.getElementById('menuToggle');
   if (!btn) return;
-  let startX = 0, startY = 0;
-  let isDragging = false;
-  let dragThreshold = 10;
 
-  function handleStart(e) {
-    const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
-    const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
-    startX = clientX;
-    startY = clientY;
-    isDragging = false;
-    btn.style.transition = 'none';
-    btn.style.cursor = 'grabbing';
-  }
+  // 固定样式：不再支持拖拽
+  btn.style.position = 'fixed';
+  btn.style.left = '16px';
+  btn.style.top = '20px';
+  btn.style.right = 'auto';
+  btn.style.bottom = 'auto';
+  btn.style.cursor = 'pointer';
+  btn.style.transform = 'none';
+  btn.style.transition = 'none';
 
-  function handleMove(e) {
-    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-    const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-    const deltaX = Math.abs(clientX - startX);
-    const deltaY = Math.abs(clientY - startY);
-    if (!isDragging && (deltaX > dragThreshold || deltaY > dragThreshold)) {
-      isDragging = true;
-      e.preventDefault();
+  // 点击按钮切换侧边栏
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) sidebar.classList.toggle('open');
+  });
+
+  // 点击侧边栏外部区域关闭侧边栏
+  document.addEventListener('click', (e) => {
+    const sidebar = document.getElementById('sidebar');
+    const menuBtn = document.getElementById('menuToggle');
+    if (!sidebar || !sidebar.classList.contains('open')) return;
+
+    // 如果点击的目标不是侧边栏内部元素，也不是菜单按钮，则关闭侧边栏
+    if (!sidebar.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
+      sidebar.classList.remove('open');
     }
-    if (!isDragging) return;
-    let newLeft = clientX - (btn.offsetWidth / 2);
-    let newTop = clientY - (btn.offsetHeight / 2);
-    const bound = 10;
-    const maxLeft = window.innerWidth - btn.offsetWidth - bound;
-    const maxTop = window.innerHeight - btn.offsetHeight - bound;
-    newLeft = Math.max(bound, Math.min(newLeft, maxLeft));
-    newTop = Math.max(bound, Math.min(newTop, maxTop));
-    btn.style.right = 'auto';
-    btn.style.bottom = 'auto';
-    btn.style.left = newLeft + 'px';
-    btn.style.top = newTop + 'px';
-  }
+  });
 
-  function handleEnd(e) {
-    btn.style.cursor = 'move';
-    btn.style.transition = 'left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-    const rect = btn.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    if (centerX < window.innerWidth / 2) {
-      btn.style.left = '16px';
-      btn.style.right = 'auto';
-    } else {
-      btn.style.left = 'auto';
-      btn.style.right = '16px';
-    }
-    if (!isDragging) {
-      const sidebar = document.getElementById('sidebar');
-      if (sidebar) sidebar.classList.toggle('open');
-    }
-    isDragging = false;
+  // 阻止侧边栏内部点击事件冒泡导致意外关闭
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    sidebar.addEventListener('click', (e) => e.stopPropagation());
   }
-
-  btn.addEventListener('touchstart', handleStart, { passive: false });
-  btn.addEventListener('mousedown', handleStart);
-  document.addEventListener('touchmove', handleMove, { passive: false });
-  document.addEventListener('mousemove', handleMove);
-  document.addEventListener('touchend', handleEnd);
-  document.addEventListener('mouseup', handleEnd);
 }
 
 export async function initApp() {
@@ -138,7 +115,7 @@ export async function initApp() {
   setupGlobalEventListeners();
   setupSessionTabs();
   initBottomNav();
-  bindRippleEffect();  // 全局按钮涟漪效果
+  bindRippleEffect(); // 全局按钮涟漪效果
 
   // 监听动态内容变化，重新绑定涟漪（确保新渲染的按钮也有特效）
   const observer = new MutationObserver(() => {
@@ -154,6 +131,7 @@ export async function initApp() {
   } else {
     initDraggableMenu();
   }
+
   let emptyChatSession = appState.sessions.find(s => s.type === 'chat' && (!s.messages || s.messages.length === 0));
   if (emptyChatSession) {
     await switchSession(emptyChatSession.id);

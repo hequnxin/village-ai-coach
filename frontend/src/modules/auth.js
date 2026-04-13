@@ -1,6 +1,14 @@
 // frontend/src/modules/auth.js
+
 import { appState, setAppState } from './state';
 import { initApp } from '../main';
+
+function showBottomNav(show) {
+  const bottomNav = document.getElementById('bottomNav');
+  if (bottomNav) {
+    bottomNav.style.display = show ? 'flex' : 'none';
+  }
+}
 
 export function initAuth() {
   const token = localStorage.getItem('token');
@@ -11,6 +19,7 @@ export function initAuth() {
       document.getElementById('usernameDisplay').textContent = payload.username;
       document.getElementById('authContainer').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
+      showBottomNav(true);  // 登录成功显示底部导航
       initApp();
     } catch {
       localStorage.removeItem('token');
@@ -24,6 +33,7 @@ export function initAuth() {
 function showAuth() {
   document.getElementById('authContainer').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
+  showBottomNav(false); // 未登录隐藏底部导航
 }
 
 export function bindAuthEvents() {
@@ -67,6 +77,7 @@ export function bindAuthEvents() {
       document.getElementById('usernameDisplay').textContent = data.username;
       document.getElementById('authContainer').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
+      showBottomNav(true);
       initApp();
     } catch (err) {
       loginError.textContent = err.message;
@@ -108,6 +119,7 @@ export function bindAuthEvents() {
     appState.userNextLevelPoints = 100;
     appState.knowledgeData = [];
     appState.isTyping = false;
+    showBottomNav(false);
     showAuth();
   });
 }
