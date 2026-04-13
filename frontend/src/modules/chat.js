@@ -9,6 +9,7 @@ let isTyping = false;
 let typingInterval = null;
 let stopTypingFlag = false;
 let typingSpeed = 15;
+
 function scrollToBottom() {
   const container = document.getElementById('chatContainer');
   if (container) container.scrollTop = container.scrollHeight;
@@ -53,8 +54,8 @@ function addStopButton() {
 // 格式化 AI 回复：移除 Markdown 加粗符号，并将纯文本标题行加粗
 function formatAssistantContent(content) {
   if (!content) return '';
-  let cleaned = content.replace(/\*\*(.*?)\*\*/g, '$1');
-  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
+  let cleaned = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '<em>$1</em>');
   cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
   const lines = cleaned.split('\n');
   const processedLines = lines.map(line => {
@@ -119,14 +120,20 @@ function addActionIcons(msgDiv, messageId) {
   actions.appendChild(fav);
   msgDiv.appendChild(actions);
 }
+
+// 打字机效果，每次追加后自动滚动到底部
 async function typewriteMessage(element, fullText, speed = 15) {
   if (!element) return;
-  element.innerHTML = '';
+  let currentText = '';
   for (let i = 0; i < fullText.length; i++) {
-    element.innerHTML += fullText[i];
+    currentText += fullText[i];
+    const formatted = formatAssistantContent(currentText);
+    element.innerHTML = formatted;
+    scrollToBottom();  // 每次字符追加后滚动
     await new Promise(r => setTimeout(r, speed));
   }
 }
+
 async function toggleMessageFavorite(messageId, action) {
   try {
     const res = await fetchWithAuth('/api/user/favorite', {
@@ -179,11 +186,11 @@ async function sendUserMessage(text) {
     );
   }
 
-  // 显示占位 assistant 消息
-  const assistantMsgDiv = createMessageElement('assistant', '正在思考中...');
-  assistantMsgDiv.classList.add('pending-message');
+  // 显示占位 assistant 消息（思考中）
+  const assistantMsgDiv = createMessageElement('assistant', '💭 思考中...');
+  assistantMsgDiv.classList.add('thinking-message');
   const contentDiv = assistantMsgDiv.querySelector('.message-content');
-  contentDiv.innerHTML = '正在思考中...';
+  contentDiv.innerHTML = '💭 思考中...';
   messagesDiv.appendChild(assistantMsgDiv);
   scrollToBottom();
 
@@ -217,9 +224,9 @@ async function sendUserMessage(text) {
           if (pollTimer) clearInterval(pollTimer);
           const fullContent = statusData.content;
           // 清空占位内容，开始打字机效果
+          assistantMsgDiv.classList.remove('thinking-message');
           contentDiv.innerHTML = '';
-          await typewriteMessage(contentDiv, formatAssistantContent(fullContent), 15);
-          assistantMsgDiv.classList.remove('pending-message');
+          await typewriteMessage(contentDiv, fullContent, 15);
           addActionIcons(assistantMsgDiv, assistantMessageId);
           scrollToBottom();
           setInputEnabled(true);
@@ -241,6 +248,7 @@ async function sendUserMessage(text) {
   } catch (err) {
     console.error(err);
     contentDiv.innerHTML = `❌ 发送失败：${err.message}`;
+    assistantMsgDiv.classList.remove('thinking-message');
     setInputEnabled(true);
     alert('发送失败：' + err.message);
   }
@@ -255,6 +263,7 @@ async function resumePendingMessages(sessionId) {
     if (pendingMsg) {
       const msgElement = document.querySelector(`.message[data-message-id="${pendingMsg.messageId}"]`);
       if (msgElement) {
+        msgElement.classList.add('thinking-message');
         const contentDiv = msgElement.querySelector('.message-content');
         // 启动轮询
         const pollInterval = setInterval(async () => {
@@ -263,9 +272,9 @@ async function resumePendingMessages(sessionId) {
             const statusData = await statusRes.json();
             if (statusData.status === 'completed') {
               clearInterval(pollInterval);
+              msgElement.classList.remove('thinking-message');
               contentDiv.innerHTML = '';
-              await typewriteMessage(contentDiv, formatAssistantContent(statusData.content), 15);
-              msgElement.classList.remove('pending-message');
+              await typewriteMessage(contentDiv, statusData.content, 15);
               addActionIcons(msgElement, pendingMsg.messageId);
               scrollToBottom();
               // 刷新会话列表
@@ -282,6 +291,7 @@ async function resumePendingMessages(sessionId) {
     console.error('恢复 pending 消息失败', err);
   }
 }
+
 export async function sendMessage() {
   const input = document.getElementById('userInput');
   if (!input) return;
@@ -345,7 +355,6 @@ function showMobileSummaryModal(contentHtml) {
 }
 
 export async function renderChatView(existingSession = null) {
-  // 提前定义移动端判断
   const isMobile = window.innerWidth <= 768;
 
   const dynamicContent = document.getElementById('dynamicContent');
@@ -362,7 +371,6 @@ export async function renderChatView(existingSession = null) {
         </div>
         <div id="chatContainer" class="chat-container">
           <div id="messages"></div>
-          <div id="typingIndicator" class="hidden">AI正在思考...</div>
         </div>
         <footer class="chat-footer">
           <div class="input-tip">💡提示：按住麦克风语音输入</div>
@@ -460,13 +468,13 @@ export async function renderChatView(existingSession = null) {
   document.getElementById('policyQuickSearch')?.addEventListener('click', showPolicyQuickSearch);
   setActiveNavByView('chat');
 
-  // ========== 移动端适配（统一使用 isMobile） ==========
+  // ========== 移动端适配 ==========
   if (isMobile) {
-    // 1. 隐藏原来的绿色悬浮按钮
+    // 隐藏原来的绿色悬浮按钮
     const oldMenuToggle = document.getElementById('menuToggle');
     if (oldMenuToggle) oldMenuToggle.style.display = 'none';
 
-    // 2. 添加顶部栏汉堡菜单
+    // 添加顶部栏汉堡菜单
     const headerLeftDiv = document.querySelector('.chat-header > div:first-child');
     if (headerLeftDiv && !document.querySelector('.mobile-menu-btn')) {
       const menuBtn = document.createElement('button');
@@ -481,7 +489,7 @@ export async function renderChatView(existingSession = null) {
       headerLeftDiv.insertBefore(menuBtn, headerLeftDiv.firstChild);
     }
 
-    // 3. 点击侧边栏外部关闭
+    // 点击侧边栏外部关闭
     const closeSidebarOnOutsideClick = (e) => {
       const sidebar = document.getElementById('sidebar');
       const menuBtn = document.querySelector('.mobile-menu-btn');
@@ -493,7 +501,7 @@ export async function renderChatView(existingSession = null) {
     document.removeEventListener('click', closeSidebarOnOutsideClick);
     document.addEventListener('click', closeSidebarOnOutsideClick);
 
-    // 4. 将右侧三个按钮合并为“更多”菜单
+    // 将右侧三个按钮合并为“更多”菜单
     const enableMoreMenu = true;
     if (enableMoreMenu) {
       const rightBtnGroup = document.querySelector('.chat-header > div:last-child');
@@ -539,7 +547,7 @@ export async function renderChatView(existingSession = null) {
       }
     }
 
-    // 5. 添加闪电按钮（快捷提问），插入到语音按钮之前
+    // 添加闪电按钮（快捷提问）
     const inputArea = document.querySelector('.input-area');
     if (inputArea && !document.querySelector('.lightning-btn')) {
       const lightningBtn = document.createElement('button');
@@ -583,7 +591,8 @@ export async function renderChatView(existingSession = null) {
       }
     }
   }
-    // ========== 恢复未完成的消息（切回界面时调用） ==========
+
+  // 恢复未完成的消息
   await resumePendingMessages(appState.currentSessionId);
 }
 

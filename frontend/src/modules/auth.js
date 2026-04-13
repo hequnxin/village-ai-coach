@@ -5,8 +5,12 @@ import { initApp } from '../main';
 
 function showBottomNav(show) {
   const bottomNav = document.getElementById('bottomNav');
-  if (bottomNav) {
+  if (!bottomNav) return;
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
     bottomNav.style.display = show ? 'flex' : 'none';
+  } else {
+    bottomNav.style.display = 'none';   // 桌面端强制隐藏
   }
 }
 

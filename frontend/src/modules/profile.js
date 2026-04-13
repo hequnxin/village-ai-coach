@@ -1,10 +1,12 @@
 // frontend/src/modules/profile.js
+
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
 import { escapeHtml, setActiveNavByView } from '../utils/helpers';
 import Chart from 'chart.js/auto';
 
 // ==================== 辅助函数 ====================
+
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
@@ -133,9 +135,8 @@ function clearCache() {
   }
 }
 
-// 意见反馈（请将邮箱替换为真实邮箱）
+// 意见反馈（请将邮箱替换为真实反馈邮箱）
 function openFeedback() {
-  // ⚠️ 重要：部署前请将下面的邮箱地址改为你的真实反馈邮箱
   const email = 'support@example.com';
   const subject = encodeURIComponent('村官AI伙伴反馈');
   const body = encodeURIComponent('请描述您的问题或建议：\n\n');
@@ -160,7 +161,7 @@ async function goToWrongQuestions() {
   }, 500);
 }
 
-// 勋章配置（增加更多勋章）
+// 勋章配置
 const allBadges = [
   {
     name: '勤学好问', icon: '📚',
@@ -206,7 +207,6 @@ const allBadges = [
   }
 ];
 
-// 显示勋章详情弹窗
 function showBadgeDetail(badge, stats) {
   const achieved = badge.condition(stats);
   const modal = document.createElement('div');
@@ -229,7 +229,6 @@ function showBadgeDetail(badge, stats) {
   modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 }
 
-// 渲染勋章（可点击）
 function renderBadges(stats) {
   const container = document.getElementById('badges');
   if (!container) return;
@@ -250,8 +249,6 @@ function renderBadges(stats) {
   });
   html += '</div>';
   container.innerHTML = html;
-
-  // 绑定点击事件
   document.querySelectorAll('.badge-card').forEach(card => {
     card.addEventListener('click', () => {
       const badgeName = card.dataset.badgeName;
@@ -261,7 +258,6 @@ function renderBadges(stats) {
   });
 }
 
-// 渲染统计数字（简洁卡片）
 function renderStats(stats) {
   const container = document.getElementById('statsGrid');
   if (!container) return;
@@ -277,7 +273,6 @@ function renderStats(stats) {
   animateNumber(document.getElementById('stat-pending'), 0, stats.pendingUploads);
 }
 
-// 渲染真实成长曲线
 async function renderGrowthChart() {
   const canvas = document.getElementById('growthChart');
   if (!canvas) return;
@@ -316,13 +311,27 @@ async function renderGrowthChart() {
   }
 }
 
+// 会议模式入口
+function goToMeeting() {
+  import('../modules/meeting').then(module => {
+    module.renderMeetingSetupView();
+  }).catch(err => console.error('加载会议模式失败', err));
+}
+
+// 案例库入口
+function goToKnowledge() {
+  import('../modules/knowledge').then(module => {
+    module.renderKnowledgeView();
+  }).catch(err => console.error('加载案例库失败', err));
+}
+
 // ==================== 主渲染函数 ====================
+
 export async function renderProfileView() {
   const isMobile = window.innerWidth <= 768;
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="profile-new">
-      <!-- 用户卡片 -->
       <div class="profile-user-card">
         <div class="profile-avatar-large">👤</div>
         <div class="profile-user-info">
@@ -331,8 +340,6 @@ export async function renderProfileView() {
         </div>
         <div class="profile-level-badge" id="levelBadge">Lv.1</div>
       </div>
-
-      <!-- 积分与等级进度 -->
       <div class="profile-points-card">
         <div class="points-display">
           <span class="points-label">总积分</span>
@@ -343,37 +350,32 @@ export async function renderProfileView() {
           <div class="level-progress-text"><span id="currentPoints">0</span> / <span id="nextLevelPoints">100</span></div>
         </div>
       </div>
-
-      <!-- 统计网格 -->
       <div class="profile-section-title">📊 数据统计</div>
       <div class="stats-mini-grid" id="statsGrid"></div>
-
-      <!-- 功能入口分组 -->
       <div class="profile-section-title">🛠️ 学习工具</div>
       <div class="action-grid action-grid-tools">
         <button id="wrongQuestionsBtn" class="action-btn-new"><span class="btn-icon">❌</span> 错题本</button>
         <button id="helpBtn" class="action-btn-new"><span class="btn-icon">📖</span> 使用说明</button>
         <button id="feedbackBtn" class="action-btn-new"><span class="btn-icon">💬</span> 意见反馈</button>
       </div>
-
+      <!-- 新增：会议模式 + 案例库入口（移动端常用） -->
+      <div class="profile-section-title">🏛️ 更多功能</div>
+      <div class="action-grid action-grid-tools">
+        <button id="meetingEntryBtn" class="action-btn-new"><span class="btn-icon">🏛️</span> 会议模式</button>
+        <button id="knowledgeEntryBtn" class="action-btn-new"><span class="btn-icon">📚</span> 案例库</button>
+      </div>
       <div class="profile-section-title">🔐 账户管理</div>
       <div class="action-grid action-grid-account">
         <button id="changePwdBtn" class="action-btn-new"><span class="btn-icon">🔑</span> 修改密码</button>
         <button id="clearCacheBtn" class="action-btn-new"><span class="btn-icon">🗑️</span> 清除缓存</button>
         <button id="logoutBtn" class="action-btn-new"><span class="btn-icon">🚪</span> 退出登录</button>
       </div>
-
-      <!-- 勋章区域 -->
       <div class="profile-section-title">🏅 我的勋章</div>
       <div id="badges" class="badges-container"></div>
-
-      <!-- 成长曲线 -->
       <div class="profile-section-title">📈 成长曲线</div>
       <div class="growth-chart-container">
         <canvas id="growthChart" width="400" height="200"></canvas>
       </div>
-
-      <!-- 游戏设置 -->
       <div class="profile-section-title">🎮 游戏设置</div>
       <div class="settings-card">
         <label><input type="checkbox" id="audioToggle" checked> 音效</label>
@@ -397,13 +399,7 @@ export async function renderProfileView() {
     if (nextLevelPointsSpan) nextLevelPointsSpan.textContent = data.nextLevelPoints;
     const percent = (data.points / data.nextLevelPoints) * 100;
     if (progressFill) progressFill.style.width = `${percent}%`;
-
-    // 处理 funCompleted 字段（如果后端未返回则默认为0）
-    if (data.stats.funCompleted === undefined) {
-      data.stats.funCompleted = 0;
-      console.warn('后端未返回 funCompleted 字段，挑战王者勋章进度将显示为0');
-    }
-
+    if (data.stats.funCompleted === undefined) data.stats.funCompleted = 0;
     renderBadges(data.stats);
     renderStats(data.stats);
     await renderGrowthChart();
@@ -423,6 +419,11 @@ export async function renderProfileView() {
   document.getElementById('wrongQuestionsBtn').onclick = goToWrongQuestions;
   document.getElementById('feedbackBtn').onclick = openFeedback;
   document.getElementById('helpBtn').onclick = showHelpModal;
+  // 新增入口绑定
+  const meetingBtn = document.getElementById('meetingEntryBtn');
+  if (meetingBtn) meetingBtn.onclick = goToMeeting;
+  const knowledgeBtn = document.getElementById('knowledgeEntryBtn');
+  if (knowledgeBtn) knowledgeBtn.onclick = goToKnowledge;
 
   setActiveNavByView('profile');
 }
