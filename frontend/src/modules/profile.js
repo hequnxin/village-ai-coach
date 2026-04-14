@@ -406,7 +406,7 @@ export async function renderProfileView() {
         console.error('加载数据失败', err);
     }
 
-    // 绑定事件
+    // 绑定事件（其他按钮）
     document.getElementById('audioToggle').addEventListener('change', e => window.audioEnabled = e.target.checked);
     document.getElementById('particleToggle').addEventListener('change', e => {
         window.particleEnabled = e.target.checked;
@@ -423,27 +423,29 @@ export async function renderProfileView() {
     const knowledgeBtn = document.getElementById('knowledgeEntryBtn');
     if (knowledgeBtn) knowledgeBtn.onclick = goToKnowledge;
 
-    // ★★★ 修复：退出登录按钮（确保有效）★★★
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        // 移除可能存在的旧事件（通过替换克隆或直接重新赋值）
-        // 方法：先移除所有事件监听，最简单是替换为新按钮
-        const newLogoutBtn = logoutBtn.cloneNode(true);
-        logoutBtn.parentNode.replaceChild(newLogoutBtn, logoutBtn);
-        newLogoutBtn.onclick = (e) => {
-            e.preventDefault();
-            if (confirm('确定退出登录吗？')) {
-                // 清除所有本地存储的用户相关数据
-                localStorage.removeItem('token');
-                localStorage.removeItem('username');
-                // 清除可能残留的会话ID等
-                sessionStorage.clear();
-                // 重新加载页面回到登录界面
-                window.location.reload();
+    // ★★★ 使用事件委托处理退出登录，确保按钮在重新渲染后仍然有效 ★★★
+    const dynamicContentContainer = document.getElementById('dynamicContent');
+    if (dynamicContentContainer) {
+        // 移除旧的监听器避免重复
+        if (window._logoutHandler) {
+            dynamicContentContainer.removeEventListener('click', window._logoutHandler);
+        }
+        const logoutHandler = (e) => {
+            const btn = e.target.closest('#logoutBtn');
+            if (btn) {
+                e.preventDefault();
+                if (confirm('确定退出登录吗？')) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('username');
+                    sessionStorage.clear();
+                    window.location.reload();
+                }
             }
         };
+        dynamicContentContainer.addEventListener('click', logoutHandler);
+        window._logoutHandler = logoutHandler;
     } else {
-        console.warn('未找到退出登录按钮 #logoutBtn');
+        console.warn('未找到 dynamicContent 容器');
     }
 
     setActiveNavByView('profile');
