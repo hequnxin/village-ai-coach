@@ -1,4 +1,5 @@
 // services/pointsService.js
+
 const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
 
@@ -22,7 +23,8 @@ const POINTS = {
 async function addPoints(userId, points, reason) {
   if (!userId || points <= 0) return;
   await db.run(
-    `INSERT INTO user_points (id, user_id, points, reason, created_at) VALUES ($1, $2, $3, $4, $5)`,
+    `INSERT INTO user_points (id, user_id, points, reason, created_at)
+     VALUES ($1, $2, $3, $4, $5)`,
     [uuidv4(), userId, points, reason, new Date().toISOString()]
   );
 }
@@ -36,7 +38,6 @@ const DEFAULT_TASKS = [
   { id: 5, name: '参加每周竞赛', target: 1, current: 0, reward: 15, type: 'contest', completed: false }
 ];
 
-// 辅助函数：安全解析 task_data
 function parseTaskData(data) {
   if (!data) return DEFAULT_TASKS.map(t => ({ ...t, current: 0, completed: false }));
   if (typeof data === 'string') {
@@ -47,15 +48,9 @@ function parseTaskData(data) {
       return DEFAULT_TASKS.map(t => ({ ...t, current: 0, completed: false }));
     }
   }
-  // 已经是对象
   return data;
 }
 
-// ==================== 每日任务业务逻辑 ====================
-
-/**
- * 获取或创建用户当日的每日任务记录
- */
 async function getOrCreateDailyTasks(userId) {
   const today = new Date().toISOString().slice(0, 10);
   let row = await db.get(
@@ -81,13 +76,9 @@ async function getOrCreateDailyTasks(userId) {
   };
 }
 
-/**
- * 更新用户某类任务的进度
- */
 async function updateTaskProgress(userId, taskType, delta = 1) {
   const { id, tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
   if (completed || reward_claimed) return { updated: false, allCompleted: false, tasks };
-
   let updated = false;
   for (let task of tasks) {
     if (task.type === taskType && !task.completed) {
@@ -106,32 +97,23 @@ async function updateTaskProgress(userId, taskType, delta = 1) {
   return { updated, allCompleted, tasks };
 }
 
-/**
- * 领取每日任务奖励
- */
 async function claimDailyReward(userId) {
   const { id, tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
   if (!completed) return { success: false, message: '尚未完成全部任务' };
   if (reward_claimed) return { success: false, message: '奖励已领取' };
-
   const totalReward = tasks.reduce((sum, t) => sum + (t.completed ? t.reward : 0), 0);
   const bonus = tasks.every(t => t.completed) ? POINTS.DAILY_TASK_BONUS_ALL : 0;
   const points = totalReward + bonus;
-
   await addPoints(userId, points, '每日任务奖励');
   await db.run('UPDATE daily_tasks SET reward_claimed = true WHERE id = $1', [id]);
   return { success: true, points };
 }
 
-/**
- * 获取用户当日的任务列表及状态（供前端使用）
- */
 async function getUserDailyTasks(userId) {
   const { tasks, completed, reward_claimed } = await getOrCreateDailyTasks(userId);
   return { tasks, completed, reward_claimed };
 }
 
-// ==================== 导出 ====================
 module.exports = {
   ...POINTS,
   addPoints,

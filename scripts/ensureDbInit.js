@@ -55,7 +55,7 @@ async function ensureMissingTables() {
   `);
   console.log('✅ simulate_mistakes 表已确保存在');
 
-  // 确保 daily_tasks 表存在（新增）
+  // 确保 daily_tasks 表存在
   await db.run(`
     CREATE TABLE IF NOT EXISTS daily_tasks (
       id SERIAL PRIMARY KEY,
@@ -75,11 +75,49 @@ async function ensureMissingTables() {
     WHERE question_id NOT IN (SELECT id FROM quiz_questions)
   `);
   console.log('✅ 清理了无效的每日一练题目关联');
+
+  // ========== 为 messages 表添加 status 字段 ==========
+  try {
+    await db.run(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`);
+    console.log('✅ messages.status 字段已确保存在');
+  } catch (err) {
+    console.warn('⚠️ 添加 status 列失败:', err.message);
+  }
+
+  // 确保 messages.content 字段类型为 TEXT（避免长度限制）
+  try {
+    await db.run(`ALTER TABLE messages ALTER COLUMN content TYPE TEXT`);
+    console.log('✅ messages.content 字段类型已确保为 TEXT');
+  } catch (err) {
+    console.warn('⚠️ 修改 content 类型失败（可能已为 TEXT）:', err.message);
+  }
+
+  // ========== 新增：为 knowledge 表添加 tsv 列（用于全文检索） ==========
+  try {
+    // 添加 tsv 列（如果不存在）
+    await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);
+    console.log('✅ knowledge.tsv 字段已确保存在');
+
+    // 更新现有数据的 tsv 列（合并 title 和 content）
+    await db.run(`
+      UPDATE knowledge 
+      SET tsv = setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
+                setweight(to_tsvector('simple', COALESCE(content, '')), 'B')
+      WHERE tsv IS NULL
+    `);
+    console.log('✅ 已更新 knowledge 表的 tsv 值');
+
+    // 创建 GIN 索引（如果不存在）
+    await db.run(`CREATE INDEX IF NOT EXISTS idx_knowledge_tsv ON knowledge USING GIN (tsv)`);
+    console.log('✅ 全文检索索引已创建');
+  } catch (err) {
+    console.warn('⚠️ 添加 tsv 列或索引失败:', err.message);
+  }
 }
 
 async function fixQuizQuestions() {
   const count = await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE type = 'choice'`);
-  const targetCount = 100;
+  const targetCount = 50;
   if (count.c < targetCount) {
     console.log(`⚠️ 选择题数量不足 (${count.c}/${targetCount})，开始补充生成...`);
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
@@ -89,10 +127,10 @@ async function fixQuizQuestions() {
   }
 
   const fillCount = await db.get(`SELECT COUNT(*) as c FROM fill_questions`);
-  if (fillCount.c < 50) {
-    console.log(`⚠️ 填空题数量不足 (${fillCount.c}/50)，开始补充生成...`);
+  if (fillCount.c < 30) {
+    console.log(`⚠️ 填空题数量不足 (${fillCount.c}/30)，开始补充生成...`);
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
-    await generateAndStoreQuestions(100, true);
+    await generateAndStoreQuestions(50, true);
   } else {
     console.log(`✅ 已有 ${fillCount.c} 道填空题`);
   }
@@ -127,15 +165,19 @@ async function ensureWrongQuestionsColumn() {
   console.log('🔍 检查数据库初始化状态...');
   let retries = 5;
   let initialized = false;
+
   while (retries > 0 && !initialized) {
     try {
       await db.get('SELECT 1');
       console.log('✅ 数据库连接成功');
+
       await addSourceCategoryColumn();
       await ensureMissingTables();
       await ensureWrongQuestionsColumn();
+
       const themesExist = await tableExists('game_themes');
       const quizExist = await tableExists('quiz_questions');
+
       if (!themesExist || !quizExist) {
         console.log('⚠️ 缺失关键表，执行完整初始化...');
         const initDb = require('./initDb');
@@ -146,6 +188,7 @@ async function ensureWrongQuestionsColumn() {
         await fixQuizQuestions();
         console.log('✅ 趣味闯关已启用主题模式');
       }
+
       console.log('✅ 数据库准备就绪');
       initialized = true;
       break;
@@ -159,6 +202,7 @@ async function ensureWrongQuestionsColumn() {
       await new Promise(r => setTimeout(r, 3000));
     }
   }
+
   await db.pool.end();
   process.exit(0);
 })();

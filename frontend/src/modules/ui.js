@@ -1,4 +1,5 @@
 // frontend/src/modules/ui.js
+
 import { appState, toggleSessionFavorite, deleteSession, switchSession, deleteSessions, switchToMessage } from './state';
 import { escapeHtml } from '../utils/helpers';
 
@@ -9,10 +10,11 @@ let groupCollapsed = {
   meeting: localStorage.getItem('groupCollapsed_meeting') === 'true'
 };
 
-// 渲染分组会话列表（使用 DOM API，支持平滑动画）
+// 渲染分组会话列表（支持整行点击折叠/展开）
 export function renderSessionList() {
   const sessionListDiv = document.getElementById('sessionList');
   if (!sessionListDiv) return;
+
   sessionListDiv.innerHTML = '';
 
   // 获取当前会话数据
@@ -27,6 +29,7 @@ export function renderSessionList() {
     simulate: { title: '🎭 模拟对练', items: [] },
     meeting: { title: '🏛️ 会议模式', items: [] }
   };
+
   sessions.forEach(s => {
     const type = s.type;
     if (groups[type]) groups[type].items.push(s);
@@ -51,22 +54,25 @@ export function renderSessionList() {
   // 渲染每个分组
   for (const [key, group] of Object.entries(groups)) {
     if (group.items.length === 0) continue;
+
     const isCollapsed = groupCollapsed[key];
     const groupDiv = document.createElement('div');
     groupDiv.className = 'session-group';
     groupDiv.dataset.group = key;
 
+    // 分组头部（整行可点击）
     const headerDiv = document.createElement('div');
     headerDiv.className = 'session-group-header';
+    headerDiv.style.cursor = 'pointer';
     headerDiv.innerHTML = `
       <span class="session-group-title">${escapeHtml(group.title)}</span>
       <button class="group-toggle" data-group="${key}">${isCollapsed ? '▶' : '▼'}</button>
     `;
     groupDiv.appendChild(headerDiv);
 
+    // 内容区域
     const contentDiv = document.createElement('div');
     contentDiv.className = 'session-group-content';
-    // 先不设置 max-height，等添加完子元素后再根据折叠状态设置
     contentDiv.style.overflow = 'hidden';
     contentDiv.style.transition = 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
 
@@ -74,7 +80,6 @@ export function renderSessionList() {
     group.items.forEach(session => {
       const isActive = session.id === appState.currentSessionId;
       const isChecked = appState.selectedSessions?.includes(session.id) ? 'checked' : '';
-
       const itemDiv = document.createElement('div');
       itemDiv.className = `session-item ${isActive ? 'active' : ''}`;
       itemDiv.dataset.id = session.id;
@@ -110,20 +115,43 @@ export function renderSessionList() {
       contentDiv.appendChild(itemDiv);
     });
 
-    // 将 contentDiv 添加到 groupDiv 后再计算高度，否则 scrollHeight 可能为 0
     groupDiv.appendChild(contentDiv);
     sessionListDiv.appendChild(groupDiv);
 
-    // 根据折叠状态设置 max-height
+    // 设置初始高度
     if (isCollapsed) {
       contentDiv.style.maxHeight = '0';
     } else {
-      // 展开：获取内容实际高度（scrollHeight），设置 max-height 实现动画
-      // 使用 requestAnimationFrame 确保 DOM 已渲染
       requestAnimationFrame(() => {
         contentDiv.style.maxHeight = contentDiv.scrollHeight + 'px';
       });
     }
+
+    // 绑定分组头部点击事件（整行可点击）
+    headerDiv.onclick = (e) => {
+      // 如果点击的是按钮本身，也正常触发折叠（不阻止冒泡）
+      const groupKey = key;
+      const content = groupDiv.querySelector('.session-group-content');
+      if (!content) return;
+
+      const newCollapsed = !groupCollapsed[groupKey];
+      groupCollapsed[groupKey] = newCollapsed;
+      localStorage.setItem(`groupCollapsed_${groupKey}`, newCollapsed);
+
+      if (newCollapsed) {
+        // 折叠：先获取当前高度，再设为0
+        const currentHeight = content.scrollHeight;
+        content.style.maxHeight = currentHeight + 'px';
+        content.offsetHeight; // 强制重绘
+        content.style.maxHeight = '0';
+      } else {
+        // 展开：设为 auto 获取实际高度，再设为该高度
+        content.style.maxHeight = content.scrollHeight + 'px';
+      }
+      // 更新按钮图标
+      const toggleBtn = headerDiv.querySelector('.group-toggle');
+      if (toggleBtn) toggleBtn.innerHTML = newCollapsed ? '▶' : '▼';
+    };
   }
 
   if (sessions.length === 0) {
@@ -133,7 +161,7 @@ export function renderSessionList() {
   bindSessionListEvents(sessions);
 }
 
-// 绑定会话列表中的事件
+// 绑定会话列表中的事件（收藏、删除、切换等）
 function bindSessionListEvents(filteredSessions) {
   // 全选事件
   const selectAllCheckbox = document.getElementById('selectAllCheckbox');
@@ -161,7 +189,6 @@ function bindSessionListEvents(filteredSessions) {
       } else {
         appState.selectedSessions = appState.selectedSessions.filter(id => id !== sessionId);
       }
-      // 更新全选状态
       const newTotal = filteredSessions.length;
       const newSelected = appState.selectedSessions.length;
       const allCheckedNow = newTotal > 0 && newSelected === newTotal;
@@ -170,48 +197,6 @@ function bindSessionListEvents(filteredSessions) {
       const infoSpan = document.querySelector('.select-all-info');
       if (infoSpan) infoSpan.textContent = `已选 ${newSelected} / ${newTotal}`;
       updateMultiDeleteBar();
-    };
-  });
-
-  // 分组折叠按钮（点击时平滑切换）
-  document.querySelectorAll('.group-toggle').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const groupKey = btn.dataset.group;
-      if (!groupKey) return;
-
-      const groupDiv = btn.closest('.session-group');
-      const contentDiv = groupDiv?.querySelector('.session-group-content');
-      if (!contentDiv) return;
-
-      const isCurrentlyCollapsed = groupCollapsed[groupKey];
-      const newCollapsed = !isCurrentlyCollapsed;
-
-      // 更新状态
-      groupCollapsed[groupKey] = newCollapsed;
-      localStorage.setItem(`groupCollapsed_${groupKey}`, newCollapsed);
-
-      // 执行动画：先获取当前高度（如果是展开状态，需要先获取 scrollHeight 再设为 0）
-      if (newCollapsed) {
-        // 折叠：先记录当前高度，然后设为 0
-        const currentHeight = contentDiv.scrollHeight;
-        contentDiv.style.maxHeight = currentHeight + 'px';
-        // 强制重绘
-        contentDiv.offsetHeight;
-        contentDiv.style.maxHeight = '0';
-      } else {
-        // 展开：设为 auto 获取实际高度，再设为该高度
-        contentDiv.style.maxHeight = contentDiv.scrollHeight + 'px';
-        // 过渡结束后，可以保留为 auto（但不强制，保留为具体值也可以）
-        const onTransitionEnd = () => {
-          contentDiv.removeEventListener('transitionend', onTransitionEnd);
-          if (!groupCollapsed[groupKey]) {
-            // 展开状态下，为了后续再次折叠能正确获取高度，可以保留 max-height 为实际值，但最好保持
-            // 这里保留为 scrollHeight，不影响使用
-          }
-        };
-        contentDiv.addEventListener('transitionend', onTransitionEnd, { once: true });
-      }
     };
   });
 
@@ -322,35 +307,29 @@ export function setupSessionTabs() {
     [allSessionsTab, favoritesTab, messageFavoritesTab].forEach(tab => tab.classList.remove('active'));
     active.classList.add('active');
   };
-
   const showSessionList = () => {
     if (sessionList) sessionList.style.display = 'block';
     if (messageFavoriteList) messageFavoriteList.style.display = 'none';
     renderSessionList();
   };
-
   const showMessageFavorites = () => {
     if (sessionList) sessionList.style.display = 'none';
     if (messageFavoriteList) messageFavoriteList.style.display = 'block';
     renderMessageFavoriteList();
   };
-
   allSessionsTab.addEventListener('click', () => {
     appState.currentFilter = 'all';
     setActiveTab(allSessionsTab);
     showSessionList();
   });
-
   favoritesTab.addEventListener('click', () => {
     appState.currentFilter = 'favorites';
     setActiveTab(favoritesTab);
     showSessionList();
   });
-
   messageFavoritesTab.addEventListener('click', () => {
     setActiveTab(messageFavoritesTab);
     showMessageFavorites();
   });
-
   showSessionList();
 }

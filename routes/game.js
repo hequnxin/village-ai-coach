@@ -1,4 +1,5 @@
 // routes/game.js
+
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../services/db');
@@ -57,58 +58,6 @@ router.get('/fun-level-questions', async (req, res) => {
     questions = [...questions, ...parsedExtra];
   }
 
-  // 随机转换题型
-  if (questions.length >= 2) {
-    const newQuestions = [];
-    for (let i = 0; i < questions.length; i++) {
-      let q = questions[i];
-      const rand = Math.random();
-      if (q.type === 'choice') {
-        if (rand < 0.2 && i % 2 === 0) {
-          const cleanQuestion = q.question.replace(/[？?]/g, '');
-          let isTrue = true;
-          const positiveKeywords = ['可以', '应该', '需要', '必须', '鼓励', '支持'];
-          const negativeKeywords = ['不能', '禁止', '不得', '严禁', '不准'];
-          for (const kw of positiveKeywords) if (cleanQuestion.includes(kw)) { isTrue = true; break; }
-          for (const kw of negativeKeywords) if (cleanQuestion.includes(kw)) { isTrue = false; break; }
-          q = {
-            ...q,
-            question_type: 'judge',
-            question: `判断：${cleanQuestion}？`,
-            options: ['正确', '错误'],
-            answer: isTrue ? 0 : 1,
-            explanation: q.explanation || (isTrue ? '该说法符合政策规定。' : '该说法与政策不符。')
-          };
-        } else if (rand < 0.35 && i % 3 === 0 && q.options.length >= 3 &&
-          (q.question.includes('顺序') || q.question.includes('流程') || q.question.includes('步骤') || q.category === '流程')) {
-          const correctOrder = [...Array(q.options.length).keys()];
-          const shuffled = [...correctOrder];
-          for (let j = shuffled.length - 1; j > 0; j--) {
-            const k = Math.floor(Math.random() * (j + 1));
-            [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
-          }
-          const shuffledOptions = shuffled.map(idx => q.options[idx]);
-          q = {
-            ...q,
-            question_type: 'sort',
-            question: `请按正确顺序排列：${q.question}`,
-            options: shuffledOptions,
-            answer: correctOrder,
-            explanation: q.explanation || '请按照政策流程顺序排列。'
-          };
-        } else {
-          q.question_type = 'choice';
-        }
-      } else {
-        q.question_type = 'choice';
-      }
-      newQuestions.push(q);
-    }
-    questions = newQuestions;
-  } else {
-    questions = questions.map(q => ({ ...q, question_type: 'choice' }));
-  }
-
   const events = ['double', 'hint', 'skip'];
   const randomEvent = Math.random() < 0.2 ? events[Math.floor(Math.random() * events.length)] : null;
   res.json({ questions, event: randomEvent });
@@ -131,7 +80,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 翻牌配对（记忆匹配） ====================
+// ==================== 翻牌配对 ====================
 router.get('/memory-pairs', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 8;
@@ -521,7 +470,7 @@ router.post('/wrong-questions/record', async (req, res) => {
   res.json({ recorded: true, correct: isCorrect, correctAnswer });
 });
 
-// ==================== 其他 ====================
+// ==================== 积分添加接口（供前端调用） ====================
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;

@@ -1,4 +1,5 @@
 // services/questionGenerator.js
+
 const db = require('./db');
 const { chat } = require('./openai');
 
@@ -135,67 +136,126 @@ async function generateFill(knowledge, useAI = true) {
   return await generateFillByRule(knowledge);
 }
 
-// ================== 判断题（仅AI生成） ==================
-async function generateJudgeByAI(knowledge) {
-  const prompt = `你是一名乡村政策出题专家。根据以下知识，生成一道判断题（正确/错误）。
-要求：题目必须基于知识内容，判断点明确，不能模棱两可。
+// ================== 判断题（真正的判断句，根据知识内容判断正误） ==================
+async function generateJudge(knowledge) {
+  // 从知识内容中提取一个陈述句作为判断题
+  const sentences = knowledge.content.split(/[。；\\n]/).filter(s => s.trim().length > 10);
+  // 优先选择带有肯定或否定表述的句子
+  const keywords = ['可以', '不能', '必须', '禁止', '不得', '应当', '只能', '需要', '属于', '是'];
+  let selected = null;
+  for (const s of sentences) {
+    if (keywords.some(kw => s.includes(kw))) {
+      selected = s.trim();
+      break;
+    }
+  }
+  if (!selected && sentences.length > 0) {
+    selected = sentences[0].trim();
+  }
+  if (!selected) return null;
+  // 确保句子以句号结尾
+  if (!selected.endsWith('。')) selected += '。';
+
+  // 使用 AI 判断该陈述句的正确性
+  let isTrue = false;
+  if (process.env.DEEPSEEK_API_KEY) {
+    try {
+      const prompt = `请根据以下知识内容，判断给定的陈述句是否正确。只回答“正确”或“错误”，不要输出其他内容。
+
 知识标题：${knowledge.title}
 知识内容：${knowledge.content.substring(0, 800)}
-输出JSON格式：{"question":"判断：...","answer":0或1,"explanation":"解析"}`;
-  try {
-    const response = await chat([{ role: 'user', content: prompt }], { temperature: 0.5, max_tokens: 300 });
-    const match = response.match(/\{[\s\S]*\}/);
-    if (match) {
-      const obj = JSON.parse(match[0]);
-      if (obj.question && (obj.answer === 0 || obj.answer === 1)) {
-        return {
-          question_type: 'judge',
-          question: obj.question,
-          options: JSON.stringify(['正确', '错误']),
-          answer: String(obj.answer),
-          explanation: obj.explanation || ''
-        };
+
+陈述句：${selected}
+
+该陈述句是否正确？`;
+      const response = await chat([{ role: 'user', content: prompt }], { temperature: 0.1, max_tokens: 10 });
+      const answer = response.trim();
+      isTrue = (answer.includes('正确') && !answer.includes('错误'));
+      if (!isTrue && !answer.includes('错误')) {
+        // 如果回答模糊，再次请求
+        const retryPrompt = `请只回答“正确”或“错误”。陈述句：${selected}`;
+        const retryResponse = await chat([{ role: 'user', content: retryPrompt }], { temperature: 0.1, max_tokens: 10 });
+        const retryAnswer = retryResponse.trim();
+        isTrue = (retryAnswer.includes('正确') && !retryAnswer.includes('错误'));
       }
+    } catch (err) {
+      console.error('AI判断判断题失败，使用规则回退:', err);
+      // 回退：根据否定词简单判断（不准确，但备用）
+      const negativeWords = ['不能', '不得', '禁止', '无法', '不可以', '不应', '不是'];
+      const hasNegative = negativeWords.some(neg => selected.includes(neg));
+      isTrue = !hasNegative;
     }
-    return null;
-  } catch (err) {
-    console.error('AI生成判断题失败:', err.message);
-    return null;
+  } else {
+    // 无 AI 时，简单规则：含有否定词则判为错误，否则正确
+    const negativeWords = ['不能', '不得', '禁止', '无法', '不可以', '不应', '不是'];
+    const hasNegative = negativeWords.some(neg => selected.includes(neg));
+    isTrue = !hasNegative;
   }
+
+  // 生成解释
+  let explanation = `根据知识"${knowledge.title}"，该说法${isTrue ? '正确' : '错误'}。`;
+  if (!isTrue) {
+    explanation += ` 知识中提到：${knowledge.content.substring(0, 150)}...`;
+  }
+
+  return {
+    question_type: 'judge',
+    question: selected,
+    options: JSON.stringify(['正确', '错误']),
+    answer: isTrue ? '0' : '1',
+    explanation: explanation
+  };
 }
 
-// ================== 排序题（仅AI生成） ==================
-async function generateSortByAI(knowledge) {
-  const prompt = `你是一名乡村政策出题专家。根据以下知识，生成一道排序题（将步骤按正确顺序排列）。
-要求：知识中必须包含明确的流程、步骤或顺序。提取2-5个步骤。
-知识标题：${knowledge.title}
-知识内容：${knowledge.content.substring(0, 800)}
-输出JSON格式：{"question":"请按正确顺序排列：...","options":["步骤1","步骤2",...],"answer":[0,1,2,...],"explanation":"正确顺序是..."}`;
-  try {
-    const response = await chat([{ role: 'user', content: prompt }], { temperature: 0.5, max_tokens: 500 });
-    const match = response.match(/\{[\s\S]*\}/);
-    if (match) {
-      const obj = JSON.parse(match[0]);
-      if (obj.question && Array.isArray(obj.options) && obj.options.length >= 2 && Array.isArray(obj.answer)) {
-        return {
-          question_type: 'sort',
-          question: obj.question,
-          options: JSON.stringify(obj.options),
-          answer: JSON.stringify(obj.answer),
-          explanation: obj.explanation || ''
-        };
-      }
-    }
-    return null;
-  } catch (err) {
-    console.error('AI生成排序题失败:', err.message);
-    return null;
+// ================== 排序题 ==================
+async function generateSort(knowledge) {
+  const content = knowledge.content;
+  let steps = [];
+  const numberedMatch = content.match(/(\d+)[.、）]\s*([^。；\n]+)/g);
+  if (numberedMatch) {
+    steps = numberedMatch.map(s => s.replace(/^\d+[.、）]\s*/, '').trim());
   }
+  if (steps.length < 2) {
+    const chineseMatch = content.match(/(?:第一|第二|第三|第四|第五)[步点]\s*[：:]\s*([^。；\n]+)/g);
+    if (chineseMatch) {
+      steps = chineseMatch.map(s => s.replace(/^[^：:]+[：:]\s*/, '').trim());
+    }
+  }
+  if (steps.length < 2) {
+    const first = content.match(/首先[：:]\s*([^。；\n]+)/);
+    const then = content.match(/然后[：:]\s*([^。；\n]+)/);
+    const last = content.match(/最后[：:]\s*([^。；\n]+)/);
+    if (first) steps.push(first[1].trim());
+    if (then) steps.push(then[1].trim());
+    if (last) steps.push(last[1].trim());
+  }
+  if (steps.length < 2 && (content.includes('流程') || content.includes('步骤'))) {
+    const sentences = content.split(/[；\n]/).filter(s => s.trim().length > 5 && s.trim().length < 50);
+    if (sentences.length >= 2) steps = sentences.slice(0, 5);
+  }
+  if (steps.length < 2) return null;
+  if (steps.length > 5) steps = steps.slice(0, 5);
+  const correctOrder = steps.map((_, idx) => idx);
+  const shuffledOptions = [...steps];
+  for (let i = shuffledOptions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+  }
+  return {
+    question_type: 'sort',
+    question: `请按正确顺序排列以下关于"${knowledge.title}"的步骤：`,
+    options: JSON.stringify(shuffledOptions),
+    answer: JSON.stringify(correctOrder),
+    explanation: `正确的顺序是：${steps.join(' → ')}`,
+    category: knowledge.category,
+    theme: knowledge.type,
+    difficulty: 1,
+    source_category: knowledge.category
+  };
 }
 
-// ================== 统一生成入口（修复版：分别补充各题型） ==================
+// ================== 统一生成入口 ==================
 async function generateAndStoreQuestions(limit = 50, force = false) {
-  // 获取各题型现有数量
   const existingChoice = (await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE question_type = 'choice'`)).c;
   const existingFill = (await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE question_type = 'fill'`)).c;
   const existingJudge = (await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE question_type = 'judge'`)).c;
@@ -212,7 +272,6 @@ async function generateAndStoreQuestions(limit = 50, force = false) {
     return;
   }
 
-  // 获取所有已审核的知识（随机顺序）
   let knowledge = await db.all(
     `SELECT id, title, content, type, category FROM knowledge WHERE status = 'approved' ORDER BY RANDOM()`
   );
@@ -220,7 +279,6 @@ async function generateAndStoreQuestions(limit = 50, force = false) {
   let choiceCount = 0, fillCount = 0, judgeCount = 0, sortCount = 0;
 
   for (const k of knowledge) {
-    // 选择题（如果还需要）
     if (needChoice > 0 && choiceCount < needChoice) {
       const exists = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [`auto_${k.id}_choice`]);
       if (!exists) {
@@ -234,7 +292,6 @@ async function generateAndStoreQuestions(limit = 50, force = false) {
       }
     }
 
-    // 填空题
     if (needFill > 0 && fillCount < needFill) {
       const exists = await db.get(`SELECT id FROM quiz_questions WHERE id = $1`, [`auto_${k.id}_fill`]);
       if (!exists) {
@@ -248,29 +305,23 @@ async function generateAndStoreQuestions(limit = 50, force = false) {
       }
     }
 
-    // 判断题：仅AI生成，需要配置 DEEPSEEK_API_KEY
-    if (needJudge > 0 && judgeCount < needJudge && process.env.DEEPSEEK_API_KEY) {
-      const judge = await generateJudgeByAI(k);
+    if (needJudge > 0 && judgeCount < needJudge) {
+      const judge = await generateJudge(k);
       if (judge) {
         await db.run(`INSERT INTO quiz_questions (id, type, question_type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at)
           VALUES ($1, 'judge', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
           [`judge_${k.id}_${Date.now()}_${judgeCount}`, judge.question_type, judge.question, judge.options, judge.answer, judge.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
         judgeCount++;
-      } else {
-        console.log(`⚠️  AI生成判断题失败，跳过知识：${k.id}`);
       }
     }
 
-    // 排序题：仅AI生成，需要配置 DEEPSEEK_API_KEY
-    if (needSort > 0 && sortCount < needSort && process.env.DEEPSEEK_API_KEY) {
-      const sort = await generateSortByAI(k);
+    if (needSort > 0 && sortCount < needSort) {
+      const sort = await generateSort(k);
       if (sort) {
         await db.run(`INSERT INTO quiz_questions (id, type, question_type, question, options, answer, explanation, category, theme, difficulty, source_category, created_at)
           VALUES ($1, 'sort', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (id) DO NOTHING`,
           [`sort_${k.id}_${Date.now()}_${sortCount}`, sort.question_type, sort.question, sort.options, sort.answer, sort.explanation, k.category, k.type, 1, k.category, new Date().toISOString()]);
         sortCount++;
-      } else {
-        console.log(`⚠️  AI生成排序题失败，跳过知识：${k.id}`);
       }
     }
 
@@ -281,4 +332,4 @@ async function generateAndStoreQuestions(limit = 50, force = false) {
   console.log(`✅ 生成并存储：选择题 ${choiceCount} 道，填空题 ${fillCount} 道，判断题 ${judgeCount} 道，排序题 ${sortCount} 道`);
 }
 
-module.exports = { generateChoice, generateFill, generateJudgeByAI, generateSortByAI, generateAndStoreQuestions };
+module.exports = { generateChoice, generateFill, generateJudge, generateSort, generateAndStoreQuestions };

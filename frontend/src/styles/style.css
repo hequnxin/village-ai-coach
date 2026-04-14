@@ -8,6 +8,9 @@
 html, body {
   height: 100%;
   width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 body {
@@ -19,7 +22,7 @@ body {
 
 .app {
   width: 100vw;
-  max-width: 1600px;
+  max-width: none;
   height: 100vh;
   background: #fff;
   display: flex;
@@ -27,6 +30,7 @@ body {
   position: relative;
   z-index: 1;
   margin: 0 auto;
+  padding: 0;
 }
 
 /* 3D 容器（保留，不影响动画） */
@@ -423,6 +427,7 @@ body {
   overflow: hidden;
   position: relative;
   z-index: 2;
+  min-width: 0;
 }
 
 /* 动态内容入场动画 */
@@ -2461,14 +2466,31 @@ body {
 #desktopTipContainer {
   transition: all 0.2s;
 }
-/* 电脑端会议模式输入框宽度加长 */
+
+/* 桌面端会议模式输入框宽度自适应 */
 @media (min-width: 769px) {
-  .meeting-layout .meeting-input-area textarea {
-    width: 100% !important;
+  .meeting-layout .meeting-chat-area {
     flex: 1;
+    min-width: 0;  /* 防止flex溢出 */
   }
   .meeting-layout .meeting-input-area {
+    width: 100%;
+    padding: 12px;
+    box-sizing: border-box;
+  }
+  .meeting-layout .meeting-input-area > div {
     display: flex;
     gap: 8px;
+    width: 100%;
   }
+  .meeting-layout .meeting-input-area textarea {
+    flex: 1;
+    min-width: 0;   /* 允许收缩 */
+  }
+}
+.message-content {
+  white-space: pre-wrap;    /* 保留换行和空格，自动换行 */
+  word-break: break-word;   /* 长单词换行 */
+  font-family: inherit;
+  line-height: 1.5;
 }

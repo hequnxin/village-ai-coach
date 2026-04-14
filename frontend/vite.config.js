@@ -12,13 +12,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',  // 使用 127.0.0.1 而不是 localhost
-        changeOrigin: true,               // 重要：修改请求头中的 origin
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
         secure: false,
-        rewrite: (path) => path          // 保持原路径
+        rewrite: (path) => path
       }
     },
-    host: '0.0.0.0',                     // 确保监听所有网络接口
+    host: '0.0.0.0',
     port: 5173
   }
 });

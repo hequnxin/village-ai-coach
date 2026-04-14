@@ -119,8 +119,24 @@ let currentAgendaIndex = 0;
 let showTips = true;
 let meetingStage = 'opening';
 let currentMeetingType = 'villager';
-let tipTimeout = null; // 移动端提示自动消失定时器
-let desktopTipCollapsed = false; // 电脑端提示是否折叠
+let tipTimeout = null;
+
+// 动态生成提示内容（根据最近一条用户消息）
+function getDynamicTip() {
+  const container = document.getElementById('meetingMessages');
+  if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
+  const messages = container.querySelectorAll('.meeting-message');
+  const lastUserMsg = Array.from(messages).reverse().find(m => m.classList.contains('user'));
+  if (lastUserMsg) {
+    const text = lastUserMsg.querySelector('.message-bubble')?.innerText || '';
+    if (text.includes('垃圾')) return '💡 可以引用《垃圾分类管理条例》，强调政府补贴和长期效益。';
+    if (text.includes('土地') || text.includes('宅基地')) return '💡 建议查阅《土地管理法》相关条款，明确权属。';
+    if (text.includes('医保') || text.includes('养老')) return '💡 可以引用最新医保报销比例和养老金调整方案。';
+    if (text.includes('产业') || text.includes('项目')) return '💡 强调项目可行性、收益预期和风险保障措施。';
+    if (text.includes('噪音') || text.includes('纠纷')) return '💡 建议引导双方换位思考，提出折中方案。';
+  }
+  return meetingTips[Math.floor(Math.random() * meetingTips.length)];
+}
 
 // ==================== 辅助函数 ====================
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -191,13 +207,23 @@ function updateVillagerStance(villager, newValue) {
   if (villager.stanceValue >= 0.65) villager.stance = '支持';
   else if (villager.stanceValue <= 0.35) villager.stance = '反对';
   else villager.stance = '中立';
-  // 桌面端刷新侧边栏
-  const container = document.getElementById('meetingVillagers');
-  if (container && window.innerWidth > 768) renderMeetingVillagersDesktop();
+  if (window.innerWidth > 768) renderMeetingVillagersDesktop();
+}
+
+// 更新整体满意度UI
+function updateOverallSatisfaction(value) {
+  const overall = value !== undefined ? value : 50;
+  const satDiv = document.getElementById('meetingSatisfaction');
+  if (satDiv) satDiv.innerHTML = `整体满意度：${overall}%`;
+  const drawerSat = document.getElementById('drawerSatisfaction');
+  if (drawerSat) drawerSat.innerText = `${overall}%`;
 }
 
 function updateMeetingUI() {
   if (!currentMeeting) return;
+  const overall = currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50;
+  updateOverallSatisfaction(overall);
+
   const agendaContainer = document.getElementById('meetingAgenda');
   if (agendaContainer && currentMeeting.agenda) {
     agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
@@ -205,10 +231,6 @@ function updateMeetingUI() {
         ${idx+1}. ${escapeHtml(item.name)} ${item.completed ? '✅' : ''}
       </div>
     `).join('');
-  }
-  const satisfactionDiv = document.getElementById('meetingSatisfaction');
-  if (satisfactionDiv && currentMeeting.satisfaction !== undefined) {
-    satisfactionDiv.innerHTML = `满意度：${currentMeeting.satisfaction}%`;
   }
   const voteBtn = document.getElementById('voteBtn');
   const nextAgendaBtn = document.getElementById('nextAgendaBtn');
@@ -229,6 +251,7 @@ function renderMeetingVillagersDesktop() {
     const realStance = v.stance || v.initialStance;
     const stanceIcon = realStance === '支持' ? '✅' : (realStance === '反对' ? '❌' : '⚪');
     const stanceClass = `stance-${realStance === '支持' ? 'support' : (realStance === '反对' ? 'oppose' : 'neutral')}`;
+    const personalSat = v.satisfaction !== undefined ? v.satisfaction : 50;
     card.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px;">
         <div class="villager-avatar" style="font-size:1.2rem;">${v.avatar}</div>
@@ -238,6 +261,7 @@ function renderMeetingVillagersDesktop() {
           <div style="background:#eee; border-radius:4px; height:4px; margin-top:4px;">
             <div style="width:${(v.stanceValue || 0.5) * 100}%; background:#4caf50; height:4px; border-radius:4px;"></div>
           </div>
+          <div class="villager-satisfaction" style="font-size:0.7rem; margin-top:2px;">满意度: ${personalSat}%</div>
         </div>
       </div>
     `;
@@ -276,7 +300,19 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
     });
     const data = await res.json();
     if (data.stanceValue !== undefined) updateVillagerStance(villager, data.stanceValue);
-    if (data.satisfaction !== undefined && currentMeeting) currentMeeting.satisfaction = data.satisfaction;
+    // 更新整体满意度
+    if (data.satisfaction !== undefined && currentMeeting) {
+      currentMeeting.satisfaction = data.satisfaction;
+      updateOverallSatisfaction(data.satisfaction);
+    }
+    // 更新个人满意度
+    if (data.villagerSatisfaction !== undefined && currentMeeting) {
+      const idx = currentMeeting.villagers.findIndex(v => v.id === villager.id);
+      if (idx !== -1) {
+        currentMeeting.villagers[idx].satisfaction = data.villagerSatisfaction;
+        if (window.innerWidth > 768) renderMeetingVillagersDesktop();
+      }
+    }
     return data.reply || `${villager.name}：我没什么意见。`;
   } catch(e) {
     console.error('自动发言失败', e);
@@ -284,73 +320,81 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   }
 }
 
-// 电脑端：右下角提示浮层
-function showDesktopTip(tipText) {
-  let tipContainer = document.getElementById('desktopTipContainer');
-  if (!tipContainer) {
-    tipContainer = document.createElement('div');
-    tipContainer.id = 'desktopTipContainer';
-    tipContainer.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:1000; background:white; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,0.15); max-width:280px; transition:all 0.2s;';
-    document.body.appendChild(tipContainer);
+// 移动端灯泡提示
+let mobileTipDiv = null;
+function showMobileTip(tipText, keepUntilManualClose = false) {
+  let targetBtn = document.getElementById('meetingVoiceBtn');
+  if (!targetBtn) targetBtn = document.getElementById('sendMeetingBtn');
+  if (!targetBtn) return;
+  const rect = targetBtn.getBoundingClientRect();
+  if (mobileTipDiv) {
+    mobileTipDiv.remove();
+    mobileTipDiv = null;
+    if (tipTimeout) clearTimeout(tipTimeout);
   }
-  tipContainer.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#2e5d34; color:white; border-radius:12px 12px 0 0; cursor:pointer;">
-      <span>💡 会议建议</span>
-      <span id="desktopTipToggle">${desktopTipCollapsed ? '▼' : '▲'}</span>
-    </div>
-    <div id="desktopTipContent" style="padding:12px; font-size:13px; line-height:1.5; ${desktopTipCollapsed ? 'display:none;' : ''}">
-      ${escapeHtml(tipText)}
-    </div>
-  `;
-  const toggleBtn = document.getElementById('desktopTipToggle');
-  const contentDiv = document.getElementById('desktopTipContent');
-  toggleBtn.onclick = () => {
-    desktopTipCollapsed = !desktopTipCollapsed;
-    if (desktopTipCollapsed) {
-      contentDiv.style.display = 'none';
-      toggleBtn.innerHTML = '▼';
-    } else {
-      contentDiv.style.display = 'block';
-      toggleBtn.innerHTML = '▲';
-    }
-  };
-}
-
-// 移动端：点击灯泡按钮在麦克风上方弹出提示，几秒后自动消失
-function showMobileTip(tipText) {
-  const voiceBtn = document.getElementById('meetingVoiceBtn');
-  if (!voiceBtn) return;
-  const rect = voiceBtn.getBoundingClientRect();
   const tipDiv = document.createElement('div');
   tipDiv.className = 'mobile-tip-popup';
   tipDiv.textContent = tipText;
+  let leftPos = rect.left + rect.width/2 - 100;
+  if (leftPos < 10) leftPos = 10;
+  if (leftPos + 200 > window.innerWidth) leftPos = window.innerWidth - 210;
   tipDiv.style.cssText = `
     position:fixed;
-    bottom: ${window.innerHeight - rect.top + 8}px;
-    left: ${rect.left + rect.width/2 - 100}px;
+    bottom: auto;
+    top: ${rect.top - 40}px;
+    left: ${leftPos}px;
     background:#2e5d34;
     color:white;
     padding:6px 12px;
     border-radius:20px;
     font-size:12px;
-    white-space:nowrap;
+    white-space:normal;
+    max-width:200px;
+    word-break:break-word;
     z-index:2000;
     box-shadow:0 2px 8px rgba(0,0,0,0.2);
-    pointer-events:none;
-    animation:fadeInOut 2.5s ease-out forwards;
+    pointer-events:auto;
+    cursor:pointer;
   `;
+  tipDiv.onclick = () => {
+    if (tipDiv && tipDiv.remove) tipDiv.remove();
+    mobileTipDiv = null;
+    if (tipTimeout) clearTimeout(tipTimeout);
+  };
   document.body.appendChild(tipDiv);
-  if (tipTimeout) clearTimeout(tipTimeout);
-  tipTimeout = setTimeout(() => { if (tipDiv && tipDiv.remove) tipDiv.remove(); }, 2500);
+  mobileTipDiv = tipDiv;
+  if (!keepUntilManualClose) {
+    tipTimeout = setTimeout(() => {
+      if (mobileTipDiv) {
+        mobileTipDiv.remove();
+        mobileTipDiv = null;
+      }
+    }, 4000);
+  }
 }
 
-// 修改 startRoundRobin 函数，增加加载提示参数
+function hideMobileTip() {
+  if (mobileTipDiv) {
+    mobileTipDiv.remove();
+    mobileTipDiv = null;
+  }
+  if (tipTimeout) clearTimeout(tipTimeout);
+}
+
+function toggleMobileTip() {
+  if (mobileTipDiv) {
+    hideMobileTip();
+    return;
+  }
+  const tipText = getDynamicTip();
+  showMobileTip(tipText, true);
+}
+
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
   roundRobinInProgress = true;
   meetingStage = 'roundRobin';
   updateMeetingUI();
   await sendSystemMessage(sessionId, systemOpening);
-  // 显示加载提示
   if (loadingMsgElement) {
     loadingMsgElement.style.display = 'block';
     scrollMeetingMessages();
@@ -372,7 +416,6 @@ async function startRoundRobin(sessionId, villagers, systemOpening, meetingType,
   if (loadingMsgElement) loadingMsgElement.remove();
 }
 
-// 修改 startMeeting 函数，加入加载提示创建
 async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
   try {
     const res = await fetchWithAuth('/api/meeting/session', {
@@ -399,6 +442,12 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
       currentAgendaIndex: 0, votes: {},
       satisfaction: 50, topic, stage: 'opening'
     };
+    // 根据初始立场设置个人满意度
+    currentMeeting.villagers.forEach(v => {
+      if (v.initialStance === '支持') v.satisfaction = 70;
+      else if (v.initialStance === '反对') v.satisfaction = 30;
+      else v.satisfaction = 50;
+    });
     currentAgendaIndex = 0;
     meetingStage = 'opening';
     votingInProgress = false;
@@ -407,7 +456,6 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     renderMeetingChatArea();
     startMeetingPolling(sessionId);
 
-    // 创建加载提示元素（移动端和桌面端都使用，但位置在聊天区）
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'meeting-message system';
     loadingDiv.style.display = 'none';
@@ -442,9 +490,12 @@ async function startMeetingPolling(sessionId) {
       const data = await res.json();
       if (currentMeeting) {
         currentMeeting.agenda = data.agenda;
-        currentMeeting.satisfaction = data.satisfaction;
+        if (data.satisfaction !== undefined) {
+          currentMeeting.satisfaction = data.satisfaction;
+          updateOverallSatisfaction(data.satisfaction);
+        }
         currentMeeting.emotions = data.emotions;
-        currentAgendaIndex = data.currentAgendaIndex;
+        currentAgendaIndex = data.currentAgendaIndex !== undefined ? data.currentAgendaIndex : currentAgendaIndex;
         if (data.votes) currentMeeting.votes = data.votes;
         updateMeetingUI();
         if (data.meetingStatus === 'finished') {
@@ -476,7 +527,14 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
     if (data.stanceValue !== undefined) updateVillagerStance(activeVillager, data.stanceValue);
     if (data.satisfaction !== undefined) {
       currentMeeting.satisfaction = data.satisfaction;
-      updateMeetingUI();
+      updateOverallSatisfaction(data.satisfaction);
+    }
+    if (data.villagerSatisfaction !== undefined) {
+      const idx = currentMeeting.villagers.findIndex(v => v.id === activeVillager.id);
+      if (idx !== -1) {
+        currentMeeting.villagers[idx].satisfaction = data.villagerSatisfaction;
+        if (window.innerWidth > 768) renderMeetingVillagersDesktop();
+      }
     }
     playSound('send');
     updateTaskProgress('meeting', 1);
@@ -655,6 +713,7 @@ function showMeetingResolution(resolution) {
   modal.querySelector('.modal-close').onclick = () => modal.remove();
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
 }
+
 // ==================== 核心渲染函数 ====================
 
 export async function renderMeetingChat(session) {
@@ -668,7 +727,7 @@ export async function renderMeetingChat(session) {
   const agenda = config.agenda || [];
   currentAgendaIndex = config.currentAgendaIndex || 0;
   const votes = config.votes || {};
-  const satisfaction = config.satisfaction || 50;
+  const satisfaction = config.satisfaction !== undefined ? config.satisfaction : 50;
   currentMeeting = {
     sessionId: session.id,
     topic,
@@ -679,6 +738,14 @@ export async function renderMeetingChat(session) {
     satisfaction,
     activeVillagerId: villagers[0]?.id
   };
+  // 确保每个村民有个人满意度（如果没有则根据立场初始化）
+  currentMeeting.villagers.forEach(v => {
+    if (v.satisfaction === undefined) {
+      if (v.initialStance === '支持') v.satisfaction = 70;
+      else if (v.initialStance === '反对') v.satisfaction = 30;
+      else v.satisfaction = 50;
+    }
+  });
   meetingStage = 'discussion';
   currentMeetingType = config.meetingType || 'villager';
   renderMeetingChatArea();
@@ -689,8 +756,8 @@ function renderMeetingChatArea() {
   if (!currentMeeting) return;
   const isMobile = window.innerWidth <= 768;
   const dynamicContent = document.getElementById('dynamicContent');
+  const overallSat = currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50;
 
-  // ==================== 移动端布局 ====================
   if (isMobile) {
     dynamicContent.innerHTML = `
       <div class="meeting-layout-mobile" style="display:flex; flex-direction:column; height:100%; background:#f5f7fa;">
@@ -710,7 +777,6 @@ function renderMeetingChatArea() {
           </div>
         </div>
       </div>
-      <!-- 底部抽屉 -->
       <div id="infoDrawer" class="bottom-drawer" style="display:none;">
         <div class="drawer-header">
           <span>📋 会议信息</span>
@@ -718,7 +784,7 @@ function renderMeetingChatArea() {
         </div>
         <div class="drawer-content" style="padding:12px;">
           <div style="margin-bottom:16px;">
-            <h4 style="margin:0 0 8px;">满意度: <span id="drawerSatisfaction">${currentMeeting.satisfaction}%</span></h4>
+            <h4 style="margin:0 0 8px;">整体满意度: <span id="drawerSatisfaction">${overallSat}%</span></h4>
           </div>
           <div style="margin-bottom:16px;">
             <h4 style="margin:0 0 8px;">📋 议程</h4>
@@ -747,20 +813,19 @@ function renderMeetingChatArea() {
     if (input) input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(input.value.trim(), false); } };
     if (voiceBtn) setupVoiceInput(input, voiceBtn);
 
-    // 移动端：点击灯泡按钮在麦克风上方弹出提示
-    const refreshTipBtnMobile = () => {
-      const randomTip = meetingTips[Math.floor(Math.random() * meetingTips.length)];
-      showMobileTip(randomTip);
-    };
-    // 在麦克风按钮旁边添加一个灯泡按钮
-    const inputArea = document.querySelector('.meeting-input-area > div');
-    if (inputArea && !document.getElementById('mobileTipBtn')) {
+    // 移动端灯泡按钮
+    const existingTipBtn = document.getElementById('mobileTipBtn');
+    if (existingTipBtn) existingTipBtn.remove();
+    const inputAreaDiv = document.querySelector('.meeting-input-area > div');
+    if (inputAreaDiv) {
       const tipBtn = document.createElement('button');
       tipBtn.id = 'mobileTipBtn';
       tipBtn.innerHTML = '💡';
       tipBtn.style.cssText = 'background:#f0f0f0; border:none; border-radius:20px; width:36px; font-size:16px; margin-left:4px;';
-      tipBtn.onclick = refreshTipBtnMobile;
-      inputArea.appendChild(tipBtn);
+      tipBtn.onclick = toggleMobileTip;
+      const sendBtnEl = inputAreaDiv.querySelector('#sendMeetingBtn');
+      if (sendBtnEl) inputAreaDiv.insertBefore(tipBtn, sendBtnEl);
+      else inputAreaDiv.appendChild(tipBtn);
     }
 
     // 抽屉逻辑
@@ -769,7 +834,7 @@ function renderMeetingChatArea() {
     const closeDrawer = () => { if (drawer) drawer.style.display = 'none'; };
     if (infoBtn) infoBtn.onclick = () => {
       if (drawer) {
-        document.getElementById('drawerSatisfaction').innerText = `${currentMeeting.satisfaction}%`;
+        document.getElementById('drawerSatisfaction').innerText = `${currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50}%`;
         const agendaContainer = document.getElementById('drawerAgenda');
         if (agendaContainer) {
           agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
@@ -785,7 +850,7 @@ function renderMeetingChatArea() {
               <div style="font-size:24px;">${v.avatar}</div>
               <div style="flex:1;">
                 <div style="font-weight:bold;">${escapeHtml(v.name)}</div>
-                <div style="font-size:11px; color:#666;">${v.stance || v.initialStance} · 满意度: ${v.satisfaction}%</div>
+                <div style="font-size:11px; color:#666;">${v.stance || v.initialStance} · 满意度: ${v.satisfaction !== undefined ? v.satisfaction : 50}%</div>
               </div>
               <div>${getEmotionIcon(v.emotion)}</div>
             </div>
@@ -817,15 +882,14 @@ function renderMeetingChatArea() {
     const closeDrawerBtn = document.getElementById('closeDrawerBtn');
     if (closeDrawerBtn) closeDrawerBtn.onclick = closeDrawer;
     if (drawer) drawer.addEventListener('click', (e) => { if (e.target === drawer) closeDrawer(); });
-
   } else {
-    // ==================== 桌面端布局 ====================
+    // 桌面端布局
     dynamicContent.innerHTML = `
       <div class="meeting-layout" style="display:flex; height:100%; gap:16px; padding:16px; background:#f5f7fa;">
         <div class="meeting-sidebar" style="width:280px; background:white; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           <div>
             <h3 style="margin:0 0 8px; font-size:1rem;">🏛️ ${escapeHtml(currentMeeting.topic)}</h3>
-            <div id="meetingSatisfaction" style="font-size:0.85rem; color:#2e5d34;">满意度：${currentMeeting.satisfaction}%</div>
+            <div id="meetingSatisfaction" style="font-size:0.85rem; color:#2e5d34;">整体满意度：${overallSat}%</div>
           </div>
           <div>
             <h4 style="margin:0 0 8px; font-size:0.9rem;">📋 议程</h4>
@@ -844,10 +908,10 @@ function renderMeetingChatArea() {
         <div class="meeting-chat-area" style="flex:1; background:white; border-radius:16px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           <div id="meetingMessages" class="meeting-messages" style="flex:1; overflow-y:auto; padding:16px;"></div>
           <div class="meeting-input-area" style="border-top:1px solid #eee; padding:12px;">
-            <div style="display:flex; gap:8px;">
-              <textarea id="meetingInput" placeholder="向与会人员发言..." rows="1" style="flex:1; padding:10px; border-radius:20px; border:1px solid #ccc; resize:none; outline:none;"></textarea>
-              <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:20px; padding:0 18px;">发送</button>
-              <button id="meetingVoiceBtn" style="background:#f0f0f0; border:none; border-radius:20px; padding:0 14px;">🎤</button>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <textarea id="meetingInput" placeholder="向与会人员发言..." rows="1" style="flex:1; padding:10px; border-radius:20px; border:1px solid #ccc; resize:vertical; outline:none; min-height:40px;"></textarea>
+              <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:20px; padding:0 18px; height:40px;">发送</button>
+              <button id="meetingVoiceBtn" style="background:#f0f0f0; border:none; border-radius:20px; width:40px; height:40px; font-size:18px;">🎤</button>
             </div>
           </div>
         </div>
@@ -873,20 +937,17 @@ function renderMeetingChatArea() {
     if (finishBtn) finishBtn.onclick = finishMeeting;
     if (exportBtn) exportBtn.onclick = exportMeetingMinutes;
 
-    // 桌面端：右下角折叠提示浮层 + 刷新按钮
-    const refreshTipBtnDesktop = () => {
-      const randomTip = meetingTips[Math.floor(Math.random() * meetingTips.length)];
-      showDesktopTip(randomTip);
-    };
-    // 添加一个浮动刷新按钮到右下角
-    let fab = document.getElementById('desktopTipFab');
-    if (!fab) {
-      fab = document.createElement('button');
-      fab.id = 'desktopTipFab';
-      fab.innerHTML = '💡';
-      fab.style.cssText = 'position:fixed; bottom:80px; right:20px; width:48px; height:48px; border-radius:50%; background:#2e5d34; color:white; border:none; font-size:24px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.2); z-index:1000;';
-      fab.onclick = refreshTipBtnDesktop;
-      document.body.appendChild(fab);
+    // 桌面端灯泡按钮
+    const existingDesktopTipBtn = document.getElementById('desktopTipBtn');
+    if (existingDesktopTipBtn) existingDesktopTipBtn.remove();
+    const inputAreaDesktop = document.querySelector('.meeting-layout .meeting-input-area > div');
+    if (inputAreaDesktop) {
+      const tipBtn = document.createElement('button');
+      tipBtn.id = 'desktopTipBtn';
+      tipBtn.innerHTML = '💡';
+      tipBtn.style.cssText = 'background:#f0f0f0; border:none; border-radius:20px; width:40px; height:40px; font-size:18px; margin-left:4px; cursor:pointer;';
+      tipBtn.onclick = toggleMobileTip;
+      inputAreaDesktop.appendChild(tipBtn);
     }
     renderMeetingVillagersDesktop();
   }
@@ -921,13 +982,10 @@ function renderMeetingChatArea() {
   setActiveNavByView('meeting');
 }
 
-// ==================== 会议设置界面（桌面端/移动端共用） ====================
+// ==================== 会议设置界面 ====================
 
 export async function renderMeetingSetupView() {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
-  // 移除可能残留的桌面端浮层按钮
-  const fab = document.getElementById('desktopTipFab');
-  if (fab) fab.remove();
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
     <div class="meeting-setup" style="max-width:600px; margin:20px auto; padding:20px; background:white; border-radius:16px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
@@ -942,10 +1000,10 @@ export async function renderMeetingSetupView() {
       <div style="margin-bottom:16px;">
         <label style="display:block; margin-bottom:6px;">会议主题：</label>
         <select id="meetingTopicSelect" style="width:100%; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:1rem;">
-          <option value="custom">✏️ 自定义主题</option>
+          <option value="custom" selected>✏️ 自定义主题</option>
           ${Object.keys(presetTemplates).map(t => `<option value="${t}">${t}</option>`).join('')}
         </select>
-        <input type="text" id="customTopicInput" placeholder="输入自定义主题" style="width:100%; margin-top:8px; padding:10px; border-radius:8px; border:1px solid #ccc; display:none; font-size:1rem;">
+        <input type="text" id="customTopicInput" placeholder="输入自定义主题" style="width:100%; margin-top:8px; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:1rem;">
       </div>
       <div style="margin-bottom:16px;">
         <label style="display:block; margin-bottom:6px;">议程（每行一个）</label>
@@ -966,6 +1024,10 @@ export async function renderMeetingSetupView() {
   const agendaInput = document.getElementById('agendaInput');
   const rolesInput = document.getElementById('customRolesInput');
 
+  const updateCustomInputVisibility = () => {
+    customInput.style.display = topicSelect.value === 'custom' ? 'block' : 'none';
+  };
+
   typeSelect.addEventListener('change', () => {
     if (!rolesInput.value.trim()) {
       const defaultRoles = defaultRolesByType[typeSelect.value];
@@ -984,10 +1046,8 @@ export async function renderMeetingSetupView() {
       const template = presetTemplates[selected];
       agendaInput.value = template.agenda.join('\n');
       rolesInput.value = template.villagers.map(v => `${v.name}:${v.avatar}:${v.personality}:${v.initialStance}:${v.coreDemand}`).join('\n');
-      customInput.style.display = 'none';
-    } else {
-      customInput.style.display = 'block';
     }
+    updateCustomInputVisibility();
   });
 
   if (!rolesInput.value.trim()) {
@@ -997,6 +1057,8 @@ export async function renderMeetingSetupView() {
       rolesInput.value = rolesText;
     }
   }
+
+  updateCustomInputVisibility();
 
   document.getElementById('startMeetingBtn').onclick = async () => {
     const meetingType = typeSelect.value;
