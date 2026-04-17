@@ -2,6 +2,8 @@
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration, showPointsFloat } from '../utils/helpers';
+import { startVoiceCall, stopVoiceCall, toggleMute, isInVoiceCall, restartRobot } from './voice';
+import { createVoiceCallUI } from './VoiceCallManager';
 
 let currentScenario = null;
 let currentMultiVillagers = [];
@@ -24,7 +26,7 @@ const scenarioGuideState = {
   'scenario_005': { stage: 0, lastSatisfaction: 50, triggeredFlags: new Set() }
 };
 
-// 场景配置（原有 + 新增 guideRules + 议程名称）
+// 场景配置（包含 guideRules 和 agendaNames）
 const scenarioMultiConfig = {
   'scenario_001': {
     title: '调解邻里土地纠纷',
@@ -106,8 +108,7 @@ const scenarioMultiConfig = {
   }
 };
 
-// ==================== 辅助函数 ====================
-
+// 辅助函数
 function getEmotionIcon(emotion) {
   const map = { happy:'😊', sad:'😭', angry:'😡', neutral:'😐', surprise:'😲', worry:'😟' };
   return map[emotion] || '😐';
@@ -140,7 +141,6 @@ function showTip(tip) {
   setTimeout(() => tipDiv.remove(), 3000);
 }
 
-// 显示剧情引导（系统消息）
 function showGuideMessage(message) {
   const container = document.getElementById('simulateMessages');
   if (!container) return;
@@ -152,7 +152,6 @@ function showGuideMessage(message) {
   playSound('complete');
 }
 
-// 检查并触发剧情引导
 function checkScenarioGuides(scenarioId, satisfaction, lastUserMsg, dialogueCount) {
   const config = scenarioMultiConfig[scenarioId];
   if (!config || !config.guideRules) return;
@@ -173,8 +172,6 @@ function checkScenarioGuides(scenarioId, satisfaction, lastUserMsg, dialogueCoun
   }
   state.lastSatisfaction = satisfaction;
 }
-
-// ==================== 消息元素创建 ====================
 
 function createSimulateMessageElement(role, speakerName, speakerAvatar, content, emotion, satisfaction, messageId, isThinking = false) {
   const msgDiv = document.createElement('div');
@@ -205,7 +202,6 @@ function createSimulateMessageElement(role, speakerName, speakerAvatar, content,
   return msgDiv;
 }
 
-// ==================== 报告模态框 ====================
 function showReportModal(reportData, finalScore, satisfaction, stagesCompleted, totalStages) {
   const modal = document.createElement('div');
   modal.className = 'modal';
@@ -297,7 +293,6 @@ function showReportModal(reportData, finalScore, satisfaction, stagesCompleted, 
   modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 }
 
-// 更新满意度显示（包含右上角和议程进度）
 function updateSidebarStatus(data, villagerName = null) {
   if (!data) return;
   if (simulateMode === 'multi' && data.villagersState) {
@@ -327,13 +322,11 @@ function updateSidebarStatus(data, villagerName = null) {
     const fillDiv = document.querySelector('.single-satisfaction-fill');
     if (fillDiv) fillDiv.style.width = `${satisfaction}%`;
   }
-  // 更新右上角整体满意度
   const topStatusDiv = document.getElementById('simulateStatus');
   if (topStatusDiv && data.satisfaction !== undefined) {
     topStatusDiv.innerHTML = `满意度：${data.satisfaction}%`;
   }
 
-  // 更新议程进度显示
   const stages = data.stages;
   if (stages && stages.length > 0) {
     const total = stages.length;
@@ -363,7 +356,6 @@ function updateSidebarStatus(data, villagerName = null) {
   }
 }
 
-// 核心发送消息函数
 async function sendSimulateMessage(sessionId, text, container, roleName, targetVillager = null, isAuto = false, singleRole = null) {
   if (!isAuto && isSending) return;
   if (!isAuto) isSending = true;
@@ -465,6 +457,7 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
     }
   }
 }
+
 function setInputEnabled(enabled) {
   const input = document.getElementById('simulateInput');
   const sendBtn = document.getElementById('simulateSendBtn');
@@ -477,7 +470,6 @@ function setInputEnabled(enabled) {
   if (enabled && input) input.focus();
 }
 
-// 随机事件
 function startRandomEvents(sessionId) {
   if (eventInterval) clearInterval(eventInterval);
   let lastEventTime = 0;
@@ -516,7 +508,6 @@ function startRandomEvents(sessionId) {
   }, 90000);
 }
 
-// 轮询状态
 function startPollingStatus(sessionId) {
   if (statusPollInterval) clearInterval(statusPollInterval);
   statusPollInterval = setInterval(async () => {
@@ -528,7 +519,6 @@ function startPollingStatus(sessionId) {
   }, 3000);
 }
 
-// 渲染场景列表
 export async function renderSimulateView(forceList = false) {
   if (statusPollInterval) {
     clearInterval(statusPollInterval);
@@ -646,7 +636,6 @@ export async function renderSimulateView(forceList = false) {
   renderSimulateChat(session);
 }
 
-// 开始模拟对练
 async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit = null) {
   try {
     simulateMode = mode;
@@ -707,7 +696,6 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
   }
 }
 
-// 开场白自动发言（多人模式）
 async function startRoundRobin(sessionId, villagers, container, roleName, loadingMsgElement = null) {
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
@@ -723,8 +711,6 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   container.appendChild(sysMsgDiv);
   scrollSimulate();
 }
-
-// 渲染模拟对练聊天界面（核心函数）
 export async function renderSimulateChat(session) {
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (eventInterval) clearInterval(eventInterval);
@@ -759,7 +745,6 @@ export async function renderSimulateChat(session) {
   const completedCount = stages.filter(s => s.completed).length;
   const totalStages = stages.length;
 
-  // 单人角色信息
   const singleRole = extra.singleRole;
   let roleInfoHtml = '';
   let displayRoleName = scenario.role;
@@ -835,6 +820,7 @@ export async function renderSimulateChat(session) {
               <button id="hintBtn" class="summary-btn">💡 提示</button>
               <button id="finishSimulateBtn" class="summary-btn" style="background:#4caf50; color:white;">结束并查看报告</button>
               ${viewReportBtnHtml}
+              <button id="voiceCallBtn" class="summary-btn" style="background:#2196f3; color:white;">🎤 语音通话</button>
             </div>
             <div style="font-size:0.8rem; color:#666;">
               <span style="background:#f0f0f0; padding:2px 8px; border-radius:20px;">${escapeHtml(scenario.title)}</span>
@@ -882,7 +868,6 @@ export async function renderSimulateChat(session) {
       </div>
     `;
   } else {
-    // 移动端布局
     dynamicContent.innerHTML = `
       <div class="simulate-view" style="display:flex; flex-direction:column; height:100%;">
         <div class="simulate-toolbar" style="background:white; border-bottom:1px solid #eee; padding:6px 10px;">
@@ -892,6 +877,7 @@ export async function renderSimulateChat(session) {
               <button id="hintBtn" class="summary-btn" style="padding:4px 8px; font-size:11px;">💡 提示</button>
               <button id="finishSimulateBtn" class="summary-btn" style="background:#4caf50; color:white; padding:4px 8px; font-size:11px;">结束</button>
               ${viewReportBtnHtml}
+              <button id="voiceCallBtn" class="summary-btn" style="background:#2196f3; color:white; padding:4px 8px; font-size:11px;">🎤</button>
             </div>
             <div style="font-size:11px; color:#666;">${escapeHtml(scenario.title)}</div>
           </div>
@@ -924,7 +910,7 @@ export async function renderSimulateChat(session) {
     `;
   }
 
-  // 绑定事件
+  // 绑定基础事件
   const backBtn = document.getElementById('backToListBtn');
   if (backBtn) {
     backBtn.onclick = () => {
@@ -1054,6 +1040,118 @@ export async function renderSimulateChat(session) {
     };
   }
 
+  // 语音通话按钮
+  let voiceCallUI = null;
+  let voiceCallActive = false;
+  const voiceCallBtn = document.getElementById('voiceCallBtn');
+  if (voiceCallBtn) {
+    voiceCallBtn.onclick = async () => {
+      if (voiceCallUI) {
+        await stopVoiceCall();
+        voiceCallUI.hide();
+        voiceCallUI = null;
+        voiceCallActive = false;
+        voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
+        voiceCallBtn.style.background = '#2196f3';
+        if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+      } else {
+        const roomId = Math.abs(session.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
+        let participantsList = [];
+        let currentRoleName = '';
+        let uiMode = 'single';
+
+        if (currentMode === 'single' && singleRole) {
+          uiMode = 'single';
+          currentRoleName = singleRole.name;
+          participantsList = [];
+        } else if (currentMode === 'multi') {
+          uiMode = 'multi';
+          participantsList = currentMultiVillagers.map(v => ({
+            name: v.name,
+            avatar: v.avatar,
+            satisfaction: v.satisfaction,
+            stance: v.initialStance
+          }));
+          currentRoleName = currentTargetVillager?.name || participantsList[0]?.name;
+        }
+
+        window.appendUserMessageToChat = (text) => {
+          const container = document.getElementById('simulateMessages');
+          if (container) {
+            const userMsg = createSimulateMessageElement('user', '村官', '👨‍🌾', text, 'neutral');
+            container.appendChild(userMsg);
+            scrollSimulate();
+          }
+        };
+
+        voiceCallUI = createVoiceCallUI(uiMode, {
+          roleName: currentMode === 'single' ? singleRole?.name : currentRoleName,
+          roleAvatar: currentMode === 'single' ? singleRole?.avatar : null,
+          rolePersonality: currentMode === 'single' ? singleRole?.personality : null,
+          roleCoreDemand: currentMode === 'single' ? singleRole?.coreDemand : null,
+          participants: participantsList,
+          currentParticipantName: currentRoleName,
+          userName: '村官',
+          userAvatar: '👨‍🌾',
+          onHangup: async () => {
+            await stopVoiceCall();
+            voiceCallUI.hide();
+            voiceCallUI = null;
+            voiceCallActive = false;
+            voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
+            voiceCallBtn.style.background = '#2196f3';
+            if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+          },
+          onMuteToggle: async () => {
+            const muted = await toggleMute();
+            voiceCallUI.setMuted(muted);
+          },
+          onParticipantSelect: async (newRoleName) => {
+            if (!voiceCallUI) return;
+            const success = await restartRobot({
+              sceneType: 'simulate',
+              sessionId: session.id,
+              roleName: newRoleName
+            });
+            if (success) {
+              voiceCallUI.updateParticipants(participantsList, newRoleName);
+              if (currentMode === 'multi') {
+                const newTarget = currentMultiVillagers.find(v => v.name === newRoleName);
+                if (newTarget) currentTargetVillager = newTarget;
+              }
+            } else {
+              alert('切换角色失败，请重试');
+            }
+          }
+        });
+
+        voiceCallUI.show();
+        voiceCallUI.updateStatus('connecting');
+
+        const success = await startVoiceCall({
+          roomId,
+          sceneType: 'simulate',
+          sessionId: session.id,
+          roleName: currentRoleName,
+          onRemoteAudioReady: () => voiceCallUI.updateStatus('ai_speaking'),
+          onVolumeChange: (vol) => voiceCallUI.updateVolume(vol),
+          onStatusChange: (status) => voiceCallUI.updateStatus(status)
+        });
+
+        if (success) {
+          voiceCallActive = true;
+          voiceCallBtn.textContent = isMobile ? '🔴' : '🔴 挂断';
+          voiceCallBtn.style.background = '#f44336';
+        } else {
+          voiceCallUI.hide();
+          voiceCallUI = null;
+          alert('无法启动语音通话，请检查网络');
+          if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+        }
+      }
+    };
+  }
+
   // 发送消息逻辑
   const sendBtn = document.getElementById('simulateSendBtn');
   const input = document.getElementById('simulateInput');
@@ -1104,7 +1202,7 @@ export async function renderSimulateChat(session) {
   }
   if (voiceBtn) setupVoiceInput(input, voiceBtn);
 
-  // 多人模式切换村民（桌面端侧边栏）
+  // 多人模式切换村民（桌面端侧边栏）- 使用 restartRobot 无缝切换
   if (!isMobile && currentMode === 'multi') {
     const sidebarItems = document.querySelectorAll('.villager-item');
     sidebarItems.forEach(item => {
@@ -1116,6 +1214,23 @@ export async function renderSimulateChat(session) {
           input.placeholder = `对 ${newTarget.name} 说...`;
           sidebarItems.forEach(i => i.style.border = '1px solid #eee');
           item.style.border = '2px solid #2e5d34';
+          if (voiceCallUI) {
+            restartRobot({
+              sceneType: 'simulate',
+              sessionId: session.id,
+              roleName: newTarget.name
+            }).then(success => {
+              if (success && voiceCallUI) {
+                const participantsList = currentMultiVillagers.map(v => ({
+                  name: v.name,
+                  avatar: v.avatar,
+                  satisfaction: v.satisfaction,
+                  stance: v.initialStance
+                }));
+                voiceCallUI.updateParticipants(participantsList, newTarget.name);
+              }
+            });
+          }
         }
       };
     });
@@ -1136,6 +1251,23 @@ export async function renderSimulateChat(session) {
           const lastUserMsg = Array.from(messagesContainer.querySelectorAll('.simulate-message.user')).pop();
           const lastUserText = lastUserMsg ? lastUserMsg.querySelector('.simulate-message-content').innerText : '当前议题';
           await sendSimulateMessage(session.id, `针对刚才提到的"${lastUserText}"，请${newTarget.name}说说你的看法。`, messagesContainer, displayRoleName, newTarget, true);
+          if (voiceCallUI) {
+            restartRobot({
+              sceneType: 'simulate',
+              sessionId: session.id,
+              roleName: newTarget.name
+            }).then(success => {
+              if (success && voiceCallUI) {
+                const participantsList = currentMultiVillagers.map(v => ({
+                  name: v.name,
+                  avatar: v.avatar,
+                  satisfaction: v.satisfaction,
+                  stance: v.initialStance
+                }));
+                voiceCallUI.updateParticipants(participantsList, newTarget.name);
+              }
+            });
+          }
         }
       };
     });
@@ -1205,7 +1337,6 @@ export async function renderSimulateChat(session) {
   });
   scrollSimulate();
 
-  // 输入提示防抖
   let debounceTimer;
   if (input) {
     input.addEventListener('input', (e) => {

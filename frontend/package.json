@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "chart.js": "^4.5.1"
+    "chart.js": "^4.5.1",
+    "trtc-js-sdk": "^4.15.22"
   },
   "devDependencies": {
     "vite": "^5.0.0"

@@ -1,10 +1,21 @@
 // frontend/src/modules/meeting.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration } from '../utils/helpers';
+import { startVoiceCall, stopVoiceCall, toggleMute, restartRobot } from './voice';
+import { createVoiceCallUI } from './VoiceCallManager';
 
-// ==================== 预设会议模板 ====================
+let currentMeeting = null;
+let currentAgendaIndex = 0;
+let meetingStage = 'opening';
+let votingInProgress = false;
+let votesReceived = {};
+let currentMeetingType = 'villager';
+let meetingPollInterval = null;
+let roundRobinInProgress = false;
+let meetingTyping = false;
+
+// 预设会议模板
 const presetTemplates = {
   '人居环境整治': {
     description: '村内部分区域存在垃圾乱倒、柴草乱堆、污水横流现象，村民投诉较多。需要制定整治方案并动员大家参与。',
@@ -108,36 +119,6 @@ const meetingTips = [
   '💡 引导大家聚焦议题，避免跑题。'
 ];
 
-// 全局会议状态
-let currentMeeting = null;
-let meetingTyping = false;
-let meetingPollInterval = null;
-let roundRobinInProgress = false;
-let votingInProgress = false;
-let votesReceived = {};
-let currentAgendaIndex = 0;
-let showTips = true;
-let meetingStage = 'opening';
-let currentMeetingType = 'villager';
-let tipTimeout = null;
-
-// 动态生成提示内容（根据最近一条用户消息）
-function getDynamicTip() {
-  const container = document.getElementById('meetingMessages');
-  if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
-  const messages = container.querySelectorAll('.meeting-message');
-  const lastUserMsg = Array.from(messages).reverse().find(m => m.classList.contains('user'));
-  if (lastUserMsg) {
-    const text = lastUserMsg.querySelector('.message-bubble')?.innerText || '';
-    if (text.includes('垃圾')) return '💡 可以引用《垃圾分类管理条例》，强调政府补贴和长期效益。';
-    if (text.includes('土地') || text.includes('宅基地')) return '💡 建议查阅《土地管理法》相关条款，明确权属。';
-    if (text.includes('医保') || text.includes('养老')) return '💡 可以引用最新医保报销比例和养老金调整方案。';
-    if (text.includes('产业') || text.includes('项目')) return '💡 强调项目可行性、收益预期和风险保障措施。';
-    if (text.includes('噪音') || text.includes('纠纷')) return '💡 建议引导双方换位思考，提出折中方案。';
-  }
-  return meetingTips[Math.floor(Math.random() * meetingTips.length)];
-}
-
 // ==================== 辅助函数 ====================
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
@@ -210,7 +191,6 @@ function updateVillagerStance(villager, newValue) {
   if (window.innerWidth > 768) renderMeetingVillagersDesktop();
 }
 
-// 更新整体满意度UI
 function updateOverallSatisfaction(value) {
   const overall = value !== undefined ? value : 50;
   const satDiv = document.getElementById('meetingSatisfaction');
@@ -223,7 +203,6 @@ function updateMeetingUI() {
   if (!currentMeeting) return;
   const overall = currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50;
   updateOverallSatisfaction(overall);
-
   const agendaContainer = document.getElementById('meetingAgenda');
   if (agendaContainer && currentMeeting.agenda) {
     agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
@@ -266,16 +245,34 @@ function renderMeetingVillagersDesktop() {
       </div>
     `;
     card.onclick = async () => {
-      currentMeeting.activeVillagerId = v.id;
+      const targetVillager = v;
+      currentMeeting.activeVillagerId = targetVillager.id;
       document.querySelectorAll('.villager-card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
-      if (meetingTyping) return;
-      meetingTyping = true;
-      try {
-        const reply = await autoVillagerSpeak(currentMeeting.sessionId, v, "请发表你的看法");
-        appendMeetingMessage('assistant', v.name, v.avatar, reply);
-      } catch(e) { console.error("发言失败", e); }
-      finally { meetingTyping = false; }
+      if (voiceCallUI) {
+        await restartRobot({
+          sceneType: 'meeting',
+          sessionId: currentMeeting.sessionId,
+          roleName: targetVillager.name
+        });
+        if (voiceCallUI) {
+          const participants = currentMeeting.villagers.map(p => ({
+            name: p.name,
+            avatar: p.avatar,
+            satisfaction: p.satisfaction,
+            stance: p.stance || p.initialStance
+          }));
+          voiceCallUI.updateParticipants(participants, targetVillager.name);
+        }
+      } else {
+        if (meetingTyping) return;
+        meetingTyping = true;
+        try {
+          const reply = await autoVillagerSpeak(currentMeeting.sessionId, targetVillager, "请发表你的看法");
+          appendMeetingMessage('assistant', targetVillager.name, targetVillager.avatar, reply);
+        } catch(e) { console.error("发言失败", e); }
+        finally { meetingTyping = false; }
+      }
     };
     container.appendChild(card);
   });
@@ -300,12 +297,10 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
     });
     const data = await res.json();
     if (data.stanceValue !== undefined) updateVillagerStance(villager, data.stanceValue);
-    // 更新整体满意度
     if (data.satisfaction !== undefined && currentMeeting) {
       currentMeeting.satisfaction = data.satisfaction;
       updateOverallSatisfaction(data.satisfaction);
     }
-    // 更新个人满意度
     if (data.villagerSatisfaction !== undefined && currentMeeting) {
       const idx = currentMeeting.villagers.findIndex(v => v.id === villager.id);
       if (idx !== -1) {
@@ -320,74 +315,28 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   }
 }
 
-// 移动端灯泡提示
-let mobileTipDiv = null;
 function showMobileTip(tipText, keepUntilManualClose = false) {
-  let targetBtn = document.getElementById('meetingVoiceBtn');
-  if (!targetBtn) targetBtn = document.getElementById('sendMeetingBtn');
-  if (!targetBtn) return;
-  const rect = targetBtn.getBoundingClientRect();
-  if (mobileTipDiv) {
-    mobileTipDiv.remove();
-    mobileTipDiv = null;
-    if (tipTimeout) clearTimeout(tipTimeout);
-  }
-  const tipDiv = document.createElement('div');
-  tipDiv.className = 'mobile-tip-popup';
-  tipDiv.textContent = tipText;
-  let leftPos = rect.left + rect.width/2 - 100;
-  if (leftPos < 10) leftPos = 10;
-  if (leftPos + 200 > window.innerWidth) leftPos = window.innerWidth - 210;
-  tipDiv.style.cssText = `
-    position:fixed;
-    bottom: auto;
-    top: ${rect.top - 40}px;
-    left: ${leftPos}px;
-    background:#2e5d34;
-    color:white;
-    padding:6px 12px;
-    border-radius:20px;
-    font-size:12px;
-    white-space:normal;
-    max-width:200px;
-    word-break:break-word;
-    z-index:2000;
-    box-shadow:0 2px 8px rgba(0,0,0,0.2);
-    pointer-events:auto;
-    cursor:pointer;
-  `;
-  tipDiv.onclick = () => {
-    if (tipDiv && tipDiv.remove) tipDiv.remove();
-    mobileTipDiv = null;
-    if (tipTimeout) clearTimeout(tipTimeout);
-  };
-  document.body.appendChild(tipDiv);
-  mobileTipDiv = tipDiv;
-  if (!keepUntilManualClose) {
-    tipTimeout = setTimeout(() => {
-      if (mobileTipDiv) {
-        mobileTipDiv.remove();
-        mobileTipDiv = null;
-      }
-    }, 4000);
-  }
+  console.log('提示:', tipText);
 }
-
-function hideMobileTip() {
-  if (mobileTipDiv) {
-    mobileTipDiv.remove();
-    mobileTipDiv = null;
-  }
-  if (tipTimeout) clearTimeout(tipTimeout);
-}
-
+function hideMobileTip() {}
 function toggleMobileTip() {
-  if (mobileTipDiv) {
-    hideMobileTip();
-    return;
-  }
   const tipText = getDynamicTip();
   showMobileTip(tipText, true);
+}
+function getDynamicTip() {
+  const container = document.getElementById('meetingMessages');
+  if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
+  const messages = container.querySelectorAll('.meeting-message');
+  const lastUserMsg = Array.from(messages).reverse().find(m => m.classList.contains('user'));
+  if (lastUserMsg) {
+    const text = lastUserMsg.querySelector('.message-bubble')?.innerText || '';
+    if (text.includes('垃圾')) return '💡 可以引用《垃圾分类管理条例》，强调政府补贴和长期效益。';
+    if (text.includes('土地') || text.includes('宅基地')) return '💡 建议查阅《土地管理法》相关条款，明确权属。';
+    if (text.includes('医保') || text.includes('养老')) return '💡 可以引用最新医保报销比例和养老金调整方案。';
+    if (text.includes('产业') || text.includes('项目')) return '💡 强调项目可行性、收益预期和风险保障措施。';
+    if (text.includes('噪音') || text.includes('纠纷')) return '💡 建议引导双方换位思考，提出折中方案。';
+  }
+  return meetingTips[Math.floor(Math.random() * meetingTips.length)];
 }
 
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
@@ -442,7 +391,6 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
       currentAgendaIndex: 0, votes: {},
       satisfaction: 50, topic, stage: 'opening'
     };
-    // 根据初始立场设置个人满意度
     currentMeeting.villagers.forEach(v => {
       if (v.initialStance === '支持') v.satisfaction = 70;
       else if (v.initialStance === '反对') v.satisfaction = 30;
@@ -455,7 +403,6 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     currentMeetingType = meetingType;
     renderMeetingChatArea();
     startMeetingPolling(sessionId);
-
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'meeting-message system';
     loadingDiv.style.display = 'none';
@@ -463,7 +410,6 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     const container = document.getElementById('meetingMessages');
     if (container) container.appendChild(loadingDiv);
     scrollMeetingMessages();
-
     if (isPreset && presetTemplates[topic]) {
       let opening = presetTemplates[topic].systemOpening;
       if (meetingType === 'cadre') opening = opening.replace(/村民/g, '村干部');
@@ -546,6 +492,7 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
   }
 }
 
+// ========== 修复：AI 自动投票（不需要弹窗） ==========
 async function startVoting() {
   if (votingInProgress || meetingStage !== 'discussion') return;
   const currentAgenda = currentMeeting.agenda[currentAgendaIndex];
@@ -554,20 +501,33 @@ async function startVoting() {
   meetingStage = 'voting';
   votesReceived = {};
   updateMeetingUI();
-  await sendSystemMessage(currentMeeting.sessionId, `🗳️ 现在开始对【${currentAgenda.name}】进行投票。请每位参会者依次投票（支持/反对/弃权）。`);
+  await sendSystemMessage(currentMeeting.sessionId, `🗳️ 现在开始对【${currentAgenda.name}】进行投票。AI村民正在根据各自立场和满意度自动投票...`);
+
   for (let v of currentMeeting.villagers) {
-    const option = await showVoteModalForVillager(v);
-    if (option) {
-      votesReceived[v.id] = option;
-      await sendSystemMessage(currentMeeting.sessionId, `${v.name} 投票：${option}`);
-      await fetchWithAuth('/api/meeting/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: currentMeeting.sessionId, villagerId: v.id, option })
-      });
+    let option = '弃权';
+    const satisfaction = v.satisfaction !== undefined ? v.satisfaction : 50;
+    const stance = v.stance || v.initialStance;
+
+    if (stance === '支持') {
+      option = '支持';
+    } else if (stance === '反对') {
+      option = '反对';
+    } else {
+      if (satisfaction >= 70) option = '支持';
+      else if (satisfaction <= 30) option = '反对';
+      else option = Math.random() > 0.5 ? '支持' : '反对';
     }
-    await delay(1000);
+
+    votesReceived[v.id] = option;
+    await sendSystemMessage(currentMeeting.sessionId, `${v.name} 投票：${option}`);
+    await fetchWithAuth('/api/meeting/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentMeeting.sessionId, villagerId: v.id, option })
+    });
+    await delay(500);
   }
+
   const support = Object.values(votesReceived).filter(v => v === '支持').length;
   const oppose = Object.values(votesReceived).filter(v => v === '反对').length;
   const total = currentMeeting.villagers.length;
@@ -590,34 +550,6 @@ async function startVoting() {
   }
   votingInProgress = false;
   updateMeetingUI();
-}
-
-function showVoteModalForVillager(villager) {
-  return new Promise((resolve) => {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
-    modal.innerHTML = `
-      <div style="background:white; width:90%; max-width:300px; padding:20px; border-radius:16px;">
-        <h3 style="margin-top:0;">${villager.name} 投票</h3>
-        <p>请选择你的态度：</p>
-        <div style="display:flex; gap:12px; justify-content:center; margin:20px 0; flex-wrap:wrap;">
-          <button data-opt="支持" style="padding:10px 16px; background:#4caf50; color:white; border:none; border-radius:30px; flex:1;">✅ 支持</button>
-          <button data-opt="反对" style="padding:10px 16px; background:#f44336; color:white; border:none; border-radius:30px; flex:1;">❌ 反对</button>
-          <button data-opt="弃权" style="padding:10px 16px; background:#9e9e9e; color:white; border:none; border-radius:30px; flex:1;">🤐 弃权</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelectorAll('button').forEach(btn => {
-      btn.onclick = () => {
-        const opt = btn.dataset.opt;
-        modal.remove();
-        resolve(opt);
-      };
-    });
-    modal.onclick = (e) => { if (e.target === modal) { modal.remove(); resolve(null); } };
-  });
 }
 
 async function nextAgenda() {
@@ -714,20 +646,19 @@ function showMeetingResolution(resolution) {
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
 }
 
-// ==================== 核心渲染函数 ====================
-
+// ==================== 会议聊天界面渲染 ====================
 export async function renderMeetingChat(session) {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
-  let config = {};
+  let extra = {};
   if (session.scenarioId) {
-    try { config = JSON.parse(session.scenarioId); } catch(e) {}
+    try { extra = JSON.parse(session.scenarioId); } catch(e) {}
   }
   const topic = session.title || '会议';
-  const villagers = config.villagers || [];
-  const agenda = config.agenda || [];
-  currentAgendaIndex = config.currentAgendaIndex || 0;
-  const votes = config.votes || {};
-  const satisfaction = config.satisfaction !== undefined ? config.satisfaction : 50;
+  const villagers = extra.villagers || [];
+  const agenda = extra.agenda || [];
+  currentAgendaIndex = extra.currentAgendaIndex || 0;
+  const votes = extra.votes || {};
+  const satisfaction = extra.satisfaction !== undefined ? extra.satisfaction : 50;
   currentMeeting = {
     sessionId: session.id,
     topic,
@@ -738,7 +669,6 @@ export async function renderMeetingChat(session) {
     satisfaction,
     activeVillagerId: villagers[0]?.id
   };
-  // 确保每个村民有个人满意度（如果没有则根据立场初始化）
   currentMeeting.villagers.forEach(v => {
     if (v.satisfaction === undefined) {
       if (v.initialStance === '支持') v.satisfaction = 70;
@@ -747,7 +677,7 @@ export async function renderMeetingChat(session) {
     }
   });
   meetingStage = 'discussion';
-  currentMeetingType = config.meetingType || 'villager';
+  currentMeetingType = extra.meetingType || 'villager';
   renderMeetingChatArea();
   startMeetingPolling(session.id);
 }
@@ -765,6 +695,7 @@ function renderMeetingChatArea() {
           <button id="backToListBtn" class="summary-btn" style="background:#f0f0f0; padding:4px 8px; font-size:12px;">← 返回</button>
           <div style="font-size:14px; font-weight:bold; text-align:center; flex:1;">${escapeHtml(currentMeeting.topic)}</div>
           <button id="infoDrawerBtn" class="summary-btn" style="background:#2e5d34; color:white; padding:4px 8px; font-size:12px;">📋 会议信息</button>
+          <button id="voiceCallBtn" class="summary-btn" style="background:#2196f3; color:white; padding:4px 8px; font-size:12px;">🎤</button>
         </div>
         <div class="meeting-chat-area" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
           <div id="meetingMessages" class="meeting-messages" style="flex:1; overflow-y:auto; padding:12px;"></div>
@@ -802,88 +733,7 @@ function renderMeetingChatArea() {
         </div>
       </div>
     `;
-
-    // 移动端事件绑定
-    const backBtn = document.getElementById('backToListBtn');
-    if (backBtn) backBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
-    const sendBtn = document.getElementById('sendMeetingBtn');
-    const input = document.getElementById('meetingInput');
-    const voiceBtn = document.getElementById('meetingVoiceBtn');
-    if (sendBtn) sendBtn.onclick = () => sendMeetingMessage(input.value.trim(), false);
-    if (input) input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(input.value.trim(), false); } };
-    if (voiceBtn) setupVoiceInput(input, voiceBtn);
-
-    // 移动端灯泡按钮
-    const existingTipBtn = document.getElementById('mobileTipBtn');
-    if (existingTipBtn) existingTipBtn.remove();
-    const inputAreaDiv = document.querySelector('.meeting-input-area > div');
-    if (inputAreaDiv) {
-      const tipBtn = document.createElement('button');
-      tipBtn.id = 'mobileTipBtn';
-      tipBtn.innerHTML = '💡';
-      tipBtn.style.cssText = 'background:#f0f0f0; border:none; border-radius:20px; width:36px; font-size:16px; margin-left:4px;';
-      tipBtn.onclick = toggleMobileTip;
-      const sendBtnEl = inputAreaDiv.querySelector('#sendMeetingBtn');
-      if (sendBtnEl) inputAreaDiv.insertBefore(tipBtn, sendBtnEl);
-      else inputAreaDiv.appendChild(tipBtn);
-    }
-
-    // 抽屉逻辑
-    const infoBtn = document.getElementById('infoDrawerBtn');
-    const drawer = document.getElementById('infoDrawer');
-    const closeDrawer = () => { if (drawer) drawer.style.display = 'none'; };
-    if (infoBtn) infoBtn.onclick = () => {
-      if (drawer) {
-        document.getElementById('drawerSatisfaction').innerText = `${currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50}%`;
-        const agendaContainer = document.getElementById('drawerAgenda');
-        if (agendaContainer) {
-          agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
-            <div style="padding:4px 0; ${idx === currentAgendaIndex ? 'font-weight:bold; color:#2e5d34;' : ''}">
-              ${idx+1}. ${escapeHtml(item.name)} ${item.completed ? '✅' : ''}
-            </div>
-          `).join('');
-        }
-        const villagersContainer = document.getElementById('drawerVillagers');
-        if (villagersContainer) {
-          villagersContainer.innerHTML = currentMeeting.villagers.map(v => `
-            <div class="drawer-villager-item" data-name="${v.name}" style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #eee;">
-              <div style="font-size:24px;">${v.avatar}</div>
-              <div style="flex:1;">
-                <div style="font-weight:bold;">${escapeHtml(v.name)}</div>
-                <div style="font-size:11px; color:#666;">${v.stance || v.initialStance} · 满意度: ${v.satisfaction !== undefined ? v.satisfaction : 50}%</div>
-              </div>
-              <div>${getEmotionIcon(v.emotion)}</div>
-            </div>
-          `).join('');
-          document.querySelectorAll('#drawerVillagers .drawer-villager-item').forEach(item => {
-            item.onclick = () => {
-              const name = item.dataset.name;
-              const newTarget = currentMeeting.villagers.find(v => v.name === name);
-              if (newTarget) {
-                currentMeeting.activeVillagerId = newTarget.id;
-                closeDrawer();
-              }
-            };
-          });
-        }
-        const voteBtnDrawer = document.getElementById('voteBtnDrawer');
-        if (voteBtnDrawer) voteBtnDrawer.onclick = () => { closeDrawer(); startVoting(); };
-        const nextAgendaDrawer = document.getElementById('nextAgendaBtnDrawer');
-        if (nextAgendaDrawer) nextAgendaDrawer.onclick = () => { closeDrawer(); nextAgenda(); };
-        const finishBtnDrawer = document.getElementById('finishMeetingBtnDrawer');
-        if (finishBtnDrawer) finishBtnDrawer.onclick = () => { closeDrawer(); finishMeeting(); };
-        const exportBtnDrawer = document.getElementById('exportMinutesBtnDrawer');
-        if (exportBtnDrawer) exportBtnDrawer.onclick = () => { closeDrawer(); exportMeetingMinutes(); };
-        const exitBtnDrawer = document.getElementById('exitMeetingBtnDrawer');
-        if (exitBtnDrawer) exitBtnDrawer.onclick = () => { closeDrawer(); if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
-        drawer.style.display = 'flex';
-      }
-    };
-    const closeDrawerBtn = document.getElementById('closeDrawerBtn');
-    if (closeDrawerBtn) closeDrawerBtn.onclick = closeDrawer;
-    if (drawer) drawer.addEventListener('click', (e) => { if (e.target === drawer) closeDrawer(); });
   } else {
-    // 桌面端布局
     dynamicContent.innerHTML = `
       <div class="meeting-layout" style="display:flex; height:100%; gap:16px; padding:16px; background:#f5f7fa;">
         <div class="meeting-sidebar" style="width:280px; background:white; border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:20px; overflow-y:auto; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
@@ -904,6 +754,7 @@ function renderMeetingChatArea() {
           <button id="finishMeetingBtn" style="padding:10px; background:#4caf50; color:white; border:none; border-radius:8px; font-weight:bold;">结束会议并生成纪要</button>
           <button id="exportMinutesBtn" style="padding:10px; background:#2196f3; color:white; border:none; border-radius:8px; font-weight:bold;">💾 导出会议纪要</button>
           <button id="exitMeetingBtn" style="padding:10px; background:#f44336; color:white; border:none; border-radius:8px;">退出会议</button>
+          <button id="voiceCallBtn" style="padding:10px; background:#2196f3; color:white; border:none; border-radius:8px;">🎤 线上会议</button>
         </div>
         <div class="meeting-chat-area" style="flex:1; background:white; border-radius:16px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           <div id="meetingMessages" class="meeting-messages" style="flex:1; overflow-y:auto; padding:16px;"></div>
@@ -917,41 +768,194 @@ function renderMeetingChatArea() {
         </div>
       </div>
     `;
-
-    // 桌面端事件绑定
-    const backBtn = document.getElementById('exitMeetingBtn');
-    if (backBtn) backBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
-    const sendBtn = document.getElementById('sendMeetingBtn');
-    const input = document.getElementById('meetingInput');
-    const voiceBtn = document.getElementById('meetingVoiceBtn');
-    if (sendBtn) sendBtn.onclick = () => sendMeetingMessage(input.value.trim(), false);
-    if (input) input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(input.value.trim(), false); } };
-    if (voiceBtn) setupVoiceInput(input, voiceBtn);
-
-    const voteBtn = document.getElementById('voteBtn');
-    const nextAgendaBtn = document.getElementById('nextAgendaBtn');
-    const finishBtn = document.getElementById('finishMeetingBtn');
-    const exportBtn = document.getElementById('exportMinutesBtn');
-    if (voteBtn) voteBtn.onclick = startVoting;
-    if (nextAgendaBtn) nextAgendaBtn.onclick = nextAgenda;
-    if (finishBtn) finishBtn.onclick = finishMeeting;
-    if (exportBtn) exportBtn.onclick = exportMeetingMinutes;
-
-    // 桌面端灯泡按钮
-    const existingDesktopTipBtn = document.getElementById('desktopTipBtn');
-    if (existingDesktopTipBtn) existingDesktopTipBtn.remove();
-    const inputAreaDesktop = document.querySelector('.meeting-layout .meeting-input-area > div');
-    if (inputAreaDesktop) {
-      const tipBtn = document.createElement('button');
-      tipBtn.id = 'desktopTipBtn';
-      tipBtn.innerHTML = '💡';
-      tipBtn.style.cssText = 'background:#f0f0f0; border:none; border-radius:20px; width:40px; height:40px; font-size:18px; margin-left:4px; cursor:pointer;';
-      tipBtn.onclick = toggleMobileTip;
-      inputAreaDesktop.appendChild(tipBtn);
-    }
-    renderMeetingVillagersDesktop();
   }
 
+  // 绑定基础事件
+  const backBtn = document.getElementById('backToListBtn');
+  if (backBtn) backBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
+  const exitBtn = document.getElementById('exitMeetingBtn');
+  if (exitBtn) exitBtn.onclick = () => { if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
+  const sendBtn = document.getElementById('sendMeetingBtn');
+  const input = document.getElementById('meetingInput');
+  const voiceBtn = document.getElementById('meetingVoiceBtn');
+  if (sendBtn) sendBtn.onclick = () => sendMeetingMessage(input.value.trim(), false);
+  if (input) input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !meetingTyping) { e.preventDefault(); sendMeetingMessage(input.value.trim(), false); } };
+  if (voiceBtn) setupVoiceInput(input, voiceBtn);
+  const voteBtn = document.getElementById('voteBtn');
+  const nextAgendaBtn = document.getElementById('nextAgendaBtn');
+  const finishBtn = document.getElementById('finishMeetingBtn');
+  const exportBtn = document.getElementById('exportMinutesBtn');
+  if (voteBtn) voteBtn.onclick = startVoting;
+  if (nextAgendaBtn) nextAgendaBtn.onclick = nextAgenda;
+  if (finishBtn) finishBtn.onclick = finishMeeting;
+  if (exportBtn) exportBtn.onclick = exportMeetingMinutes;
+
+  // 移动端抽屉事件
+  const infoBtn = document.getElementById('infoDrawerBtn');
+  const drawer = document.getElementById('infoDrawer');
+  if (infoBtn && drawer) {
+    infoBtn.onclick = () => {
+      document.getElementById('drawerSatisfaction').innerText = `${currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50}%`;
+      const agendaContainer = document.getElementById('drawerAgenda');
+      if (agendaContainer) agendaContainer.innerHTML = currentMeeting.agenda.map((item, idx) => `
+        <div style="padding:4px 0; ${idx === currentAgendaIndex ? 'font-weight:bold; color:#2e5d34;' : ''}">
+          ${idx+1}. ${escapeHtml(item.name)} ${item.completed ? '✅' : ''}
+        </div>
+      `).join('');
+      const villagersContainer = document.getElementById('drawerVillagers');
+      if (villagersContainer) villagersContainer.innerHTML = currentMeeting.villagers.map(v => `
+        <div class="drawer-villager-item" data-name="${v.name}" style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #eee;">
+          <div style="font-size:24px;">${v.avatar}</div>
+          <div style="flex:1;">
+            <div style="font-weight:bold;">${escapeHtml(v.name)}</div>
+            <div style="font-size:11px; color:#666;">${v.stance || v.initialStance} · 满意度: ${v.satisfaction !== undefined ? v.satisfaction : 50}%</div>
+          </div>
+          <div>${getEmotionIcon(v.emotion)}</div>
+        </div>
+      `).join('');
+      document.querySelectorAll('#drawerVillagers .drawer-villager-item').forEach(item => {
+        item.onclick = () => {
+          const name = item.dataset.name;
+          const newTarget = currentMeeting.villagers.find(v => v.name === name);
+          if (newTarget) {
+            currentMeeting.activeVillagerId = newTarget.id;
+            drawer.style.display = 'none';
+            if (voiceCallUI) {
+              restartRobot({
+                sceneType: 'meeting',
+                sessionId: currentMeeting.sessionId,
+                roleName: name
+              }).then(success => {
+                if (success && voiceCallUI) {
+                  voiceCallUI.updateParticipants(currentMeeting.villagers.map(v => ({
+                    name: v.name,
+                    avatar: v.avatar,
+                    satisfaction: v.satisfaction,
+                    stance: v.stance || v.initialStance
+                  })), name);
+                }
+              });
+            }
+          }
+        };
+      });
+      const voteBtnDrawer = document.getElementById('voteBtnDrawer');
+      const nextAgendaDrawer = document.getElementById('nextAgendaBtnDrawer');
+      const finishBtnDrawer = document.getElementById('finishMeetingBtnDrawer');
+      const exportBtnDrawer = document.getElementById('exportMinutesBtnDrawer');
+      const exitBtnDrawer = document.getElementById('exitMeetingBtnDrawer');
+      if (voteBtnDrawer) voteBtnDrawer.onclick = () => { drawer.style.display = 'none'; startVoting(); };
+      if (nextAgendaDrawer) nextAgendaDrawer.onclick = () => { drawer.style.display = 'none'; nextAgenda(); };
+      if (finishBtnDrawer) finishBtnDrawer.onclick = () => { drawer.style.display = 'none'; finishMeeting(); };
+      if (exportBtnDrawer) exportBtnDrawer.onclick = () => { drawer.style.display = 'none'; exportMeetingMinutes(); };
+      if (exitBtnDrawer) exitBtnDrawer.onclick = () => { drawer.style.display = 'none'; if (meetingPollInterval) clearInterval(meetingPollInterval); renderMeetingSetupView(); };
+      drawer.style.display = 'flex';
+    };
+    document.getElementById('closeDrawerBtn').onclick = () => drawer.style.display = 'none';
+    drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
+  }
+
+  // 线上会议按钮（使用 restartRobot 切换发言人）
+  let voiceCallUI = null;
+  const voiceCallBtn = document.getElementById('voiceCallBtn');
+  if (voiceCallBtn) {
+    voiceCallBtn.onclick = async () => {
+      if (voiceCallUI) {
+        await stopVoiceCall();
+        voiceCallUI.hide();
+        voiceCallUI = null;
+        voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
+        voiceCallBtn.style.background = '#2196f3';
+        if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+      } else {
+        const participants = currentMeeting.villagers.map(v => ({
+          name: v.name,
+          avatar: v.avatar,
+          satisfaction: v.satisfaction,
+          stance: v.stance || v.initialStance
+        }));
+        const currentSpeaker = currentMeeting.activeVillagerId
+          ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)?.name
+          : participants[0]?.name;
+
+        window.appendUserMessageToChat = (text) => {
+          const container = document.getElementById('meetingMessages');
+          if (container) {
+            const userMsg = document.createElement('div');
+            userMsg.className = 'meeting-message user';
+            userMsg.innerHTML = `<div class="message-avatar">👨‍🌾</div><div class="message-bubble"><strong>村官</strong><br>${escapeHtml(text)}</div>`;
+            container.appendChild(userMsg);
+            scrollMeetingMessages();
+          }
+        };
+
+        voiceCallUI = createVoiceCallUI('meeting', {
+          participants,
+          currentSpeakerName: currentSpeaker,
+          agenda: currentMeeting.agenda,
+          currentAgendaIndex,
+          userName: '村官',
+          userAvatar: '👨‍🌾',
+          onHangup: async () => {
+            await stopVoiceCall();
+            voiceCallUI.hide();
+            voiceCallUI = null;
+            voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
+            voiceCallBtn.style.background = '#2196f3';
+            if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+          },
+          onMuteToggle: async () => {
+            const muted = await toggleMute();
+            voiceCallUI.setMuted(muted);
+          },
+          onParticipantSelect: async (newSpeakerName) => {
+            if (!voiceCallUI) return;
+            const success = await restartRobot({
+              sceneType: 'meeting',
+              sessionId: currentMeeting.sessionId,
+              roleName: newSpeakerName
+            });
+            if (success) {
+              voiceCallUI.updateParticipants(participants, newSpeakerName);
+              const newTarget = currentMeeting.villagers.find(v => v.name === newSpeakerName);
+              if (newTarget) currentMeeting.activeVillagerId = newTarget.id;
+            } else {
+              alert('切换发言人失败，请重试');
+            }
+          },
+          onVote: () => startVoting(),
+          onNextAgenda: () => nextAgenda()
+        });
+
+        voiceCallUI.show();
+        voiceCallUI.updateStatus('connecting');
+
+        const roomId = Math.abs(currentMeeting.sessionId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
+        const success = await startVoiceCall({
+          roomId,
+          sceneType: 'meeting',
+          sessionId: currentMeeting.sessionId,
+          roleName: currentSpeaker,
+          onRemoteAudioReady: () => voiceCallUI.updateStatus('ai_speaking'),
+          onVolumeChange: (vol) => voiceCallUI.updateVolume(vol),
+          onStatusChange: (status) => voiceCallUI.updateStatus(status)
+        });
+
+        if (success) {
+          voiceCallBtn.textContent = isMobile ? '🔴' : '🔴 挂断';
+          voiceCallBtn.style.background = '#f44336';
+        } else {
+          voiceCallUI.hide();
+          voiceCallUI = null;
+          alert('无法启动线上会议');
+          if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+        }
+      }
+    };
+  }
+
+  renderMeetingVillagersDesktop();
+  updateMeetingUI();
   // 加载历史消息
   const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
   if (session && session.messages) {
@@ -977,12 +981,8 @@ function renderMeetingChatArea() {
       scrollMeetingMessages();
     }
   }
-
-  updateMeetingUI();
   setActiveNavByView('meeting');
 }
-
-// ==================== 会议设置界面 ====================
 
 export async function renderMeetingSetupView() {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
@@ -1027,7 +1027,6 @@ export async function renderMeetingSetupView() {
   const updateCustomInputVisibility = () => {
     customInput.style.display = topicSelect.value === 'custom' ? 'block' : 'none';
   };
-
   typeSelect.addEventListener('change', () => {
     if (!rolesInput.value.trim()) {
       const defaultRoles = defaultRolesByType[typeSelect.value];
@@ -1037,7 +1036,6 @@ export async function renderMeetingSetupView() {
       }
     }
   });
-
   topicSelect.addEventListener('change', () => {
     const selected = topicSelect.value;
     agendaInput.value = '';
@@ -1049,7 +1047,6 @@ export async function renderMeetingSetupView() {
     }
     updateCustomInputVisibility();
   });
-
   if (!rolesInput.value.trim()) {
     const defaultRoles = defaultRolesByType[typeSelect.value];
     if (defaultRoles) {
@@ -1057,9 +1054,7 @@ export async function renderMeetingSetupView() {
       rolesInput.value = rolesText;
     }
   }
-
   updateCustomInputVisibility();
-
   document.getElementById('startMeetingBtn').onclick = async () => {
     const meetingType = typeSelect.value;
     let topic = topicSelect.value;

@@ -7,10 +7,9 @@ const db = require('../services/db');
 
 const router = express.Router();
 
-// ========== 内存存储村民记忆（生产环境应使用数据库） ==========
+// 内存存储村民记忆（生产环境应使用数据库）
 const villagerMemory = new Map();
 
-// ========== 辅助函数 ==========
 function extractKeyFacts(text) {
   const promises = text.match(/[^。]*?(?:保证|承诺|会|一定|尽快|解决|处理)[^。]*。/g);
   return promises || [];
@@ -54,7 +53,7 @@ function shouldForceStageProgress(scenarioId, userMessage, currentStageName) {
   return keywords.some(kw => userMessage.includes(kw));
 }
 
-// ========== 获取场景列表（包含 singleRoles） ==========
+// ========== 获取场景列表 ==========
 router.get('/scenarios', async (req, res) => {
   const scenarios = await db.all('SELECT * FROM scenarios ORDER BY created_at');
   scenarios.forEach(s => {
@@ -68,7 +67,7 @@ router.get('/scenarios', async (req, res) => {
   res.json(scenarios);
 });
 
-// ========== 创建模拟会话（支持 roleId 选择单人角色） ==========
+// ========== 创建模拟会话 ==========
 router.post('/session', async (req, res) => {
   const { scenarioId, difficulty = 'medium', timeLimit = null, roleId = null } = req.body;
   const userId = req.user.userId;
@@ -127,7 +126,7 @@ router.post('/session', async (req, res) => {
   res.json({ sessionId: session.id, initialMessage: scenario.initial_message });
 });
 
-// ========== 智能提示分析接口 ==========
+// ========== 智能提示 ==========
 router.post('/analyze-input', async (req, res) => {
   const { text, scenarioId } = req.body;
   if (!text) return res.json({ tips: [] });
@@ -154,7 +153,7 @@ router.post('/analyze-input', async (req, res) => {
   res.json({ tips });
 });
 
-// ========== 随机事件处理接口 ==========
+// ========== 随机事件 ==========
 router.post('/event/:sessionId', async (req, res) => {
   const { sessionId } = req.params;
   const { satisfactionDelta, stageRollback } = req.body;
@@ -180,7 +179,8 @@ router.post('/event/:sessionId', async (req, res) => {
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(extra), sessionId]);
   res.json({ success: true });
 });
-// ========== 模拟对话（支持单人/多人、难度、记忆、讨论） ==========
+
+// ========== 模拟对话 ==========
 router.post('/chat', async (req, res) => {
   const { sessionId, message, villager } = req.body;
   const userId = req.user.userId;
@@ -207,7 +207,6 @@ router.post('/chat', async (req, res) => {
 
   await addMessage(sessionId, 'user', message, Date.now());
 
-  // 处理村民记忆（多人模式）
   if (villager) {
     const newFacts = extractKeyFacts(message);
     const memoryKey = `${sessionId}_${villager.name}`;
@@ -229,7 +228,6 @@ router.post('/chat', async (req, res) => {
   const difficulty = session.difficulty || 'medium';
 
   if (villager) {
-    // 多人模式
     roleName = villager.name;
     personality = villager.personality || '性格普通';
     const villagersState = extra.villagersState || {};
@@ -237,7 +235,6 @@ router.post('/chat', async (req, res) => {
     satisfaction = state.satisfaction;
     currentEmotion = state.emotion;
   } else {
-    // 单人模式
     const singleRole = extra.singleRole || {
       name: scenario.role,
       personality: '普通',
@@ -255,7 +252,6 @@ router.post('/chat', async (req, res) => {
     }
   }
 
-  // 构建记忆提示
   let memoryHint = '';
   if (villager) {
     const memoryKey = `${sessionId}_${villager.name}`;
@@ -265,35 +261,31 @@ router.post('/chat', async (req, res) => {
     }
   }
 
-  // 构建讨论提示（多人模式下）
   let discussionHint = '';
   if (villager && updatedSession.messages.length >= 2) {
     const lastAssistantMsg = [...updatedSession.messages].reverse().find(m => m.role === 'assistant' && m.content !== scenario.initial_message);
     if (lastAssistantMsg) {
-      discussionHint = `\n刚刚其他村民或村官发表了观点，请你针对他/她的发言表达你的看法（可以同意、反对、补充或质疑），要体现你的性格特点。`;
+      discussionHint = `\n刚刚其他村民或村官发表了观点，请你针对他/她的发言表达你的看法，要体现你的性格特点。`;
     }
   }
 
-  // ========== 根据场景和模式动态生成人物列表提示（防止AI杜撰） ==========
   let characterList = '';
   if (villager) {
-    // 多人模式：列出场景中所有村民
     if (scenarioId === 'scenario_001') {
-      characterList = '场景中有三个村民：张三、李四、王婶（王大妈）。请只与这些角色对话，不要提及任何不存在的人物（如王五、赵六等）。';
+      characterList = '场景中有三个村民：张三、李四、王婶（王大妈）。请只与这些角色对话，不要提及任何不存在的人物。';
     } else if (scenarioId === 'scenario_002') {
-      characterList = '场景中有三个村民：张大爷、李大妈、王会计。请只与这些角色对话，不要杜撰新人物。';
+      characterList = '场景中有三个村民：张大爷、李大妈、王会计。请只与这些角色对话。';
     } else if (scenarioId === 'scenario_003') {
-      characterList = '场景中有三个村民：老赵、刘婶、周会计。请只与这些角色对话，不要杜撰新人物。';
+      characterList = '场景中有三个村民：老赵、刘婶、周会计。请只与这些角色对话。';
     } else if (scenarioId === 'scenario_004') {
-      characterList = '场景中有三个村民：李大叔、孙婶、周会计。请只与这些角色对话，不要杜撰新人物。';
+      characterList = '场景中有三个村民：李大叔、孙婶、周会计。请只与这些角色对话。';
     } else if (scenarioId === 'scenario_005') {
-      characterList = '场景中有三个村民：小陈、老刘、王阿姨。请只与这些角色对话，不要杜撰新人物。';
+      characterList = '场景中有三个村民：小陈、老刘、王阿姨。请只与这些角色对话。';
     } else {
       characterList = '请只与现有村民对话，不要提及任何不存在的人物。';
     }
   } else {
-    // 单人模式：只有当前村民和村官
-    characterList = `当前只有你和村官两个人对话，没有其他村民。请只针对村官的发言进行回应，不要提及任何不存在的人物（如张三、李四等）。如果村官提到其他人，你可以表示不知道。`;
+    characterList = `当前只有你和村官两个人对话，没有其他村民。请只针对村官的发言进行回应，不要提及任何不存在的人物。`;
   }
 
   const strategyTipInstruction = `
@@ -336,13 +328,11 @@ ${roleName}：`;
     let stageProgress = parsed.stageProgress || 0;
     let strategyTip = parsed.strategyTip || '';
 
-    // ========== 关键词兜底推进阶段（触发时重新生成回复，确保满意度正向） ==========
     const currentUnfinishedStage = stages.find(s => !s.completed);
     if (currentUnfinishedStage && stageProgress === 0) {
       if (shouldForceStageProgress(scenarioId, message, currentUnfinishedStage.name)) {
         console.log(`🔧 关键词触发推进阶段: ${currentUnfinishedStage.name}，重新生成回复...`);
 
-        // 构建新的 prompt，明确告知阶段已完成，要求情绪缓和
         const newPrompt = `你正在模拟一场乡村工作场景。你的角色是：${roleName}。当前对话目标：${scenario.goal}。
 
 ${personality}
@@ -469,7 +459,7 @@ router.post('/finish', async (req, res) => {
 1. 对每个维度打分（1-5分），并给出具体改进建议。
 2. 从对话中摘录村官的2-3句典型发言，分别标注"优点"或"需改进"。
 3. 提供2-3条该场景下的优秀话术参考。
-4. 总结用户在本模拟中的关键失误点，并归类（如"情绪控制不足""政策解释不清"），这些将存入错题本。
+4. 总结用户在本模拟中的关键失误点，并归类，这些将存入错题本。
 
 对话内容（JSON格式）：${JSON.stringify(dialogue)}
 
@@ -490,14 +480,12 @@ router.post('/finish', async (req, res) => {
         [uuidv4(), userId, mistake, scenarioId, new Date().toISOString()]);
     }
 
-    // 计算百分制最终得分
     let totalScore = 0;
     const dims = Object.values(report.scores);
     if (dims.length) totalScore = dims.reduce((a,b)=>a+b,0) / dims.length;
     const satisfactionBonus = Math.floor(finalSatisfaction / 10);
     const finalScore = Math.min(100, Math.round((totalScore + satisfactionBonus/10) * 20));
 
-    // 保存报告到会话元数据
     const completedCount = stages.filter(s => s.completed).length;
     const totalCount = stages.length;
     extra.report = report;
@@ -535,7 +523,7 @@ router.get('/status/:sessionId', async (req, res) => {
   });
 });
 
-// ========== 获取模拟对练报告（供结束后的会话查看） ==========
+// ========== 获取报告（供结束后查看） ==========
 router.get('/report/:sessionId', async (req, res) => {
   const userId = req.user.userId;
   const session = await getSession(userId, req.params.sessionId);
@@ -555,7 +543,6 @@ router.get('/report/:sessionId', async (req, res) => {
       totalStages: extra.totalStages
     });
   } else {
-    // 兼容旧数据：从 system 消息中查找报告
     const reportMsg = session.messages.find(m => m.role === 'system' && m.content.startsWith('report:'));
     if (reportMsg) {
       try {
@@ -570,7 +557,7 @@ router.get('/report/:sessionId', async (req, res) => {
   }
 });
 
-// ========== 强制推进当前议程（调试/应急用） ==========
+// ========== 强制推进议程 ==========
 router.post('/force-stage', async (req, res) => {
   const { sessionId } = req.body;
   const userId = req.user.userId;
@@ -593,7 +580,6 @@ router.post('/force-stage', async (req, res) => {
   extra.stages = stages;
 
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(extra), sessionId]);
-
   await addMessage(sessionId, 'system', `📌 已强制推进议程：“${stages[currentIndex].name}” 已完成。`, Date.now());
 
   res.json({ success: true, completedStage: stages[currentIndex].name, remainingStages: stages.filter(s => !s.completed).length });

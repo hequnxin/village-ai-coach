@@ -19,6 +19,7 @@ const sessionRoutes = require('./routes/session');
 const meetingRoutes = require('./routes/meeting');
 const gameRoutes = require('./routes/game');  // 新增
 const chatAsyncRoutes = require('./routes/chatAsync');
+const voiceRoutes = require('./routes/voice');
 const app = express();
 
 // 中间件
@@ -58,6 +59,7 @@ app.use('/api/meeting', authenticate, meetingRoutes);
 app.use('/api/game', authenticate, gameRoutes);
 app.use('/api/daily-tasks', authenticate, dailyTasksRoutes);
 app.use('/api/chat-async', authenticate, chatAsyncRoutes);
+app.use('/api/voice', authenticate, voiceRoutes);
 console.log('✅ gameRoutes loaded, routes:', gameRoutes.stack?.map(r => r.route?.path).filter(Boolean));
 // 错误处理中间件
 app.use(errorHandler);

@@ -7,8 +7,10 @@
   <link rel="stylesheet" href="/src/styles/style.css">
 </head>
 <body>
+  <!-- 用于 TRTC 语音通话的远端音频播放元素 -->
+  <audio id="remote-audio" autoplay style="display:none;"></audio>
 
-<button class="menu-toggle" id="menuToggle">☰</button>
+  <button class="menu-toggle" id="menuToggle">☰</button>
 
   <div id="authContainer" class="auth-container">
     <div class="auth-box">
@@ -45,10 +47,7 @@
       </div>
       <div id="sessionList" class="session-list"></div>
       <div id="messageFavoriteList" class="message-favorite-list" style="display: none;"></div>
-
-      <!-- 今日任务容器（动态渲染，无静态标题） -->
       <div id="taskPanel" class="task-panel"></div>
-
       <div id="sidebarLevelContainer" class="level-progress-container" style="display: none;"></div>
       <div class="user-info">
         <span id="usernameDisplay"></span>
@@ -65,7 +64,6 @@
         <button id="navGame" class="nav-btn">🎮 挑战中心</button>
         <button id="navProfile" class="nav-btn">👤 我的</button>
       </nav>
-
       <div id="dynamicContent" class="dynamic-content"></div>
     </main>
   </div>

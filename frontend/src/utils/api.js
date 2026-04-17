@@ -29,23 +29,34 @@ export async function refreshToken() {
 export async function fetchWithAuth(url, options = {}) {
   let token = localStorage.getItem('token');
   if (!token) throw new Error('未登录');
+
+  let body = options.body;
+  let headers = {
+    ...options.headers,
+    'Authorization': `Bearer ${token}`
+  };
+
+  // 如果 body 是一个普通对象且不是 FormData，则自动序列化并设置 Content-Type
+  if (body && typeof body === 'object' && !(body instanceof FormData)) {
+    body = JSON.stringify(body);
+    headers['Content-Type'] = 'application/json';
+  }
+
   let res = await fetch(url, {
     ...options,
-    headers: {
-      ...options.headers,
-      'Authorization': `Bearer ${token}`
-    }
+    headers,
+    body
   });
+
   if (res.status === 401) {
     const refreshed = await refreshToken();
     if (refreshed) {
       token = localStorage.getItem('token');
+      headers['Authorization'] = `Bearer ${token}`;
       res = await fetch(url, {
         ...options,
-        headers: {
-          ...options.headers,
-          'Authorization': `Bearer ${token}`
-        }
+        headers,
+        body
       });
     } else {
       localStorage.removeItem('token');
@@ -81,6 +92,7 @@ export async function claimDailyReward() {
   if (!res.ok) throw new Error('领取奖励失败');
   return res.json();
 }
+
 // 轮询消息状态（返回一个可取消的轮询对象）
 export function pollMessageStatus(messageId, onComplete, onPending, interval = 2000) {
   let timer = null;
