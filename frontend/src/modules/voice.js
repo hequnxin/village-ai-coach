@@ -1,4 +1,5 @@
 // frontend/src/modules/voice.js
+
 import TRTC from 'trtc-js-sdk';
 import { fetchWithAuth } from '../utils/api';
 
@@ -111,11 +112,26 @@ export async function stopVoiceCall() {
   currentSessionId = null;
 }
 
-export async function toggleMute() {
+// 修改 toggleMute 支持参数：传入 true 强制静音，false 强制取消静音，无参数则切换
+export async function toggleMute(muted) {
   if (!localStream) return false;
-  const muted = !localStream._muted;
-  localStream.muteAudio(muted);
-  return muted;
+  if (muted !== undefined) {
+    // 参数明确指定静音或取消静音
+    if (muted) {
+      localStream.muteAudio();
+    } else {
+      localStream.unmuteAudio();
+    }
+  } else {
+    // 无参数时切换状态
+    const currentlyMuted = localStream._muted;
+    if (currentlyMuted) {
+      localStream.unmuteAudio();
+    } else {
+      localStream.muteAudio();
+    }
+  }
+  return !localStream._muted;
 }
 
 export function isInVoiceCall() { return client !== null; }

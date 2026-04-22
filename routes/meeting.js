@@ -23,7 +23,8 @@ router.post('/session', async (req, res) => {
     resolvedItems: [],
     satisfaction: 50,
     emotions: {},
-    currentAgendaIndex: 0
+    currentAgendaIndex: 0,
+    meetingType: req.body.meetingType || 'villager' // 新增：存储会议类型
   };
 
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(config), session.id]);
@@ -65,7 +66,7 @@ router.post('/chat', async (req, res) => {
 
   let config = {};
   if (session.scenarioId) {
-    try { config = JSON.parse(session.scenarioId); } catch(e) { config = { villagers: [], agenda: [], satisfaction: 50, currentAgendaIndex: 0 }; }
+    try { config = JSON.parse(session.scenarioId); } catch(e) { config = { villagers: [], agenda: [], satisfaction: 50, currentAgendaIndex: 0, meetingType: 'villager' }; }
   }
 
   const villagers = config.villagers || [];
@@ -75,6 +76,7 @@ router.post('/chat', async (req, res) => {
   let votes = config.votes || {};
   let resolvedItems = config.resolvedItems || [];
   let currentAgendaIndex = config.currentAgendaIndex || 0;
+  const meetingType = config.meetingType || 'villager'; // 获取会议类型
 
   // ===== 系统消息（直接保存，不调用AI） =====
   if (isSystem) {
@@ -87,7 +89,15 @@ router.post('/chat', async (req, res) => {
     const villager = villagers.find(v => v.id === villagerId);
     if (!villager) return res.status(400).json({ error: '村民不存在' });
 
-    const prompt = `你正在模拟村民"${villager.name}"。性格：${villager.personality}，立场：${villager.initialStance}，核心诉求：${villager.coreDemand || '无'}。请用1-2句话针对下面的话发表看法：${message}`;
+    // 根据会议类型添加角色提示
+    let roleHint = '';
+    if (meetingType === 'cadre') {
+      roleHint = '你是一名村干部，要以村干部的身份和立场发言，考虑村集体利益和上级政策要求，发言要体现责任感和决策意识。';
+    } else {
+      roleHint = '你是一名普通村民，要从村民个人利益和感受出发，表达真实想法。';
+    }
+
+    const prompt = `你正在模拟${meetingType === 'cadre' ? '村干部' : '村民'}"${villager.name}"。${roleHint}性格：${villager.personality}，立场：${villager.initialStance}，核心诉求：${villager.coreDemand || '无'}。请用1-2句话针对下面的话发表看法：${message}`;
     const reply = await chat([{ role: 'user', content: prompt }], { temperature: 0.7, max_tokens: 100 });
     await addMessage(sessionId, 'assistant', reply, Date.now());
     return res.json({ reply });
@@ -172,11 +182,19 @@ router.post('/chat', async (req, res) => {
     discussionHint = `\n刚刚 ${lastSpeaker} 发表了观点："${lastVillagerReply.content.substring(0, 100)}"。请你针对他/她的发言表达你的看法（例如：我同意/不同意，因为...）。你的性格是：${activeVillager.personality || '普通'}，请充分体现这一性格，避免使用与其他村民相同的句式。`;
   }
 
-  const prompt = `你正在模拟一场乡村会议。会议主题：${session.title}。当前议程：${agenda.map((a, i) => `${a.name}${a.completed ? '✅' : (i === currentAgendaIndex ? '⏳' : '')}`).join(' → ')}。
+  // 根据会议类型添加角色提示
+  let roleHint = '';
+  if (meetingType === 'cadre') {
+    roleHint = '你是一名村干部，要以村干部的身份和立场发言，考虑村集体利益和上级政策要求，发言要体现责任感和决策意识。';
+  } else {
+    roleHint = '你是一名普通村民，要从村民个人利益和感受出发，表达真实想法。';
+  }
+
+  const prompt = `你正在模拟一场${meetingType === 'cadre' ? '村干部会议' : '村民大会'}。会议主题：${session.title}。当前议程：${agenda.map((a, i) => `${a.name}${a.completed ? '✅' : (i === currentAgendaIndex ? '⏳' : '')}`).join(' → ')}。
 
 当前会议满意度：${satisfaction}（0-100）。
 
-请扮演村民"${activeVillager.name}"，性格：${activeVillager.personality || '普通'}。针对村官的话"${message}"做出自然回应。${discussionHint}
+请扮演${meetingType === 'cadre' ? '村干部' : '村民'}"${activeVillager.name}"。${roleHint}性格：${activeVillager.personality || '普通'}。针对村官的话"${message}"做出自然回应。${discussionHint}
 
 同时分析村官的表现，返回JSON格式：
 {
@@ -223,7 +241,6 @@ router.post('/chat', async (req, res) => {
     await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(newConfig), sessionId]);
     await addMessage(sessionId, 'assistant', reply, Date.now());
 
-    // 可选：返回村民立场变化（这里简单返回满意度变化）
     res.json({
       reply,
       villager: activeVillager,
@@ -348,6 +365,5 @@ ${dialogue}
     res.status(500).json({ error: '生成会议纪要失败' });
   }
 });
-
 
 module.exports = router;

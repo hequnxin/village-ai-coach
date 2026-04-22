@@ -1,4 +1,5 @@
 // frontend/src/modules/simulate.js
+
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration, showPointsFloat } from '../utils/helpers';
@@ -518,7 +519,6 @@ function startPollingStatus(sessionId) {
     } catch(e) {}
   }, 3000);
 }
-
 export async function renderSimulateView(forceList = false) {
   if (statusPollInterval) {
     clearInterval(statusPollInterval);
@@ -711,6 +711,7 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   container.appendChild(sysMsgDiv);
   scrollSimulate();
 }
+
 export async function renderSimulateChat(session) {
   if (statusPollInterval) clearInterval(statusPollInterval);
   if (eventInterval) clearInterval(eventInterval);
@@ -1041,7 +1042,7 @@ export async function renderSimulateChat(session) {
     };
   }
 
-  // 语音通话按钮
+  // 语音通话按钮 - 使用 PTT 模式，传入支持参数的 toggleMute
   let voiceCallUI = null;
   let voiceCallActive = false;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
@@ -1103,9 +1104,9 @@ export async function renderSimulateChat(session) {
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
           },
-          onMuteToggle: async () => {
-            const muted = await toggleMute();
-            voiceCallUI.setMuted(muted);
+          // PTT: 支持参数化静音
+          onMuteToggle: async (muted) => {
+            await toggleMute(muted);
           },
           onParticipantSelect: async (newRoleName) => {
             if (!voiceCallUI) return;

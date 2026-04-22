@@ -372,7 +372,7 @@ async function startMeeting(roles, topic, agenda, isPreset, meetingType) {
     const res = await fetchWithAuth('/api/meeting/session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic, villagers: roles, agenda })
+      body: JSON.stringify({ topic, villagers: roles, agenda, meetingType })
     });
     const data = await res.json();
     const sessionId = data.sessionId;
@@ -852,7 +852,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮
+  // 线上会议按钮 - 使用 PTT 模式，传入支持参数的 toggleMute
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -899,9 +899,9 @@ function renderMeetingChatArea() {
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
           },
-          onMuteToggle: async () => {
-            const muted = await toggleMute();
-            voiceCallUI.setMuted(muted);
+          // PTT: 支持参数化静音
+          onMuteToggle: async (muted) => {
+            await toggleMute(muted);
           },
           onParticipantSelect: async (newSpeakerName) => {
             if (!voiceCallUI) return;

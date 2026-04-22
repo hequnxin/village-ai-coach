@@ -35,12 +35,34 @@ class BaseVoiceCallUI {
   stopTimer() { if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; } this.startTime = null; }
 
   _bindCommonEvents() {
-    const muteBtn = this.panel?.querySelector('#muteBtn');
+    // 注意：不再绑定 muteBtn，改为在子类中单独绑定 PTT 按钮
     const hangupBtn = this.panel?.querySelector('#hangupBtn');
     const minimizeBtn = this.panel?.querySelector('.minimize-btn');
-    if (muteBtn) muteBtn.onclick = () => this.onMuteToggle();
     if (hangupBtn) hangupBtn.onclick = () => this.onHangup();
     if (minimizeBtn) minimizeBtn.onclick = () => this._minimize();
+  }
+
+  _bindPttEvents(pttBtn) {
+    if (!pttBtn) return;
+    const startTalk = () => {
+      this.onMuteToggle(false); // 取消静音，开始说话
+      pttBtn.style.background = '#f44336';
+      pttBtn.textContent = '🎙️ 说话中...';
+    };
+    const stopTalk = () => {
+      this.onMuteToggle(true); // 静音，停止说话
+      pttBtn.style.background = '#2196f3';
+      pttBtn.textContent = '🎤 按住说话';
+    };
+    pttBtn.onmousedown = startTalk;
+    pttBtn.onmouseup = stopTalk;
+    pttBtn.onmouseleave = () => {
+      if (pttBtn.style.background === '#f44336') stopTalk();
+    };
+    // 移动端触摸支持
+    pttBtn.ontouchstart = (e) => { e.preventDefault(); startTalk(); };
+    pttBtn.ontouchend = stopTalk;
+    pttBtn.ontouchcancel = stopTalk;
   }
 
   _minimize() {
@@ -64,7 +86,7 @@ class BaseVoiceCallUI {
   }
 }
 
-// 单人模式 UI - 深色主题 + 高对比
+// 单人模式 UI - 深色主题 + 高对比，改为 PTT
 class SingleVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -103,7 +125,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
         <div class="system-status" id="callStatusText">🔌 连接中...</div>
         <canvas id="voiceWaveform" width="300" height="60"></canvas>
         <div class="call-buttons">
-          <button id="muteBtn" class="btn-mute">🔇 静音</button>
+          <button id="pttBtn" class="btn-ptt">🎤 按住说话</button>
           <button id="hangupBtn" class="btn-hangup">🔴 挂断</button>
         </div>
       </div>
@@ -111,6 +133,8 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
     this.container.appendChild(this.panel);
     this._addStyles();
     this._bindCommonEvents();
+    const pttBtn = this.panel.querySelector('#pttBtn');
+    this._bindPttEvents(pttBtn);
     this.startTimer();
   }
 
@@ -120,14 +144,14 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 轮到你了，请说话...'; break;
+      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
     if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('轮到你了，请说话。');
+      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
       utterance.lang = 'zh-CN';
       utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
@@ -155,8 +179,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 
   setMuted(muted) {
-    const muteBtn = this.panel?.querySelector('#muteBtn');
-    if (muteBtn) muteBtn.textContent = muted ? '🔊 取消静音' : '🔇 静音';
+    // PTT 模式下不需要额外 UI 更新，按钮状态已由 PTT 事件控制
   }
 
   _addStyles() {
@@ -262,15 +285,15 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
         gap: 20px;
         margin-top: 12px;
       }
-      .btn-mute, .btn-hangup {
+      .btn-ptt, .btn-hangup {
         padding: 8px 20px;
         border: none;
         border-radius: 40px;
         font-weight: bold;
         cursor: pointer;
       }
-      .btn-mute {
-        background: #444;
+      .btn-ptt {
+        background: #2196f3;
         color: white;
       }
       .btn-hangup {
@@ -297,7 +320,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
         .role-name {
           font-size: 1rem;
         }
-        .btn-mute, .btn-hangup {
+        .btn-ptt, .btn-hangup {
           padding: 6px 16px;
         }
         .restore-voice-call-btn {
@@ -326,7 +349,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 多人模式 UI - 深色主题 + 高对比
+// 多人模式 UI - 深色主题 + 高对比，改为 PTT
 class MultiVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -352,7 +375,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
         <div class="participants-grid" id="participantsGrid">${this._renderGrid()}</div>
         <canvas id="voiceWaveform" width="300" height="60"></canvas>
         <div class="call-buttons">
-          <button id="muteBtn" class="btn-mute">🔇 静音</button>
+          <button id="pttBtn" class="btn-ptt">🎤 按住说话</button>
           <button id="hangupBtn" class="btn-hangup">🔴 挂断</button>
         </div>
       </div>
@@ -360,6 +383,8 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     this.container.appendChild(this.panel);
     this._addStyles();
     this._bindCommonEvents();
+    const pttBtn = this.panel.querySelector('#pttBtn');
+    this._bindPttEvents(pttBtn);
     this._bindGridClicks();
     this.startTimer();
   }
@@ -394,14 +419,14 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 轮到你了，请说话...'; break;
+      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
     if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('轮到你了，请说话。');
+      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
       utterance.lang = 'zh-CN';
       utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
@@ -429,8 +454,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
   }
 
   setMuted(muted) {
-    const muteBtn = this.panel?.querySelector('#muteBtn');
-    if (muteBtn) muteBtn.textContent = muted ? '🔊 取消静音' : '🔇 静音';
+    // PTT 模式下不需要额外 UI 更新
   }
 
   _bindGridClicks() {
@@ -559,15 +583,15 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
         gap: 20px;
         margin-top: 12px;
       }
-      .btn-mute, .btn-hangup {
+      .btn-ptt, .btn-hangup {
         padding: 8px 20px;
         border: none;
         border-radius: 40px;
         font-weight: bold;
         cursor: pointer;
       }
-      .btn-mute {
-        background: #444;
+      .btn-ptt {
+        background: #2196f3;
         color: white;
       }
       .btn-hangup {
@@ -594,7 +618,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
         .participant-name {
           font-size: 0.8rem;
         }
-        .btn-mute, .btn-hangup {
+        .btn-ptt, .btn-hangup {
           padding: 6px 16px;
         }
         .restore-voice-call-btn {
@@ -623,7 +647,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 会议模式 UI - 深色主题 + 高对比
+// 会议模式 UI - 保持之前修改的 PTT 样式（已在之前修改过）
 class MeetingVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -672,7 +696,7 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
           </div>
         </div>
         <div class="call-buttons">
-          <button id="muteBtn" class="btn-mute">🔇 静音</button>
+          <button id="pttBtn" class="btn-ptt">🎤 按住说话</button>
           <button id="hangupBtn" class="btn-hangup">🔴 挂断</button>
         </div>
       </div>
@@ -680,6 +704,8 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     this.container.appendChild(this.panel);
     this._addStyles();
     this._bindCommonEvents();
+    const pttBtn = this.panel.querySelector('#pttBtn');
+    this._bindPttEvents(pttBtn);
     this._bindMeetingEvents();
     this._updateSpeakerDisplay();
     this._updateAgendaDisplay();
@@ -743,14 +769,14 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 轮到你了，请说话...'; break;
+      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
     if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('轮到你了，请说话。');
+      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
       utterance.lang = 'zh-CN';
       utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
@@ -778,8 +804,7 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
   }
 
   setMuted(muted) {
-    const muteBtn = this.panel?.querySelector('#muteBtn');
-    if (muteBtn) muteBtn.textContent = muted ? '🔊 取消静音' : '🔇 静音';
+    // PTT 模式下不需要额外 UI 更新
   }
 
   _bindMeetingEvents() {
@@ -793,243 +818,244 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     if (document.getElementById('voice-call-ui-meeting-styles')) return;
     const style = document.createElement('style');
     style.id = 'voice-call-ui-meeting-styles';
-    style.textContent =`
-    .voice-call-ui-meeting {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10000;
-  pointer-events: none;
-}
-.voice-call-card-meeting {
-  pointer-events: auto;
-  background: #ffffff !important;
-  border-radius: 32px;
-  padding: 20px;
-  color: #1e1e2f !important;
-  min-width: 700px;
-  text-align: center;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-  border: 1px solid rgba(0,0,0,0.1);
-}
-.call-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  color: #1e1e2f !important;
-}
-.call-timer {
-  font-family: monospace;
-  background: rgba(0,0,0,0.05);
-  padding: 2px 8px;
-  border-radius: 20px;
-  color: #1e1e2f !important;
-}
-.minimize-btn {
-  background: none;
-  border: none;
-  color: #1e1e2f !important;
-  cursor: pointer;
-  font-size: 1.2rem;
-}
-.system-status {
-  background: #f0f0f0;
-  display: inline-block;
-  padding: 4px 16px;
-  border-radius: 20px;
-  margin-bottom: 12px;
-  font-size: 0.8rem;
-  color: #d32f2f !important; /* 醒目红色 */
-  font-weight: bold;
-}
-.meeting-layout {
-  display: flex;
-  gap: 20px;
-  margin: 16px 0;
-}
-.speaker-area {
-  flex: 2;
-  background: #f5f5f5;
-  border-radius: 24px;
-  padding: 16px;
-}
-.speaker-card {
-  text-align: center;
-}
-.speaker-avatar {
-  font-size: 3rem;
-}
-.speaker-name {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: #000000 !important;
-}
-.speaker-stance, .speaker-satisfaction {
-  font-size: 0.8rem;
-  color: #333333 !important;
-}
-.participants-sidebar {
-  flex: 1;
-  background: #f5f5f5;
-  border-radius: 24px;
-  padding: 16px;
-}
-.participants-list {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-bottom: 16px;
-}
-.participant-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  cursor: pointer;
-  border-radius: 12px;
-  color: #000000 !important;
-}
-.participant-item:hover {
-  background: rgba(0,0,0,0.05);
-}
-.participant-item.active {
-  background: rgba(76,175,80,0.2);
-}
-.p-avatar {
-  font-size: 1.2rem;
-}
-.p-name {
-  flex: 1;
-  text-align: left;
-  color: #000000 !important;
-  font-weight: 500;
-}
-.p-stance {
-  color: #555555 !important;
-}
-.speaking-badge {
-  color: #4caf50;
-}
-.agenda-panel h4 {
-  margin: 8px 0;
-  color: #000000 !important;
-}
-.agenda-item {
-  padding: 4px;
-  font-size: 0.8rem;
-  text-align: left;
-  color: #222222 !important;
-}
-.agenda-item.current {
-  color: #ff9800 !important;
-  font-weight: bold;
-}
-.agenda-item.completed {
-  text-decoration: line-through;
-  color: #888888 !important;
-}
-.btn-vote, .btn-next {
-  width: 100%;
-  margin-top: 8px;
-  padding: 6px;
-  border: none;
-  border-radius: 20px;
-  background: #4caf50;
-  color: white !important;
-  cursor: pointer;
-  font-weight: bold;
-}
-.btn-next {
-  background: #ff9800;
-}
-#voiceWaveform {
-  display: block;
-  margin: 12px auto;
-  background: #e0e0e0;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 300px;
-  height: auto;
-}
-.call-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  margin-top: 12px;
-}
-.btn-mute, .btn-hangup {
-  padding: 8px 20px;
-  border: none;
-  border-radius: 40px;
-  font-weight: bold;
-  cursor: pointer;
-}
-.btn-mute {
-  background: #cccccc;
-  color: #000000 !important;
-}
-.btn-hangup {
-  background: #f44336;
-  color: white !important;
-}
-@media (max-width: 768px) {
-  .voice-call-ui-meeting {
-    left: 5%;
-    transform: none;
-    width: 90%;
-  }
-  .voice-call-card-meeting {
-    min-width: auto;
-    padding: 16px;
-  }
-  .meeting-layout {
-    flex-direction: column;
-  }
-  .participants-sidebar {
-    order: 2;
-    margin-top: 12px;
-  }
-  .speaker-area {
-    order: 1;
-  }
-  .participants-list {
-    display: flex;
-    overflow-x: auto;
-    gap: 8px;
-    max-height: none;
-  }
-  .participant-item {
-    flex-direction: column;
-    min-width: 70px;
-    text-align: center;
-  }
-  .agenda-panel {
-    margin-top: 12px;
-  }
-  .btn-mute, .btn-hangup {
-    padding: 6px 16px;
-  }
-  .restore-voice-call-btn {
-    bottom: 70px;
-  }
-}
-.restore-voice-call-btn {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 56px;
-  height: 56px;
-  background: #2e5d34;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  z-index: 10000;
-  color: white;
-}`
+    style.textContent = `
+      .voice-call-ui-meeting {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10000;
+        pointer-events: none;
+      }
+      .voice-call-card-meeting {
+        pointer-events: auto;
+        background: #ffffff !important;
+        border-radius: 32px;
+        padding: 20px;
+        color: #1e1e2f !important;
+        min-width: 700px;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+        border: 1px solid rgba(0,0,0,0.1);
+      }
+      .call-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        color: #1e1e2f !important;
+      }
+      .call-timer {
+        font-family: monospace;
+        background: rgba(0,0,0,0.05);
+        padding: 2px 8px;
+        border-radius: 20px;
+        color: #1e1e2f !important;
+      }
+      .minimize-btn {
+        background: none;
+        border: none;
+        color: #1e1e2f !important;
+        cursor: pointer;
+        font-size: 1.2rem;
+      }
+      .system-status {
+        background: #f0f0f0;
+        display: inline-block;
+        padding: 4px 16px;
+        border-radius: 20px;
+        margin-bottom: 12px;
+        font-size: 0.8rem;
+        color: #d32f2f !important;
+        font-weight: bold;
+      }
+      .meeting-layout {
+        display: flex;
+        gap: 20px;
+        margin: 16px 0;
+      }
+      .speaker-area {
+        flex: 2;
+        background: #f5f5f5;
+        border-radius: 24px;
+        padding: 16px;
+      }
+      .speaker-card {
+        text-align: center;
+      }
+      .speaker-avatar {
+        font-size: 3rem;
+      }
+      .speaker-name {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #000000 !important;
+      }
+      .speaker-stance, .speaker-satisfaction {
+        font-size: 0.8rem;
+        color: #333333 !important;
+      }
+      .participants-sidebar {
+        flex: 1;
+        background: #f5f5f5;
+        border-radius: 24px;
+        padding: 16px;
+      }
+      .participants-list {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-bottom: 16px;
+      }
+      .participant-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        cursor: pointer;
+        border-radius: 12px;
+        color: #000000 !important;
+      }
+      .participant-item:hover {
+        background: rgba(0,0,0,0.05);
+      }
+      .participant-item.active {
+        background: rgba(76,175,80,0.2);
+      }
+      .p-avatar {
+        font-size: 1.2rem;
+      }
+      .p-name {
+        flex: 1;
+        text-align: left;
+        color: #000000 !important;
+        font-weight: 500;
+      }
+      .p-stance {
+        color: #555555 !important;
+      }
+      .speaking-badge {
+        color: #4caf50;
+      }
+      .agenda-panel h4 {
+        margin: 8px 0;
+        color: #000000 !important;
+      }
+      .agenda-item {
+        padding: 4px;
+        font-size: 0.8rem;
+        text-align: left;
+        color: #222222 !important;
+      }
+      .agenda-item.current {
+        color: #ff9800 !important;
+        font-weight: bold;
+      }
+      .agenda-item.completed {
+        text-decoration: line-through;
+        color: #888888 !important;
+      }
+      .btn-vote, .btn-next {
+        width: 100%;
+        margin-top: 8px;
+        padding: 6px;
+        border: none;
+        border-radius: 20px;
+        background: #4caf50;
+        color: white !important;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      .btn-next {
+        background: #ff9800;
+      }
+      #voiceWaveform {
+        display: block;
+        margin: 12px auto;
+        background: #e0e0e0;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 300px;
+        height: auto;
+      }
+      .call-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 12px;
+      }
+      .btn-ptt, .btn-hangup {
+        padding: 8px 20px;
+        border: none;
+        border-radius: 40px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .btn-ptt {
+        background: #2196f3;
+        color: white !important;
+      }
+      .btn-hangup {
+        background: #f44336;
+        color: white !important;
+      }
+      @media (max-width: 768px) {
+        .voice-call-ui-meeting {
+          left: 5%;
+          transform: none;
+          width: 90%;
+        }
+        .voice-call-card-meeting {
+          min-width: auto;
+          padding: 16px;
+        }
+        .meeting-layout {
+          flex-direction: column;
+        }
+        .participants-sidebar {
+          order: 2;
+          margin-top: 12px;
+        }
+        .speaker-area {
+          order: 1;
+        }
+        .participants-list {
+          display: flex;
+          overflow-x: auto;
+          gap: 8px;
+          max-height: none;
+        }
+        .participant-item {
+          flex-direction: column;
+          min-width: 70px;
+          text-align: center;
+        }
+        .agenda-panel {
+          margin-top: 12px;
+        }
+        .btn-ptt, .btn-hangup {
+          padding: 6px 16px;
+        }
+        .restore-voice-call-btn {
+          bottom: 70px;
+        }
+      }
+      .restore-voice-call-btn {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 56px;
+        height: 56px;
+        background: #2e5d34;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 10000;
+        color: white;
+      }
+    `;
     document.head.appendChild(style);
   }
 }

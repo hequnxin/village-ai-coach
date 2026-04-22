@@ -1,7 +1,7 @@
 // frontend/src/modules/game.js
 
 import { fetchWithAuth } from '../utils/api';
-import { appState } from './state';
+import { appState, loadLevelProgress } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, setActiveNavByView, showCelebration, showPointsFloat } from '../utils/helpers';
 
 // 全局状态
@@ -62,6 +62,18 @@ function formatAnswerLabel(question, answerIndex) {
   if (!question.options) return answerIndex;
   const text = question.options[answerIndex];
   return `${String.fromCharCode(65 + answerIndex)}. ${text}`;
+}
+
+// 刷新侧边栏积分和成长曲线的通用函数
+async function refreshPointsAndGrowth() {
+  try {
+    await loadLevelProgress(); // 更新侧边栏等级/积分
+    if (typeof window.refreshGrowthChart === 'function') {
+      window.refreshGrowthChart(); // 更新成长曲线（如果个人中心已打开）
+    }
+  } catch (err) {
+    console.warn('刷新积分/曲线失败', err);
+  }
 }
 
 // ==================== 通用全屏答题组件 ====================
@@ -365,9 +377,10 @@ async function startDailyQuiz() {
         body: JSON.stringify({ quizId: data.quizId, score: finalScore / 10, total })
       });
       alert(`练习完成！本次得分 ${finalScore/10}/${total}，获得 ${rewardPoints} 积分`);
-      window.refreshGrowthChart?.();
       await updateTaskProgress('daily_quiz', 1);
       await loadModuleStats();
+      // 刷新侧边栏积分和成长曲线
+      await refreshPointsAndGrowth();
     };
 
     renderGenericQuiz({
@@ -460,9 +473,10 @@ async function startWeeklyContest() {
       const result = await res.json();
       if (result.score !== undefined) {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒`);
-        window.refreshGrowthChart?.();
         await updateTaskProgress('contest', 1);
         await loadModuleStats();
+        // 刷新侧边栏积分和成长曲线
+        await refreshPointsAndGrowth();
         const rankModal = document.querySelector('.modal');
         if (rankModal && rankModal.style.display === 'flex') {
           rankModal.remove();
@@ -566,7 +580,8 @@ async function startWrongClear() {
         if (clearData.clearedCount > 0) {
           clearedCount++;
           totalScore += 10;
-          window.refreshGrowthChart?.();
+          // 刷新侧边栏积分和成长曲线
+          await refreshPointsAndGrowth();
           remainingCount--;
           questions.splice(index, 1);
           userAnswers.splice(index, 1);
@@ -806,9 +821,10 @@ async function finishMemoryGame() {
   const rewardPoints = data.rewardPoints;
   alert(`🎉 游戏完成！得分：${memoryGameScore}，步数：${memoryGameMoves}，用时：${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}，获得 ${rewardPoints} 积分`);
   await addPoints(rewardPoints, '翻牌配对');
-  window.refreshGrowthChart?.();
   await updateTaskProgress('memory', 1);
   showCelebration(window.innerWidth/2, window.innerHeight/2);
+  // 刷新侧边栏积分和成长曲线
+  await refreshPointsAndGrowth();
   memoryGameActive = false;
   renderGameView();
 }
@@ -865,7 +881,6 @@ async function showMemoryRanking() {
   modal.querySelector('.modal-close').onclick = () => modal.remove();
   modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
 }
-
 // ==================== 每周竞赛排行榜 ====================
 async function showContestRanking() {
   try {
@@ -1166,7 +1181,8 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     if (reward) {
       await addPoints(reward, '趣味闯关通关奖励');
       showPointsFloat(reward, window.innerWidth/2, window.innerHeight/2);
-      window.refreshGrowthChart?.();
+      // 刷新侧边栏积分和成长曲线
+      await refreshPointsAndGrowth();
     }
     if (passed) {
       await updateTaskProgress('fun', 1);
