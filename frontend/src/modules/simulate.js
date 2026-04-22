@@ -18,6 +18,25 @@ let roundRobinDone = false;
 let manualUserMessageCount = 0;
 let generatingReport = false;
 
+// ==================== 语音合成 ====================
+let speechSynthesisEnabled = true;
+function speakText(text, voiceName = 'Tingting') {
+  if (!speechSynthesisEnabled) return;
+  if (!window.speechSynthesis) {
+    console.warn('浏览器不支持语音合成');
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 0.9;
+  utterance.pitch = 1.0;
+  const voices = window.speechSynthesis.getVoices();
+  const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
+  if (cnVoice) utterance.voice = cnVoice;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
 // 场景剧情引导状态
 const scenarioGuideState = {
   'scenario_001': { stage: 0, lastSatisfaction: 50, triggeredFlags: new Set() },
@@ -200,6 +219,10 @@ function createSimulateMessageElement(role, speakerName, speakerAvatar, content,
       ${metaHtml}
     </div>
   `;
+  // 如果是 assistant 消息，播放语音
+  if (role === 'assistant' && !isThinking && content) {
+    speakText(content);
+  }
   return msgDiv;
 }
 
@@ -356,7 +379,6 @@ function updateSidebarStatus(data, villagerName = null) {
     }
   }
 }
-
 async function sendSimulateMessage(sessionId, text, container, roleName, targetVillager = null, isAuto = false, singleRole = null) {
   if (!isAuto && isSending) return;
   if (!isAuto) isSending = true;
@@ -519,6 +541,7 @@ function startPollingStatus(sessionId) {
     } catch(e) {}
   }, 3000);
 }
+
 export async function renderSimulateView(forceList = false) {
   if (statusPollInterval) {
     clearInterval(statusPollInterval);
@@ -710,6 +733,57 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   sysMsgDiv.innerHTML = `<div class="simulate-message-bubble" style="background:#e3f2fd; color:#1565c0;">✅ 对练正式开始，请尝试与村民沟通。</div>`;
   container.appendChild(sysMsgDiv);
   scrollSimulate();
+}
+
+// 让指定角色主动发言（模拟对练中切换角色后自动发言）
+async function speakAsVillager(villager, contextHint = '') {
+  if (!currentTargetVillager) return;
+  const container = document.getElementById('simulateMessages');
+  if (!container) return;
+
+  const recentMessages = Array.from(container.querySelectorAll('.simulate-message'))
+    .slice(-5)
+    .map(msg => msg.querySelector('.simulate-message-content')?.innerText || '')
+    .filter(t => t.trim())
+    .join('\n');
+  const currentAgenda = '当前对话';
+  let prompt = `当前议题：${currentAgenda}。`;
+  if (recentMessages) prompt += `\n最近对话内容：${recentMessages.substring(0, 300)}`;
+  if (contextHint) prompt += `\n${contextHint}`;
+  else prompt += `\n请结合你的立场（${villager.initialStance}）和核心诉求（${villager.coreDemand || '无'}），主动发表你对当前话题的看法。`;
+
+  const thinkingMsg = document.createElement('div');
+  thinkingMsg.className = 'simulate-message assistant thinking-message';
+  thinkingMsg.innerHTML = `<div class="simulate-message-avatar">${villager.avatar}</div><div class="simulate-message-bubble">💭 ${villager.name} 思考中...</div>`;
+  container.appendChild(thinkingMsg);
+  scrollSimulate();
+
+  try {
+    const res = await fetchWithAuth('/api/simulate/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: appState.currentSessionId,
+        message: prompt,
+        villager: { name: villager.name, personality: villager.personality }
+      })
+    });
+    const data = await res.json();
+    thinkingMsg.remove();
+    const reply = data.reply || `${villager.name}：嗯，我再想想。`;
+    const finalMsg = createSimulateMessageElement('assistant', villager.name, villager.avatar, reply, data.emotion || 'neutral', data.satisfaction);
+    container.appendChild(finalMsg);
+    scrollSimulate();
+    if (data.satisfaction !== undefined) {
+      // 更新满意度显示（如果有的话）
+      const satisfactionDiv = document.querySelector('.single-satisfaction');
+      if (satisfactionDiv) satisfactionDiv.textContent = `${data.satisfaction}%`;
+    }
+  } catch (err) {
+    console.error('主动发言失败', err);
+    thinkingMsg.innerHTML = `<div class="simulate-message-avatar">${villager.avatar}</div><div class="simulate-message-bubble">⚠️ ${villager.name} 暂时无法发言</div>`;
+    setTimeout(() => thinkingMsg.remove(), 2000);
+  }
 }
 
 export async function renderSimulateChat(session) {
@@ -1042,7 +1116,7 @@ export async function renderSimulateChat(session) {
     };
   }
 
-  // 语音通话按钮 - 使用 PTT 模式，传入支持参数的 toggleMute
+  // 语音通话按钮 - 使用 PTT 模式
   let voiceCallUI = null;
   let voiceCallActive = false;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
@@ -1104,7 +1178,6 @@ export async function renderSimulateChat(session) {
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
           },
-          // PTT: 支持参数化静音
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
           },
@@ -1119,7 +1192,16 @@ export async function renderSimulateChat(session) {
               voiceCallUI.updateParticipants(participantsList, newRoleName);
               if (currentMode === 'multi') {
                 const newTarget = currentMultiVillagers.find(v => v.name === newRoleName);
-                if (newTarget) currentTargetVillager = newTarget;
+                if (newTarget) {
+                  currentTargetVillager = newTarget;
+                  const inputEl = document.getElementById('simulateInput');
+                  if (inputEl) inputEl.placeholder = `对 ${newTarget.name} 说...`;
+                  // 切换后主动让新角色发言
+                  await speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
+                }
+              } else if (currentMode === 'single' && singleRole) {
+                // 单人模式切换角色后也主动发言
+                await speakAsVillager({ ...singleRole, name: newRoleName, avatar: singleRole.avatar, personality: singleRole.personality, initialStance: singleRole.initialStance, coreDemand: singleRole.coreDemand }, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
               }
             } else {
               alert('切换角色失败，请重试');
@@ -1204,7 +1286,7 @@ export async function renderSimulateChat(session) {
   }
   if (voiceBtn) setupVoiceInput(input, voiceBtn);
 
-  // 多人模式切换村民（桌面端侧边栏）- 使用 restartRobot 无缝切换
+  // 多人模式切换村民（桌面端侧边栏）
   if (!isMobile && currentMode === 'multi') {
     const sidebarItems = document.querySelectorAll('.villager-item');
     sidebarItems.forEach(item => {
@@ -1230,8 +1312,12 @@ export async function renderSimulateChat(session) {
                   stance: v.initialStance
                 }));
                 voiceCallUI.updateParticipants(participantsList, newTarget.name);
+                // 切换后主动发言
+                speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
               }
             });
+          } else {
+            speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
           }
         }
       };
@@ -1267,8 +1353,11 @@ export async function renderSimulateChat(session) {
                   stance: v.initialStance
                 }));
                 voiceCallUI.updateParticipants(participantsList, newTarget.name);
+                speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
               }
             });
+          } else {
+            speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
           }
         }
       };

@@ -16,6 +16,26 @@ let meetingPollInterval = null;
 let roundRobinInProgress = false;
 let meetingTyping = false;
 
+// ==================== 语音合成 ====================
+let speechSynthesisEnabled = true;
+function speakText(text, voiceName = 'Tingting') {
+  if (!speechSynthesisEnabled) return;
+  if (!window.speechSynthesis) {
+    console.warn('浏览器不支持语音合成');
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 0.9;
+  utterance.pitch = 1.0;
+  // 获取语音列表，选择中文女声
+  const voices = window.speechSynthesis.getVoices();
+  const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
+  if (cnVoice) utterance.voice = cnVoice;
+  window.speechSynthesis.cancel(); // 取消正在播放的
+  window.speechSynthesis.speak(utterance);
+}
+
 // ==================== 预设模板（每个模板都有独立的村民和村干部） ====================
 const presetTemplates = {
   '人居环境整治': {
@@ -152,6 +172,9 @@ function appendMeetingMessage(role, name, avatar, content) {
   `;
   container.appendChild(msgDiv);
   scrollMeetingMessages();
+  if (role === 'assistant') {
+    speakText(content);
+  }
   if (currentMeeting) {
     const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
     if (session) {
@@ -255,6 +278,9 @@ function renderMeetingVillagersDesktop() {
       currentMeeting.activeVillagerId = targetVillager.id;
       document.querySelectorAll('.villager-card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
+      // 更新输入框 placeholder
+      const input = document.getElementById('meetingInput');
+      if (input) input.placeholder = `向 ${targetVillager.name} 说...`;
       if (voiceCallUI) {
         await restartRobot({
           sceneType: 'meeting',
@@ -286,6 +312,8 @@ function renderMeetingVillagersDesktop() {
     const firstCard = container.querySelector('.villager-card');
     if (firstCard) firstCard.classList.add('active');
     currentMeeting.activeVillagerId = currentMeeting.villagers[0].id;
+    const input = document.getElementById('meetingInput');
+    if (input) input.placeholder = `向 ${currentMeeting.villagers[0].name} 说...`;
   }
 }
 
@@ -321,52 +349,23 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   }
 }
 
-function showMobileTip(tipText, keepUntilManualClose = false) { console.log('提示:', tipText); }
-function hideMobileTip() {}
-function toggleMobileTip() { const tipText = getDynamicTip(); showMobileTip(tipText, true); }
-function getDynamicTip() {
-  const container = document.getElementById('meetingMessages');
-  if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
-  const messages = container.querySelectorAll('.meeting-message');
-  const lastUserMsg = Array.from(messages).reverse().find(m => m.classList.contains('user'));
-  if (lastUserMsg) {
-    const text = lastUserMsg.querySelector('.message-bubble')?.innerText || '';
-    if (text.includes('垃圾')) return '💡 可以引用《垃圾分类管理条例》，强调政府补贴和长期效益。';
-    if (text.includes('土地') || text.includes('宅基地')) return '💡 建议查阅《土地管理法》相关条款，明确权属。';
-    if (text.includes('医保') || text.includes('养老')) return '💡 可以引用最新医保报销比例和养老金调整方案。';
-    if (text.includes('产业') || text.includes('项目')) return '💡 强调项目可行性、收益预期和风险保障措施。';
-    if (text.includes('噪音') || text.includes('纠纷')) return '💡 建议引导双方换位思考，提出折中方案。';
-  }
-  return meetingTips[Math.floor(Math.random() * meetingTips.length)];
-}
-// ==================== 核心会议函数 ====================
-
-// 让指定村民/村干部主动发言（结合上下文）
+// 让指定角色主动发言（结合上下文）
 async function speakAsVillager(villager, contextHint = '') {
   if (!currentMeeting) return;
   const container = document.getElementById('meetingMessages');
   if (!container) return;
 
-  // 获取最近的几条消息作为上下文
   const recentMessages = Array.from(container.querySelectorAll('.meeting-message'))
     .slice(-5)
     .map(msg => msg.querySelector('.message-bubble')?.innerText || '')
     .filter(t => t.trim())
     .join('\n');
-
   const currentAgenda = currentMeeting.agenda[currentAgendaIndex]?.name || '当前议题';
-
   let prompt = `当前议程：${currentAgenda}。`;
-  if (recentMessages) {
-    prompt += `\n最近讨论内容：${recentMessages.substring(0, 300)}`;
-  }
-  if (contextHint) {
-    prompt += `\n${contextHint}`;
-  } else {
-    prompt += `\n请结合你的立场（${villager.initialStance}）和核心诉求（${villager.coreDemand || '无'}），主动发表你对当前议题的看法。`;
-  }
+  if (recentMessages) prompt += `\n最近讨论内容：${recentMessages.substring(0, 300)}`;
+  if (contextHint) prompt += `\n${contextHint}`;
+  else prompt += `\n请结合你的立场（${villager.initialStance}）和核心诉求（${villager.coreDemand || '无'}），主动发表你对当前议题的看法。`;
 
-  // 显示思考中状态
   const thinkingMsg = document.createElement('div');
   thinkingMsg.className = 'meeting-message assistant thinking-message';
   thinkingMsg.innerHTML = `<div class="message-avatar">${villager.avatar}</div><div class="message-bubble">💭 ${villager.name} 思考中...</div>`;
@@ -399,6 +398,26 @@ async function speakAsVillager(villager, contextHint = '') {
     setTimeout(() => thinkingMsg.remove(), 2000);
   }
 }
+
+function showMobileTip(tipText, keepUntilManualClose = false) { console.log('提示:', tipText); }
+function hideMobileTip() {}
+function toggleMobileTip() { const tipText = getDynamicTip(); showMobileTip(tipText, true); }
+function getDynamicTip() {
+  const container = document.getElementById('meetingMessages');
+  if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
+  const messages = container.querySelectorAll('.meeting-message');
+  const lastUserMsg = Array.from(messages).reverse().find(m => m.classList.contains('user'));
+  if (lastUserMsg) {
+    const text = lastUserMsg.querySelector('.message-bubble')?.innerText || '';
+    if (text.includes('垃圾')) return '💡 可以引用《垃圾分类管理条例》，强调政府补贴和长期效益。';
+    if (text.includes('土地') || text.includes('宅基地')) return '💡 建议查阅《土地管理法》相关条款，明确权属。';
+    if (text.includes('医保') || text.includes('养老')) return '💡 可以引用最新医保报销比例和养老金调整方案。';
+    if (text.includes('产业') || text.includes('项目')) return '💡 强调项目可行性、收益预期和风险保障措施。';
+    if (text.includes('噪音') || text.includes('纠纷')) return '💡 建议引导双方换位思考，提出折中方案。';
+  }
+  return meetingTips[Math.floor(Math.random() * meetingTips.length)];
+}
+// ==================== 核心会议函数 ====================
 
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
   roundRobinInProgress = true;
@@ -757,7 +776,7 @@ function renderMeetingChatArea() {
           <div id="meetingMessages" class="meeting-messages" style="flex:1; overflow-y:auto; padding:12px;"></div>
           <div class="meeting-input-area" style="border-top:1px solid #eee; padding:8px; background:white;">
             <div style="display:flex; gap:6px; align-items:center;">
-              <textarea id="meetingInput" placeholder="向与会人员发言..." rows="1" style="flex:1; padding:6px 10px; border-radius:20px; border:1px solid #ccc; resize:none; font-family:inherit; font-size:13px; min-height:32px;"></textarea>
+              <textarea id="meetingInput" placeholder="向 ${currentMeeting.activeVillagerId ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)?.name : '与会人员'} 说..." rows="1" style="flex:1; padding:6px 10px; border-radius:20px; border:1px solid #ccc; resize:none; font-family:inherit; font-size:13px; min-height:32px;"></textarea>
               <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:20px; padding:0 14px; font-size:13px;">发送</button>
               <button id="meetingVoiceBtn" style="background:#f0f0f0; border:none; border-radius:20px; width:36px; font-size:16px;">🎤</button>
             </div>
@@ -816,7 +835,7 @@ function renderMeetingChatArea() {
           <div id="meetingMessages" class="meeting-messages" style="flex:1; overflow-y:auto; padding:16px;"></div>
           <div class="meeting-input-area" style="border-top:1px solid #eee; padding:12px;">
             <div style="display:flex; gap:8px; align-items:center;">
-              <textarea id="meetingInput" placeholder="向与会人员发言..." rows="1" style="flex:1; padding:10px; border-radius:20px; border:1px solid #ccc; resize:vertical; outline:none; min-height:40px;"></textarea>
+              <textarea id="meetingInput" placeholder="向 ${currentMeeting.activeVillagerId ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)?.name : '与会人员'} 说..." rows="1" style="flex:1; padding:10px; border-radius:20px; border:1px solid #ccc; resize:vertical; outline:none; min-height:40px;"></textarea>
               <button id="sendMeetingBtn" style="background:#2e5d34; color:white; border:none; border-radius:20px; padding:0 18px; height:40px;">发送</button>
               <button id="meetingVoiceBtn" style="background:#f0f0f0; border:none; border-radius:20px; width:40px; height:40px; font-size:18px;">🎤</button>
             </div>
@@ -876,6 +895,8 @@ function renderMeetingChatArea() {
           if (newTarget) {
             currentMeeting.activeVillagerId = newTarget.id;
             drawer.style.display = 'none';
+            // 更新输入框 placeholder
+            if (input) input.placeholder = `向 ${newTarget.name} 说...`;
             if (voiceCallUI) {
               restartRobot({
                 sceneType: 'meeting',
@@ -889,8 +910,12 @@ function renderMeetingChatArea() {
                     satisfaction: v.satisfaction,
                     stance: v.stance || v.initialStance
                   })), name);
+                  // 切换后主动让新发言人说话
+                  speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
                 }
               });
+            } else {
+              speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
             }
           }
         };
@@ -911,7 +936,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮 - 使用 PTT 模式，传入支持参数的 toggleMute，并在切换角色后主动发言
+  // 线上会议按钮 - 使用 PTT 模式
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -973,7 +998,8 @@ function renderMeetingChatArea() {
               const newTarget = currentMeeting.villagers.find(v => v.name === newSpeakerName);
               if (newTarget) {
                 currentMeeting.activeVillagerId = newTarget.id;
-                // 切换成功后，让新发言人主动发言
+                if (input) input.placeholder = `向 ${newTarget.name} 说...`;
+                // 切换后主动让新发言人说话
                 await speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
               }
             } else {
@@ -1084,7 +1110,6 @@ export async function renderMeetingSetupView() {
     customInput.style.display = topicSelect.value === 'custom' ? 'block' : 'none';
   };
 
-  // 当会议类型切换时，刷新当前选中的预设模板角色
   typeSelect.addEventListener('change', () => {
     if (topicSelect.value !== 'custom') {
       topicSelect.dispatchEvent(new Event('change'));
@@ -1098,7 +1123,6 @@ export async function renderMeetingSetupView() {
     }
   });
 
-  // 主题切换时，根据会议类型加载对应的预设模板角色
   topicSelect.addEventListener('change', () => {
     const selected = topicSelect.value;
     agendaInput.value = '';
@@ -1106,7 +1130,6 @@ export async function renderMeetingSetupView() {
     if (selected !== 'custom' && presetTemplates[selected]) {
       const template = presetTemplates[selected];
       agendaInput.value = template.agenda.join('\n');
-
       const meetingType = document.getElementById('meetingTypeSelect').value;
       let villagers = template.villagers;
       if (meetingType === 'cadre') {

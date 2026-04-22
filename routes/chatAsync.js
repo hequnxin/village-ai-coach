@@ -11,7 +11,7 @@ const pointsService = require('../services/pointsService');
 
 const router = express.Router();
 
-// 系统提示词（与原有保持一致）
+// 系统提示词
 const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也是基层干部的"AI伙伴"。你的任务是用中文回答村官提出的各种实际问题。你的回答必须遵循以下原则：
 
 1. **有条理**：使用纯文本序号组织内容，例如：
@@ -29,7 +29,7 @@ const SYSTEM_PROMPT = `你是一名经验丰富的乡村治理专家，同时也
 
 请输出纯文本，不要包含任何Markdown语法。`;
 
-// ==================== 预设问题及其预置知识上下文 ====================
+// 预设问题列表
 const PRESET_QUESTIONS = [
   '村里闲置小学可以改造成什么？',
   '土地流转合同要注意哪些条款？',
@@ -38,6 +38,7 @@ const PRESET_QUESTIONS = [
   '想发展民宿需要办哪些手续？'
 ];
 
+// 预设问题的预置知识上下文（避免每次检索）
 const PRESET_CONTEXT = {
   '村里闲置小学可以改造成什么？': `【相关知识库内容】
 - 闲置小学盘活：可改造为村级养老服务中心、农产品加工车间、电商直播基地、村史馆、农家书屋、游客中心、特色民宿、农产品冷链仓库等。
@@ -62,7 +63,7 @@ const PRESET_CONTEXT = {
 - 操作建议：先咨询乡镇旅游办了解扶持政策（每间客房补贴2000-5000元），可委托代办机构。`
 };
 
-// 异步生成回复（带状态更新）
+// 异步生成回复
 async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage, knowledgeContext, isPreset = false) {
   try {
     const session = await getSession(userId, sessionId);
@@ -71,16 +72,14 @@ async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage
       return;
     }
 
-    // 1. 更新状态为 'generating'（预设问题跳过 retrieving）
+    // 直接进入生成状态（预设问题跳过检索状态）
     await db.run('UPDATE messages SET status = $1 WHERE id = $2', ['generating', assistantMsgId]);
 
-    // 构建历史消息
     const history = (session.messages || []).slice(-10).map(m => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content
     }));
 
-    // 对于预设问题，使用预置的知识上下文
     let finalContext = knowledgeContext;
     if (isPreset && PRESET_CONTEXT[userMessage]) {
       finalContext = PRESET_CONTEXT[userMessage];
@@ -92,15 +91,13 @@ async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage
       { role: 'user', content: `用户问题：${userMessage}\n${finalContext}\n请回答。` }
     ];
 
-    // 调用 AI 生成回复（temperature 保持 0.7 保证变化，max_tokens 适当降低加快速度）
-    const reply = await chat(messages, { temperature: 0.7, max_tokens: 2000 });
+    // 预设问题使用更小的 max_tokens 加快速度
+    const maxTokens = isPreset ? 1200 : 2000;
+    const temperature = isPreset ? 0.8 : 0.7;
+    const reply = await chat(messages, { temperature, max_tokens: maxTokens });
 
-    // 更新消息内容和状态为 'completed'
     await db.run('UPDATE messages SET content = $1, status = $2 WHERE id = $3', [reply, 'completed', assistantMsgId]);
-
-    // 添加积分
     await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${userMessage.substring(0,30)}`);
-
   } catch (err) {
     console.error('异步生成失败:', err);
     const errorReply = '❌ AI 生成失败，请稍后重试。';
@@ -135,36 +132,30 @@ router.post('/', async (req, res) => {
   const isPreset = PRESET_QUESTIONS.includes(message.trim());
 
   let knowledgeContext = '';
-  let knowledgeResults = [];
-
   if (!isPreset) {
-    // 非预设问题：正常进行知识检索
+    // 非预设问题：正常知识检索
+    let knowledgeResults = [];
     try {
       knowledgeResults = await searchKnowledge(message, 3);
     } catch (err) {
       console.warn('向量检索失败，使用关键词降级', err);
       knowledgeResults = await keywordSearch(message, 3);
     }
-
     if (knowledgeResults && knowledgeResults.length) {
       knowledgeContext = '\n\n【相关知识库内容】\n' + knowledgeResults.map(k => `- ${k.title}：${k.content.substring(0,200)}${k.content.length>200?'...':''}`).join('\n');
     }
-  } else {
-    // 预设问题：使用预置知识上下文（在 generateReplyAsync 中会使用 PRESET_CONTEXT）
-    // 这里 knowledgeContext 留空，但为了保持一致，可以保留空字符串
   }
 
-  // 创建占位 assistant 消息（状态 pending）
+  // 创建占位 assistant 消息
   const assistantMsgId = uuidv4();
   await db.run(
     'INSERT INTO messages (id, session_id, role, content, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
     [assistantMsgId, sessionId, 'assistant', '正在准备...', 'pending', Date.now()]
   );
 
-  // 异步生成回复（不等待）
+  // 异步生成回复
   generateReplyAsync(sessionId, assistantMsgId, userId, message, knowledgeContext, isPreset).catch(console.error);
 
-  // 立即返回 assistant 消息 ID
   res.json({ assistantMessageId: assistantMsgId });
 });
 

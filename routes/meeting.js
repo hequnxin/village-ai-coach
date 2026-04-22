@@ -1,4 +1,5 @@
 // routes/meeting.js
+
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { chat } = require('../services/openai');
@@ -24,7 +25,7 @@ router.post('/session', async (req, res) => {
     satisfaction: 50,
     emotions: {},
     currentAgendaIndex: 0,
-    meetingType: meetingType || 'villager' // 村民大会或村干部大会
+    meetingType: meetingType || 'villager'
   };
 
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(config), session.id]);

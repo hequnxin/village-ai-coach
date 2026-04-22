@@ -35,7 +35,6 @@ class BaseVoiceCallUI {
   stopTimer() { if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; } this.startTime = null; }
 
   _bindCommonEvents() {
-    // 注意：不再绑定 muteBtn，改为在子类中单独绑定 PTT 按钮
     const hangupBtn = this.panel?.querySelector('#hangupBtn');
     const minimizeBtn = this.panel?.querySelector('.minimize-btn');
     if (hangupBtn) hangupBtn.onclick = () => this.onHangup();
@@ -86,7 +85,7 @@ class BaseVoiceCallUI {
   }
 }
 
-// 单人模式 UI - 深色主题 + 高对比，改为 PTT
+// 单人模式 UI - 深色主题 + PTT
 class SingleVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -179,7 +178,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 
   setMuted(muted) {
-    // PTT 模式下不需要额外 UI 更新，按钮状态已由 PTT 事件控制
+    // PTT 模式下不需要额外 UI 更新
   }
 
   _addStyles() {
@@ -349,7 +348,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 多人模式 UI - 深色主题 + 高对比，改为 PTT
+// 多人模式 UI - 深色主题 + PTT
 class MultiVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -646,8 +645,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     document.head.appendChild(style);
   }
 }
-
-// 会议模式 UI - 保持之前修改的 PTT 样式（已在之前修改过）
+// 会议模式 UI - 浅色主题 + 黑色文字 + PTT
 class MeetingVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);

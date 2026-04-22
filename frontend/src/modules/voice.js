@@ -15,7 +15,6 @@ let analyserNode = null;
 let animationId = null;
 let statusCallback = null;
 let volumeCallback = null;
-
 let currentTaskId = null;
 
 export async function startVoiceCall({ roomId, sceneType, sessionId, roleName, onRemoteAudioReady, onVolumeChange, onStatusChange }) {
@@ -112,7 +111,7 @@ export async function stopVoiceCall() {
   currentSessionId = null;
 }
 
-// 修改 toggleMute 支持参数：传入 true 强制静音，false 强制取消静音，无参数则切换
+// 支持参数化静音：如果传入 muted 参数，则强制静音或取消静音；否则切换状态
 export async function toggleMute(muted) {
   if (!localStream) return false;
   if (muted !== undefined) {
