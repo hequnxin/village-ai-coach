@@ -1,4 +1,5 @@
 // frontend/src/modules/meeting.js
+
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration } from '../utils/helpers';
@@ -15,85 +16,90 @@ let meetingPollInterval = null;
 let roundRobinInProgress = false;
 let meetingTyping = false;
 
-// 预设会议模板
+// ==================== 预设模板（每个模板都有独立的村民和村干部） ====================
 const presetTemplates = {
   '人居环境整治': {
     description: '村内部分区域存在垃圾乱倒、柴草乱堆、污水横流现象，村民投诉较多。需要制定整治方案并动员大家参与。',
-    agenda: [
-      '介绍当前环境问题现状',
-      '讨论整治措施（垃圾定点投放、柴草集中堆放）',
-      '明确各户责任和奖惩机制',
-      '投票表决整治方案'
-    ],
+    agenda: ['介绍当前环境问题现状', '讨论整治措施（垃圾定点投放、柴草集中堆放）', '明确各户责任和奖惩机制', '投票表决整治方案'],
     villagers: [
       { name: '张大爷', avatar: '👴', personality: '固执、嫌麻烦', initialStance: '反对', stanceValue: 0.2, coreDemand: '不想多走路倒垃圾', id: `v_${Date.now()}_1` },
       { name: '李大妈', avatar: '👵', personality: '爱干净、支持', initialStance: '支持', stanceValue: 0.8, coreDemand: '希望村里统一规划', id: `v_${Date.now()}_2` },
       { name: '王叔', avatar: '👨', personality: '理性、观望', initialStance: '中立', stanceValue: 0.5, coreDemand: '担心费用和公平性', id: `v_${Date.now()}_3` }
     ],
+    cadreVillagers: [
+      { name: '村支书', avatar: '👨‍💼', personality: '稳重、有远见', initialStance: '支持', stanceValue: 0.9, coreDemand: '推动环境整治', id: `c_${Date.now()}_1` },
+      { name: '村主任', avatar: '👩‍💼', personality: '务实、执行力强', initialStance: '支持', stanceValue: 0.8, coreDemand: '尽快落实措施', id: `c_${Date.now()}_2` },
+      { name: '环保专干', avatar: '🌿', personality: '专业、细致', initialStance: '支持', stanceValue: 0.7, coreDemand: '确保垃圾分类科学', id: `c_${Date.now()}_3` },
+      { name: '妇女主任', avatar: '👩', personality: '善于沟通', initialStance: '中立', stanceValue: 0.5, coreDemand: '关注家庭参与', id: `c_${Date.now()}_4` }
+    ],
     systemOpening: '🏛️ 欢迎参加【人居环境整治】专题会议。目前村内垃圾乱倒、柴草乱堆问题突出，村民投诉较多。今天的任务是：讨论并通过一份可行的整治方案。请您作为主持人，引导大家发言。'
   },
   '土地流转协调': {
     description: '村东头50亩连片耕地，部分村民想流转给种植大户，但少数村民担心失去土地不愿意。需要协调矛盾，达成流转协议。',
-    agenda: [
-      '介绍流转方案和收益预期',
-      '听取反对村民的顾虑',
-      '讨论补偿和保障措施',
-      '投票表决是否同意流转'
-    ],
+    agenda: ['介绍流转方案和收益预期', '听取反对村民的顾虑', '讨论补偿和保障措施', '投票表决是否同意流转'],
     villagers: [
       { name: '赵叔', avatar: '👨‍🌾', personality: '保守、担心', initialStance: '反对', stanceValue: 0.2, coreDemand: '怕流转后没保障', id: `v_${Date.now()}_1` },
       { name: '孙婶', avatar: '👩', personality: '积极、愿意尝试', initialStance: '支持', stanceValue: 0.9, coreDemand: '想多拿租金', id: `v_${Date.now()}_2` },
       { name: '李会计', avatar: '🧑‍💼', personality: '精明、算得清', initialStance: '中立', stanceValue: 0.5, coreDemand: '要看到详细合同', id: `v_${Date.now()}_3` }
     ],
+    cadreVillagers: [
+      { name: '村支书', avatar: '👨‍💼', personality: '有远见', initialStance: '支持', stanceValue: 0.9, coreDemand: '促进土地规模经营', id: `c_${Date.now()}_1` },
+      { name: '村主任', avatar: '👩‍💼', personality: '务实', initialStance: '支持', stanceValue: 0.8, coreDemand: '保障村民利益', id: `c_${Date.now()}_2` },
+      { name: '村会计', avatar: '🧑‍💼', personality: '细心、精打细算', initialStance: '中立', stanceValue: 0.5, coreDemand: '算清账目', id: `c_${Date.now()}_3` },
+      { name: '治保主任', avatar: '👮‍♂️', personality: '公正', initialStance: '中立', stanceValue: 0.5, coreDemand: '维护稳定', id: `c_${Date.now()}_4` }
+    ],
     systemOpening: '🏛️ 欢迎参加【土地流转协调】会议。村东头50亩地，大部分村民同意流转，但有少数村民担心失去土地。今天我们需要听取各方意见，制定一个让大多数人满意的流转方案。请您主持。'
   },
   '产业发展规划': {
     description: '村里计划发展特色农产品加工产业，需要申请项目资金，但部分村民担心风险。',
-    agenda: [
-      '介绍产业规划草案和预期收益',
-      '分析风险和应对措施',
-      '讨论村民参与方式和分红机制',
-      '投票表决是否启动项目'
-    ],
+    agenda: ['介绍产业规划草案和预期收益', '分析风险和应对措施', '讨论村民参与方式和分红机制', '投票表决是否启动项目'],
     villagers: [
       { name: '刘能人', avatar: '🧑‍🌾', personality: '胆大、敢闯', initialStance: '支持', stanceValue: 0.9, coreDemand: '想带头致富', id: `v_${Date.now()}_1` },
       { name: '陈大妈', avatar: '👩', personality: '谨慎、怕亏', initialStance: '反对', stanceValue: 0.2, coreDemand: '怕投入的钱打水漂', id: `v_${Date.now()}_2` },
       { name: '周会计', avatar: '🧑‍💼', personality: '精明、爱算账', initialStance: '中立', stanceValue: 0.5, coreDemand: '要看详细财务预测', id: `v_${Date.now()}_3` }
     ],
+    cadreVillagers: [
+      { name: '村支书', avatar: '👨‍💼', personality: '有远见', initialStance: '支持', stanceValue: 0.9, coreDemand: '推动产业升级', id: `c_${Date.now()}_1` },
+      { name: '村主任', avatar: '👩‍💼', personality: '执行力强', initialStance: '支持', stanceValue: 0.8, coreDemand: '争取项目落地', id: `c_${Date.now()}_2` },
+      { name: '团支部书记', avatar: '🧑‍🌾', personality: '年轻有干劲', initialStance: '支持', stanceValue: 0.7, coreDemand: '带动青年创业', id: `c_${Date.now()}_3` },
+      { name: '村监委会主任', avatar: '👓', personality: '正直', initialStance: '中立', stanceValue: 0.5, coreDemand: '监督资金使用', id: `c_${Date.now()}_4` }
+    ],
     systemOpening: '🏛️ 欢迎参加【产业发展规划】会议。村里计划发展特色农产品加工，需要大家支持。今天要讨论项目可行性、风险应对和村民参与方式。请您主持。'
   },
   '矛盾纠纷调解': {
     description: '两户村民因宅基地边界发生激烈争吵，甚至动手，需要村干部出面调解，化解矛盾。',
-    agenda: [
-      '分别听取双方陈述',
-      '现场勘查并查阅原始资料',
-      '提出折中解决方案',
-      '双方签字确认和解协议'
-    ],
+    agenda: ['分别听取双方陈述', '现场勘查并查阅原始资料', '提出折中解决方案', '双方签字确认和解协议'],
     villagers: [
       { name: '张老三', avatar: '👨', personality: '暴躁、不服软', initialStance: '反对', stanceValue: 0.1, coreDemand: '必须让对方赔礼道歉', id: `v_${Date.now()}_1` },
       { name: '李老二', avatar: '👨', personality: '倔强、爱面子', initialStance: '反对', stanceValue: 0.1, coreDemand: '寸土不让', id: `v_${Date.now()}_2` },
       { name: '王支书', avatar: '👨‍💼', personality: '公正、有威望', initialStance: '中立', stanceValue: 0.5, coreDemand: '希望尽快平息纠纷', id: `v_${Date.now()}_3` }
     ],
+    cadreVillagers: [
+      { name: '村支书', avatar: '👨‍💼', personality: '公正、有威望', initialStance: '支持', stanceValue: 0.9, coreDemand: '化解矛盾', id: `c_${Date.now()}_1` },
+      { name: '治保主任', avatar: '👮‍♂️', personality: '严肃、公正', initialStance: '支持', stanceValue: 0.8, coreDemand: '维护秩序', id: `c_${Date.now()}_2` },
+      { name: '德高望重老人', avatar: '👴', personality: '有威信、明事理', initialStance: '中立', stanceValue: 0.6, coreDemand: '希望和好', id: `c_${Date.now()}_3` }
+    ],
     systemOpening: '🏛️ 欢迎参加【矛盾纠纷调解】会议。张老三和李老二因宅基地边界问题发生冲突，双方情绪激动。今天需要您作为调解人，依法依规、公平公正地化解矛盾。'
   },
   '惠民政策宣讲': {
     description: '村里新出台了医保补贴和养老政策，很多村民不了解、不相信，需要开会宣讲并解答疑问。',
-    agenda: [
-      '解读医保补贴新政策',
-      '解读养老待遇调整方案',
-      '村民提问与答疑',
-      '收集村民反馈意见'
-    ],
+    agenda: ['解读医保补贴新政策', '解读养老待遇调整方案', '村民提问与答疑', '收集村民反馈意见'],
     villagers: [
       { name: '孙奶奶', avatar: '👵', personality: '耳背、多疑', initialStance: '反对', stanceValue: 0.2, coreDemand: '担心政策是骗人的', id: `v_${Date.now()}_1` },
       { name: '赵大叔', avatar: '👨', personality: '精明、爱比较', initialStance: '中立', stanceValue: 0.5, coreDemand: '想知道具体能多拿多少钱', id: `v_${Date.now()}_2` },
       { name: '钱会计', avatar: '🧑‍💼', personality: '理性、懂政策', initialStance: '支持', stanceValue: 0.8, coreDemand: '希望村民都能参保', id: `v_${Date.now()}_3` }
     ],
+    cadreVillagers: [
+      { name: '村支书', avatar: '👨‍💼', personality: '稳重、有远见', initialStance: '支持', stanceValue: 0.9, coreDemand: '让惠民政策落地', id: `c_${Date.now()}_1` },
+      { name: '村主任', avatar: '👩‍💼', personality: '务实、执行力强', initialStance: '支持', stanceValue: 0.8, coreDemand: '确保村民知晓', id: `c_${Date.now()}_2` },
+      { name: '妇女主任', avatar: '👩', personality: '耐心、善于沟通', initialStance: '中立', stanceValue: 0.6, coreDemand: '解答妇女疑问', id: `c_${Date.now()}_3` },
+      { name: '村会计', avatar: '🧑‍💼', personality: '细心、专业', initialStance: '支持', stanceValue: 0.7, coreDemand: '准确解释补贴标准', id: `c_${Date.now()}_4` }
+    ],
     systemOpening: '🏛️ 欢迎参加【惠民政策宣讲】会议。今天主要讲解医保补贴和养老政策的新变化，请大家认真听讲，有疑问随时提出。'
   }
 };
 
+// 默认角色（当自定义输入为空时使用）
 const defaultRolesByType = {
   villager: [
     { name: '张大爷', avatar: '👴', personality: '固执、爱面子', initialStance: '中立', stanceValue: 0.5, coreDemand: '', id: `v_${Date.now()}_1` },
@@ -101,10 +107,10 @@ const defaultRolesByType = {
     { name: '王叔', avatar: '👨', personality: '理性、务实', initialStance: '中立', stanceValue: 0.5, coreDemand: '', id: `v_${Date.now()}_3` }
   ],
   cadre: [
-    { name: '村支书', avatar: '👨‍💼', personality: '稳重、有远见', initialStance: '支持', stanceValue: 0.8, coreDemand: '希望决策科学民主', id: `v_${Date.now()}_1` },
-    { name: '村主任', avatar: '👩‍💼', personality: '务实、执行力强', initialStance: '支持', stanceValue: 0.7, coreDemand: '希望项目尽快落地', id: `v_${Date.now()}_2` },
-    { name: '妇女主任', avatar: '👩', personality: '细心、善于沟通', initialStance: '中立', stanceValue: 0.5, coreDemand: '关注妇女和家庭利益', id: `v_${Date.now()}_3` },
-    { name: '民兵连长', avatar: '👮', personality: '直爽、急躁', initialStance: '中立', stanceValue: 0.5, coreDemand: '希望安全有保障', id: `v_${Date.now()}_4` }
+    { name: '村支书', avatar: '👨‍💼', personality: '稳重、有远见', initialStance: '支持', stanceValue: 0.8, coreDemand: '希望决策科学民主', id: `c_${Date.now()}_1` },
+    { name: '村主任', avatar: '👩‍💼', personality: '务实、执行力强', initialStance: '支持', stanceValue: 0.7, coreDemand: '希望项目尽快落地', id: `c_${Date.now()}_2` },
+    { name: '妇女主任', avatar: '👩', personality: '细心、善于沟通', initialStance: '中立', stanceValue: 0.5, coreDemand: '关注妇女和家庭利益', id: `c_${Date.now()}_3` },
+    { name: '民兵连长', avatar: '👮', personality: '直爽、急躁', initialStance: '中立', stanceValue: 0.5, coreDemand: '希望安全有保障', id: `c_${Date.now()}_4` }
   ]
 };
 
@@ -315,14 +321,9 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   }
 }
 
-function showMobileTip(tipText, keepUntilManualClose = false) {
-  console.log('提示:', tipText);
-}
+function showMobileTip(tipText, keepUntilManualClose = false) { console.log('提示:', tipText); }
 function hideMobileTip() {}
-function toggleMobileTip() {
-  const tipText = getDynamicTip();
-  showMobileTip(tipText, true);
-}
+function toggleMobileTip() { const tipText = getDynamicTip(); showMobileTip(tipText, true); }
 function getDynamicTip() {
   const container = document.getElementById('meetingMessages');
   if (!container) return meetingTips[Math.floor(Math.random() * meetingTips.length)];
@@ -338,6 +339,7 @@ function getDynamicTip() {
   }
   return meetingTips[Math.floor(Math.random() * meetingTips.length)];
 }
+// ==================== 核心会议函数 ====================
 
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
   roundRobinInProgress = true;
@@ -492,7 +494,6 @@ async function sendMeetingMessage(text, isAuto = false, targetVillagerId = null)
   }
 }
 
-// ========== 修复：AI 自动投票（不需要弹窗） ==========
 async function startVoting() {
   if (votingInProgress || meetingStage !== 'discussion') return;
   const currentAgenda = currentMeeting.agenda[currentAgendaIndex];
@@ -502,12 +503,10 @@ async function startVoting() {
   votesReceived = {};
   updateMeetingUI();
   await sendSystemMessage(currentMeeting.sessionId, `🗳️ 现在开始对【${currentAgenda.name}】进行投票。AI村民正在根据各自立场和满意度自动投票...`);
-
   for (let v of currentMeeting.villagers) {
     let option = '弃权';
     const satisfaction = v.satisfaction !== undefined ? v.satisfaction : 50;
     const stance = v.stance || v.initialStance;
-
     if (stance === '支持') {
       option = '支持';
     } else if (stance === '反对') {
@@ -517,7 +516,6 @@ async function startVoting() {
       else if (satisfaction <= 30) option = '反对';
       else option = Math.random() > 0.5 ? '支持' : '反对';
     }
-
     votesReceived[v.id] = option;
     await sendSystemMessage(currentMeeting.sessionId, `${v.name} 投票：${option}`);
     await fetchWithAuth('/api/meeting/vote', {
@@ -527,7 +525,6 @@ async function startVoting() {
     });
     await delay(500);
   }
-
   const support = Object.values(votesReceived).filter(v => v === '支持').length;
   const oppose = Object.values(votesReceived).filter(v => v === '反对').length;
   const total = currentMeeting.villagers.length;
@@ -585,6 +582,7 @@ async function finishMeeting() {
       showMeetingResolution(data.summary);
       alert(`会议结束！最终得分：${data.finalScore || 0} / 100`);
       if (data.finalScore >= 80) showCelebration(window.innerWidth/2, window.innerHeight/2);
+      window.refreshGrowthChart?.();
     } else {
       alert('会议纪要生成失败');
     }
@@ -687,7 +685,6 @@ function renderMeetingChatArea() {
   const isMobile = window.innerWidth <= 768;
   const dynamicContent = document.getElementById('dynamicContent');
   const overallSat = currentMeeting.satisfaction !== undefined ? currentMeeting.satisfaction : 50;
-
   if (isMobile) {
     dynamicContent.innerHTML = `
       <div class="meeting-layout-mobile" style="display:flex; flex-direction:column; height:100%; background:#f5f7fa;">
@@ -855,7 +852,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮（使用 restartRobot 切换发言人）
+  // 线上会议按钮
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -877,7 +874,6 @@ function renderMeetingChatArea() {
         const currentSpeaker = currentMeeting.activeVillagerId
           ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)?.name
           : participants[0]?.name;
-
         window.appendUserMessageToChat = (text) => {
           const container = document.getElementById('meetingMessages');
           if (container) {
@@ -888,7 +884,6 @@ function renderMeetingChatArea() {
             scrollMeetingMessages();
           }
         };
-
         voiceCallUI = createVoiceCallUI('meeting', {
           participants,
           currentSpeakerName: currentSpeaker,
@@ -926,10 +921,8 @@ function renderMeetingChatArea() {
           onVote: () => startVoting(),
           onNextAgenda: () => nextAgenda()
         });
-
         voiceCallUI.show();
         voiceCallUI.updateStatus('connecting');
-
         const roomId = Math.abs(currentMeeting.sessionId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
         const success = await startVoiceCall({
           roomId,
@@ -940,7 +933,6 @@ function renderMeetingChatArea() {
           onVolumeChange: (vol) => voiceCallUI.updateVolume(vol),
           onStatusChange: (status) => voiceCallUI.updateStatus(status)
         });
-
         if (success) {
           voiceCallBtn.textContent = isMobile ? '🔴' : '🔴 挂断';
           voiceCallBtn.style.background = '#f44336';
@@ -956,6 +948,7 @@ function renderMeetingChatArea() {
 
   renderMeetingVillagersDesktop();
   updateMeetingUI();
+
   // 加载历史消息
   const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
   if (session && session.messages) {
@@ -984,6 +977,7 @@ function renderMeetingChatArea() {
   setActiveNavByView('meeting');
 }
 
+// ==================== 会议设置界面渲染 ====================
 export async function renderMeetingSetupView() {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
   const dynamicContent = document.getElementById('dynamicContent');
@@ -1027,7 +1021,14 @@ export async function renderMeetingSetupView() {
   const updateCustomInputVisibility = () => {
     customInput.style.display = topicSelect.value === 'custom' ? 'block' : 'none';
   };
+
+  // 当会议类型切换时，刷新当前选中的预设模板角色
   typeSelect.addEventListener('change', () => {
+    // 如果当前选中的不是自定义主题，重新加载模板角色
+    if (topicSelect.value !== 'custom') {
+      topicSelect.dispatchEvent(new Event('change'));
+    }
+    // 如果自定义角色为空，加载默认角色
     if (!rolesInput.value.trim()) {
       const defaultRoles = defaultRolesByType[typeSelect.value];
       if (defaultRoles) {
@@ -1036,6 +1037,8 @@ export async function renderMeetingSetupView() {
       }
     }
   });
+
+  // 主题切换时，根据会议类型加载对应的预设模板角色
   topicSelect.addEventListener('change', () => {
     const selected = topicSelect.value;
     agendaInput.value = '';
@@ -1043,10 +1046,21 @@ export async function renderMeetingSetupView() {
     if (selected !== 'custom' && presetTemplates[selected]) {
       const template = presetTemplates[selected];
       agendaInput.value = template.agenda.join('\n');
-      rolesInput.value = template.villagers.map(v => `${v.name}:${v.avatar}:${v.personality}:${v.initialStance}:${v.coreDemand}`).join('\n');
+
+      // 根据当前会议类型选择村民或村干部角色
+      const meetingType = document.getElementById('meetingTypeSelect').value;
+      let villagers = template.villagers;
+      if (meetingType === 'cadre') {
+        villagers = template.cadreVillagers || template.villagers;
+      }
+      rolesInput.value = villagers.map(v =>
+        `${v.name}:${v.avatar}:${v.personality}:${v.initialStance}:${v.coreDemand}`
+      ).join('\n');
     }
     updateCustomInputVisibility();
   });
+
+  // 初始化时，如果自定义角色为空，加载默认角色
   if (!rolesInput.value.trim()) {
     const defaultRoles = defaultRolesByType[typeSelect.value];
     if (defaultRoles) {
@@ -1055,6 +1069,7 @@ export async function renderMeetingSetupView() {
     }
   }
   updateCustomInputVisibility();
+
   document.getElementById('startMeetingBtn').onclick = async () => {
     const meetingType = typeSelect.value;
     let topic = topicSelect.value;

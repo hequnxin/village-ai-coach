@@ -1,4 +1,5 @@
 // routes/user.js
+
 const express = require('express');
 const { getUserSessions, getUserFavoriteMessages, toggleFavorite } = require('../services/sessionService');
 const db = require('../services/db');
@@ -9,13 +10,11 @@ const router = express.Router();
 
 router.get('/growth', async (req, res) => {
   const userId = req.user.userId;
-
   const sessions = await getUserSessions(userId);
   const sessionCount = sessions.length;
   const favorites = await getUserFavoriteMessages(userId);
   const favoriteCount = favorites.length;
   const favoriteSessionCount = sessions.filter(s => s.favorite).length;
-
   const allKnowledge = await db.all('SELECT * FROM knowledge WHERE submitted_by = $1', [req.user.username]);
   const approvedUploads = allKnowledge.filter(k => k.status === 'approved').length;
   const pendingUploads = allKnowledge.filter(k => k.status === 'pending').length;
@@ -64,7 +63,6 @@ router.get('/favorites', async (req, res) => {
 router.post('/favorite', async (req, res) => {
   const { messageId, action } = req.body;
   const userId = req.user.userId;
-
   const msg = await db.get(
     `SELECT m.id, m.content, m.role, m.session_id, s.title as "sessionTitle"
      FROM messages m
@@ -73,47 +71,46 @@ router.post('/favorite', async (req, res) => {
     [messageId, userId]
   );
   if (!msg) return res.status(404).json({ error: '消息不存在' });
-
   await toggleFavorite(userId, messageId, msg.session_id, msg.sessionTitle, msg.content, msg.role, action);
-
-  // 添加积分
   if (action === 'add') {
     await pointsService.addPoints(userId, pointsService.FAVORITE_MESSAGE, '收藏消息');
   }
-  // 注意：取消收藏不扣除积分
-
   res.json({ success: true });
 });
 
-// 获取用户积分历史（最近7天）
+// ==================== 修复后的积分历史接口（支持东八区时区、累计积分） ====================
 router.get('/points-history', async (req, res) => {
   const userId = req.user.userId;
   try {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-    const startStr = sevenDaysAgo.toISOString().slice(0, 10);
-
-    const dailyPoints = await db.all(`
-      SELECT DATE(created_at) as date, SUM(points) as daily_total
-      FROM user_points
-      WHERE user_id = $1 AND created_at >= $2
-      GROUP BY DATE(created_at)
-      ORDER BY date ASC
-    `, [userId, startStr]);
-
+    // 生成最近7天的日期（东八区，格式 YYYY-MM-DD）
+    const today = new Date();
     const dates = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      dates.push(`${year}-${month}-${day}`);
+    }
+
+    // 按东八区日期分组查询每日积分总和
+    const dailyPoints = await db.all(`
+      SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date as date,
+             COALESCE(SUM(points), 0) as daily_total
+      FROM user_points
+      WHERE user_id = $1
+      GROUP BY date
+      ORDER BY date ASC
+    `, [userId]);
+
+    // 构建日期 -> 积分的映射
     const pointsMap = new Map();
     for (const row of dailyPoints) {
       pointsMap.set(row.date, row.daily_total);
     }
-    for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.toISOString().slice(0, 10);
-      dates.push(dateStr);
-    }
 
+    // 计算累计积分
     let cumulative = 0;
     const cumulativePoints = [];
     for (const date of dates) {
@@ -121,6 +118,8 @@ router.get('/points-history', async (req, res) => {
       cumulative += daily;
       cumulativePoints.push(cumulative);
     }
+
+    // 返回格式：["04-16", "04-17", ...] 和对应的累计积分
     const labels = dates.map(d => d.slice(5));
     res.json({ labels, points: cumulativePoints });
   } catch (err) {
@@ -129,7 +128,7 @@ router.get('/points-history', async (req, res) => {
   }
 });
 
-// 修改密码接口（可选，保持原有逻辑）
+// 修改密码接口
 router.post('/change-password', async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const userId = req.user.userId;

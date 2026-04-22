@@ -236,6 +236,7 @@ async function sendUserMessage(text) {
                     contentDiv.innerHTML = '';
                     await typewriteMessage(contentDiv, fullContent, 15);
                     addActionIcons(assistantMsgDiv, assistantMessageId);
+                    window.refreshGrowthChart?.();
                     scrollToBottom();
                     setInputEnabled(true);
                     await loadSessions();
@@ -290,6 +291,7 @@ async function resumePendingMessages(sessionId) {
                             contentDiv.innerHTML = '';
                             await typewriteMessage(contentDiv, statusData.content, 15);
                             addActionIcons(msgElement, pendingMsg.messageId);
+                            window.refreshGrowthChart?.();
                             scrollToBottom();
                             await loadSessions();
                             await loadMessageFavorites();

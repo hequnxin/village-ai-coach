@@ -8,8 +8,8 @@ const router = express.Router();
 // 从环境变量读取配置
 const SDKAppID = parseInt(process.env.TRTC_SDK_APP_ID || '1600137866');
 const SECRETKEY = process.env.TRTC_SECRET_KEY || '';
-const TENCENT_SECRET_ID = process.env.TENCENT_SECRET_ID;
-const TENCENT_SECRET_KEY = process.env.TENCENT_SECRET_KEY;
+const TENCENT_SECRET_ID = process.env.TENCENT_SECRET_ID || process.env.TENCENTCLOUD_SECRET_ID;
+const TENCENT_SECRET_KEY = process.env.TENCENT_SECRET_KEY || process.env.TENCENTCLOUD_SECRET_KEY;
 
 // 生成 UserSig
 function genUserSig(userId, expire = 86400) {

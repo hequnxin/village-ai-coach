@@ -953,6 +953,7 @@ export async function renderSimulateChat(session) {
         appState.currentSessionId = null;
         await renderSimulateView(true);
         if (finalScore >= 80) showCelebration(window.innerWidth/2, window.innerHeight/2);
+        window.refreshGrowthChart?.();
         const { loadSessions } = await import('./state');
         await loadSessions();
       } catch(err) {

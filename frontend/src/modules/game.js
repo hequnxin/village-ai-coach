@@ -365,6 +365,7 @@ async function startDailyQuiz() {
         body: JSON.stringify({ quizId: data.quizId, score: finalScore / 10, total })
       });
       alert(`练习完成！本次得分 ${finalScore/10}/${total}，获得 ${rewardPoints} 积分`);
+      window.refreshGrowthChart?.();
       await updateTaskProgress('daily_quiz', 1);
       await loadModuleStats();
     };
@@ -459,6 +460,7 @@ async function startWeeklyContest() {
       const result = await res.json();
       if (result.score !== undefined) {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒`);
+        window.refreshGrowthChart?.();
         await updateTaskProgress('contest', 1);
         await loadModuleStats();
         const rankModal = document.querySelector('.modal');
@@ -564,6 +566,7 @@ async function startWrongClear() {
         if (clearData.clearedCount > 0) {
           clearedCount++;
           totalScore += 10;
+          window.refreshGrowthChart?.();
           remainingCount--;
           questions.splice(index, 1);
           userAnswers.splice(index, 1);
@@ -803,6 +806,7 @@ async function finishMemoryGame() {
   const rewardPoints = data.rewardPoints;
   alert(`🎉 游戏完成！得分：${memoryGameScore}，步数：${memoryGameMoves}，用时：${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}，获得 ${rewardPoints} 积分`);
   await addPoints(rewardPoints, '翻牌配对');
+  window.refreshGrowthChart?.();
   await updateTaskProgress('memory', 1);
   showCelebration(window.innerWidth/2, window.innerHeight/2);
   memoryGameActive = false;
@@ -1162,6 +1166,7 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
     if (reward) {
       await addPoints(reward, '趣味闯关通关奖励');
       showPointsFloat(reward, window.innerWidth/2, window.innerHeight/2);
+      window.refreshGrowthChart?.();
     }
     if (passed) {
       await updateTaskProgress('fun', 1);
