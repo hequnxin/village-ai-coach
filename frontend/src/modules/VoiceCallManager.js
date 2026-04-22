@@ -793,238 +793,243 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     if (document.getElementById('voice-call-ui-meeting-styles')) return;
     const style = document.createElement('style');
     style.id = 'voice-call-ui-meeting-styles';
-    style.textContent = `
-      .voice-call-ui-meeting {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 10000;
-        pointer-events: none;
-      }
-      .voice-call-card-meeting {
-        pointer-events: auto;
-        background: #1e1e2f;
-        backdrop-filter: blur(20px);
-        border-radius: 32px;
-        padding: 20px;
-        color: #ffffff;
-        min-width: 700px;
-        text-align: center;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        border: 1px solid rgba(255,255,255,0.15);
-      }
-      .call-header {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        color: #ddd;
-      }
-      .call-timer {
-        font-family: monospace;
-        background: rgba(255,255,255,0.2);
-        padding: 2px 8px;
-        border-radius: 20px;
-        color: #fff;
-      }
-      .minimize-btn {
-        background: none;
-        border: none;
-        color: #fff;
-        cursor: pointer;
-        font-size: 1.2rem;
-      }
-      .system-status {
-        background: rgba(0,0,0,0.6);
-        display: inline-block;
-        padding: 4px 16px;
-        border-radius: 20px;
-        margin-bottom: 12px;
-        font-size: 0.8rem;
-        color: #ffd966;
-      }
-      .meeting-layout {
-        display: flex;
-        gap: 20px;
-        margin: 16px 0;
-      }
-      .speaker-area {
-        flex: 2;
-        background: rgba(255,255,255,0.08);
-        border-radius: 24px;
-        padding: 16px;
-      }
-      .speaker-card {
-        text-align: center;
-      }
-      .speaker-avatar {
-        font-size: 3rem;
-      }
-      .speaker-name {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: #fff;
-      }
-      .speaker-stance, .speaker-satisfaction {
-        font-size: 0.8rem;
-        color: #ccc;
-      }
-      .participants-sidebar {
-        flex: 1;
-        background: rgba(255,255,255,0.08);
-        border-radius: 24px;
-        padding: 16px;
-      }
-      .participants-list {
-        max-height: 200px;
-        overflow-y: auto;
-        margin-bottom: 16px;
-      }
-      .participant-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px;
-        cursor: pointer;
-        border-radius: 12px;
-        color: #fff;
-      }
-      .participant-item:hover {
-        background: rgba(255,255,255,0.2);
-      }
-      .participant-item.active {
-        background: rgba(76,175,80,0.3);
-      }
-      .p-avatar {
-        font-size: 1.2rem;
-      }
-      .p-name {
-        flex: 1;
-        text-align: left;
-      }
-      .speaking-badge {
-        color: #4caf50;
-      }
-      .agenda-panel h4 {
-        margin: 8px 0;
-        color: #ddd;
-      }
-      .agenda-item {
-        padding: 4px;
-        font-size: 0.8rem;
-        text-align: left;
-        color: #eee;
-      }
-      .agenda-item.current {
-        color: #ff9800;
-        font-weight: bold;
-      }
-      .agenda-item.completed {
-        text-decoration: line-through;
-        color: #888;
-      }
-      .btn-vote, .btn-next {
-        width: 100%;
-        margin-top: 8px;
-        padding: 6px;
-        border: none;
-        border-radius: 20px;
-        background: #4caf50;
-        color: white;
-        cursor: pointer;
-      }
-      .btn-next {
-        background: #ff9800;
-      }
-      #voiceWaveform {
-        display: block;
-        margin: 12px auto;
-        background: rgba(0,0,0,0.3);
-        border-radius: 12px;
-        width: 100%;
-        max-width: 300px;
-        height: auto;
-      }
-      .call-buttons {
-        display: flex;
-        justify-content: center;
-        gap: 20px;
-        margin-top: 12px;
-      }
-      .btn-mute, .btn-hangup {
-        padding: 8px 20px;
-        border: none;
-        border-radius: 40px;
-        font-weight: bold;
-        cursor: pointer;
-      }
-      .btn-mute {
-        background: #444;
-        color: white;
-      }
-      .btn-hangup {
-        background: #f44336;
-        color: white;
-      }
-      @media (max-width: 768px) {
-        .voice-call-ui-meeting {
-          left: 5%;
-          transform: none;
-          width: 90%;
-        }
-        .voice-call-card-meeting {
-          min-width: auto;
-          padding: 16px;
-        }
-        .meeting-layout {
-          flex-direction: column;
-        }
-        .participants-sidebar {
-          order: 2;
-          margin-top: 12px;
-        }
-        .speaker-area {
-          order: 1;
-        }
-        .participants-list {
-          display: flex;
-          overflow-x: auto;
-          gap: 8px;
-          max-height: none;
-        }
-        .participant-item {
-          flex-direction: column;
-          min-width: 70px;
-          text-align: center;
-        }
-        .agenda-panel {
-          margin-top: 12px;
-        }
-        .btn-mute, .btn-hangup {
-          padding: 6px 16px;
-        }
-        .restore-voice-call-btn {
-          bottom: 70px;
-        }
-      }
-      .restore-voice-call-btn {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        width: 56px;
-        height: 56px;
-        background: #2e5d34;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 28px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        z-index: 10000;
-        color: white;
-      }
-    `;
+    style.textContent =`
+    .voice-call-ui-meeting {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  pointer-events: none;
+}
+.voice-call-card-meeting {
+  pointer-events: auto;
+  background: #ffffff !important;
+  border-radius: 32px;
+  padding: 20px;
+  color: #1e1e2f !important;
+  min-width: 700px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  border: 1px solid rgba(0,0,0,0.1);
+}
+.call-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: #1e1e2f !important;
+}
+.call-timer {
+  font-family: monospace;
+  background: rgba(0,0,0,0.05);
+  padding: 2px 8px;
+  border-radius: 20px;
+  color: #1e1e2f !important;
+}
+.minimize-btn {
+  background: none;
+  border: none;
+  color: #1e1e2f !important;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+.system-status {
+  background: #f0f0f0;
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+  font-size: 0.8rem;
+  color: #d32f2f !important; /* 醒目红色 */
+  font-weight: bold;
+}
+.meeting-layout {
+  display: flex;
+  gap: 20px;
+  margin: 16px 0;
+}
+.speaker-area {
+  flex: 2;
+  background: #f5f5f5;
+  border-radius: 24px;
+  padding: 16px;
+}
+.speaker-card {
+  text-align: center;
+}
+.speaker-avatar {
+  font-size: 3rem;
+}
+.speaker-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #000000 !important;
+}
+.speaker-stance, .speaker-satisfaction {
+  font-size: 0.8rem;
+  color: #333333 !important;
+}
+.participants-sidebar {
+  flex: 1;
+  background: #f5f5f5;
+  border-radius: 24px;
+  padding: 16px;
+}
+.participants-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+.participant-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 12px;
+  color: #000000 !important;
+}
+.participant-item:hover {
+  background: rgba(0,0,0,0.05);
+}
+.participant-item.active {
+  background: rgba(76,175,80,0.2);
+}
+.p-avatar {
+  font-size: 1.2rem;
+}
+.p-name {
+  flex: 1;
+  text-align: left;
+  color: #000000 !important;
+  font-weight: 500;
+}
+.p-stance {
+  color: #555555 !important;
+}
+.speaking-badge {
+  color: #4caf50;
+}
+.agenda-panel h4 {
+  margin: 8px 0;
+  color: #000000 !important;
+}
+.agenda-item {
+  padding: 4px;
+  font-size: 0.8rem;
+  text-align: left;
+  color: #222222 !important;
+}
+.agenda-item.current {
+  color: #ff9800 !important;
+  font-weight: bold;
+}
+.agenda-item.completed {
+  text-decoration: line-through;
+  color: #888888 !important;
+}
+.btn-vote, .btn-next {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 20px;
+  background: #4caf50;
+  color: white !important;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-next {
+  background: #ff9800;
+}
+#voiceWaveform {
+  display: block;
+  margin: 12px auto;
+  background: #e0e0e0;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+}
+.call-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 12px;
+}
+.btn-mute, .btn-hangup {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 40px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.btn-mute {
+  background: #cccccc;
+  color: #000000 !important;
+}
+.btn-hangup {
+  background: #f44336;
+  color: white !important;
+}
+@media (max-width: 768px) {
+  .voice-call-ui-meeting {
+    left: 5%;
+    transform: none;
+    width: 90%;
+  }
+  .voice-call-card-meeting {
+    min-width: auto;
+    padding: 16px;
+  }
+  .meeting-layout {
+    flex-direction: column;
+  }
+  .participants-sidebar {
+    order: 2;
+    margin-top: 12px;
+  }
+  .speaker-area {
+    order: 1;
+  }
+  .participants-list {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    max-height: none;
+  }
+  .participant-item {
+    flex-direction: column;
+    min-width: 70px;
+    text-align: center;
+  }
+  .agenda-panel {
+    margin-top: 12px;
+  }
+  .btn-mute, .btn-hangup {
+    padding: 6px 16px;
+  }
+  .restore-voice-call-btn {
+    bottom: 70px;
+  }
+}
+.restore-voice-call-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  background: #2e5d34;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 10000;
+  color: white;
+}`
     document.head.appendChild(style);
   }
 }
