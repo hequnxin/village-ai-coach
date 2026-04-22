@@ -17,10 +17,12 @@ let currentTargetVillager = null;
 let roundRobinDone = false;
 let manualUserMessageCount = 0;
 let generatingReport = false;
+let voiceModeActive = false; // 语音通话模式是否激活（仅该模式下朗读）
 
 // ==================== 语音合成 ====================
 let speechSynthesisEnabled = true;
 function speakText(text, voiceName = 'Tingting') {
+  if (!voiceModeActive) return; // 非语音模式不朗读
   if (!speechSynthesisEnabled) return;
   if (!window.speechSynthesis) {
     console.warn('浏览器不支持语音合成');
@@ -28,7 +30,7 @@ function speakText(text, voiceName = 'Tingting') {
   }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
-  utterance.rate = 0.9;
+  utterance.rate = 1.1; // 调快语速
   utterance.pitch = 1.0;
   const voices = window.speechSynthesis.getVoices();
   const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
@@ -219,13 +221,12 @@ function createSimulateMessageElement(role, speakerName, speakerAvatar, content,
       ${metaHtml}
     </div>
   `;
-  // 如果是 assistant 消息，播放语音
-  if (role === 'assistant' && !isThinking && content) {
+  // 仅语音模式下播放语音
+  if (role === 'assistant' && !isThinking && content && voiceModeActive) {
     speakText(content);
   }
   return msgDiv;
 }
-
 function showReportModal(reportData, finalScore, satisfaction, stagesCompleted, totalStages) {
   const modal = document.createElement('div');
   modal.className = 'modal';
@@ -379,6 +380,7 @@ function updateSidebarStatus(data, villagerName = null) {
     }
   }
 }
+
 async function sendSimulateMessage(sessionId, text, container, roleName, targetVillager = null, isAuto = false, singleRole = null) {
   if (!isAuto && isSending) return;
   if (!isAuto) isSending = true;
@@ -393,14 +395,17 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
   let thinkingMsgDiv = null;
   if (!isAuto) {
     let speakerAvatar;
+    let finalRoleName = roleName;
     if (targetVillager) {
       speakerAvatar = targetVillager.avatar;
+      finalRoleName = targetVillager.name; // 修复：使用目标村民的名字
     } else if (singleRole && singleRole.avatar) {
       speakerAvatar = singleRole.avatar;
+      finalRoleName = singleRole.name;
     } else {
       speakerAvatar = roleName.includes('村民') ? '👵' : '🤖';
     }
-    thinkingMsgDiv = createSimulateMessageElement('assistant', roleName, speakerAvatar, '', 'neutral', undefined, null, true);
+    thinkingMsgDiv = createSimulateMessageElement('assistant', finalRoleName, speakerAvatar, '', 'neutral', undefined, null, true);
     container.appendChild(thinkingMsgDiv);
     scrollSimulate();
   }
@@ -425,14 +430,17 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
 
     if (!isAuto && thinkingMsgDiv) {
       let speakerAvatar;
+      let finalRoleName = roleName;
       if (targetVillager) {
         speakerAvatar = targetVillager.avatar;
+        finalRoleName = targetVillager.name;
       } else if (singleRole && singleRole.avatar) {
         speakerAvatar = singleRole.avatar;
+        finalRoleName = singleRole.name;
       } else {
         speakerAvatar = roleName.includes('村民') ? '👵' : '🤖';
       }
-      const finalMsg = createSimulateMessageElement('assistant', roleName, speakerAvatar, data.reply, data.emotion || 'neutral', data.satisfaction, data.messageId);
+      const finalMsg = createSimulateMessageElement('assistant', finalRoleName, speakerAvatar, data.reply, data.emotion || 'neutral', data.satisfaction, data.messageId);
       thinkingMsgDiv.replaceWith(finalMsg);
       if (data.strategyTip) showTip(data.strategyTip);
       updateSidebarStatus(data, targetVillager?.name);
@@ -443,14 +451,17 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
       }
     } else if (isAuto) {
       let speakerAvatar;
+      let finalRoleName = roleName;
       if (targetVillager) {
         speakerAvatar = targetVillager.avatar;
+        finalRoleName = targetVillager.name;
       } else if (singleRole && singleRole.avatar) {
         speakerAvatar = singleRole.avatar;
+        finalRoleName = singleRole.name;
       } else {
         speakerAvatar = roleName.includes('村民') ? '👵' : '🤖';
       }
-      const autoMsg = createSimulateMessageElement('assistant', roleName, speakerAvatar, data.reply, data.emotion || 'neutral', data.satisfaction, data.messageId);
+      const autoMsg = createSimulateMessageElement('assistant', finalRoleName, speakerAvatar, data.reply, data.emotion || 'neutral', data.satisfaction, data.messageId);
       container.appendChild(autoMsg);
       if (data.strategyTip) showTip(data.strategyTip);
       updateSidebarStatus(data, targetVillager?.name);
@@ -461,14 +472,17 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
     if (!isAuto) {
       if (thinkingMsgDiv) {
         let speakerAvatar;
+        let finalRoleName = roleName;
         if (targetVillager) {
           speakerAvatar = targetVillager.avatar;
+          finalRoleName = targetVillager.name;
         } else if (singleRole && singleRole.avatar) {
           speakerAvatar = singleRole.avatar;
+          finalRoleName = singleRole.name;
         } else {
           speakerAvatar = roleName.includes('村民') ? '👵' : '🤖';
         }
-        const errorMsg = createSimulateMessageElement('assistant', roleName, speakerAvatar, `❌ 发送失败：${err.message}`, 'neutral');
+        const errorMsg = createSimulateMessageElement('assistant', finalRoleName, speakerAvatar, `❌ 发送失败：${err.message}`, 'neutral');
         thinkingMsgDiv.replaceWith(errorMsg);
       }
       alert('发送失败：' + err.message);
@@ -723,7 +737,8 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     try {
-      await sendSimulateMessage(sessionId, `请${v.name}介绍一下自己的立场和诉求。`, container, roleName, v, true);
+      // 修复：第三个参数使用 v.name 作为发言者名字
+      await sendSimulateMessage(sessionId, `请${v.name}介绍一下自己的立场和诉求。`, container, v.name, v, true);
     } catch(e) { console.warn(`自动发言失败: ${v.name}`, e); }
     await new Promise(r => setTimeout(r, 1500));
   }
@@ -775,7 +790,6 @@ async function speakAsVillager(villager, contextHint = '') {
     container.appendChild(finalMsg);
     scrollSimulate();
     if (data.satisfaction !== undefined) {
-      // 更新满意度显示（如果有的话）
       const satisfactionDiv = document.querySelector('.single-satisfaction');
       if (satisfactionDiv) satisfactionDiv.textContent = `${data.satisfaction}%`;
     }
@@ -1116,7 +1130,7 @@ export async function renderSimulateChat(session) {
     };
   }
 
-  // 语音通话按钮 - 使用 PTT 模式
+  // 语音通话按钮 - 使用 PTT 模式，控制 voiceModeActive
   let voiceCallUI = null;
   let voiceCallActive = false;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
@@ -1126,11 +1140,13 @@ export async function renderSimulateChat(session) {
         await stopVoiceCall();
         voiceCallUI.hide();
         voiceCallUI = null;
+        voiceModeActive = false; // 关闭语音模式
         voiceCallActive = false;
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
       } else {
+        voiceModeActive = true; // 开启语音模式
         const roomId = Math.abs(session.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
         let participantsList = [];
         let currentRoleName = '';
@@ -1173,6 +1189,7 @@ export async function renderSimulateChat(session) {
             await stopVoiceCall();
             voiceCallUI.hide();
             voiceCallUI = null;
+            voiceModeActive = false; // 关闭语音模式
             voiceCallActive = false;
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
             voiceCallBtn.style.background = '#2196f3';
@@ -1196,12 +1213,10 @@ export async function renderSimulateChat(session) {
                   currentTargetVillager = newTarget;
                   const inputEl = document.getElementById('simulateInput');
                   if (inputEl) inputEl.placeholder = `对 ${newTarget.name} 说...`;
-                  // 切换后主动让新角色发言
                   await speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
                 }
               } else if (currentMode === 'single' && singleRole) {
-                // 单人模式切换角色后也主动发言
-                await speakAsVillager({ ...singleRole, name: newRoleName, avatar: singleRole.avatar, personality: singleRole.personality, initialStance: singleRole.initialStance, coreDemand: singleRole.coreDemand }, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
+                await speakAsVillager({ ...singleRole, name: newRoleName }, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
               }
             } else {
               alert('切换角色失败，请重试');
@@ -1229,6 +1244,7 @@ export async function renderSimulateChat(session) {
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;
+          voiceModeActive = false; // 启动失败也关闭语音模式
           alert('无法启动语音通话，请检查网络');
           if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
         }
@@ -1312,7 +1328,6 @@ export async function renderSimulateChat(session) {
                   stance: v.initialStance
                 }));
                 voiceCallUI.updateParticipants(participantsList, newTarget.name);
-                // 切换后主动发言
                 speakAsVillager(newTarget, `你刚刚被选为对话对象，请针对当前话题发表你的看法。`);
               }
             });

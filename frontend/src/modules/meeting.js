@@ -15,10 +15,12 @@ let currentMeetingType = 'villager';
 let meetingPollInterval = null;
 let roundRobinInProgress = false;
 let meetingTyping = false;
+let voiceModeActive = false; // 语音通话模式是否激活（仅该模式下朗读）
 
 // ==================== 语音合成 ====================
 let speechSynthesisEnabled = true;
 function speakText(text, voiceName = 'Tingting') {
+  if (!voiceModeActive) return; // 非语音模式不朗读
   if (!speechSynthesisEnabled) return;
   if (!window.speechSynthesis) {
     console.warn('浏览器不支持语音合成');
@@ -26,13 +28,12 @@ function speakText(text, voiceName = 'Tingting') {
   }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
-  utterance.rate = 0.9;
+  utterance.rate = 1.1; // 调快语速
   utterance.pitch = 1.0;
-  // 获取语音列表，选择中文女声
   const voices = window.speechSynthesis.getVoices();
   const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
   if (cnVoice) utterance.voice = cnVoice;
-  window.speechSynthesis.cancel(); // 取消正在播放的
+  window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 }
 
@@ -172,7 +173,8 @@ function appendMeetingMessage(role, name, avatar, content) {
   `;
   container.appendChild(msgDiv);
   scrollMeetingMessages();
-  if (role === 'assistant') {
+  // 仅语音模式下播放语音
+  if (role === 'assistant' && voiceModeActive) {
     speakText(content);
   }
   if (currentMeeting) {
@@ -278,7 +280,6 @@ function renderMeetingVillagersDesktop() {
       currentMeeting.activeVillagerId = targetVillager.id;
       document.querySelectorAll('.villager-card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
-      // 更新输入框 placeholder
       const input = document.getElementById('meetingInput');
       if (input) input.placeholder = `向 ${targetVillager.name} 说...`;
       if (voiceCallUI) {
@@ -895,7 +896,6 @@ function renderMeetingChatArea() {
           if (newTarget) {
             currentMeeting.activeVillagerId = newTarget.id;
             drawer.style.display = 'none';
-            // 更新输入框 placeholder
             if (input) input.placeholder = `向 ${newTarget.name} 说...`;
             if (voiceCallUI) {
               restartRobot({
@@ -910,7 +910,6 @@ function renderMeetingChatArea() {
                     satisfaction: v.satisfaction,
                     stance: v.stance || v.initialStance
                   })), name);
-                  // 切换后主动让新发言人说话
                   speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
                 }
               });
@@ -936,7 +935,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮 - 使用 PTT 模式
+  // 线上会议按钮 - 使用 PTT 模式，控制 voiceModeActive
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -945,10 +944,12 @@ function renderMeetingChatArea() {
         await stopVoiceCall();
         voiceCallUI.hide();
         voiceCallUI = null;
+        voiceModeActive = false; // 关闭语音模式
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
       } else {
+        voiceModeActive = true; // 开启语音模式
         const participants = currentMeeting.villagers.map(v => ({
           name: v.name,
           avatar: v.avatar,
@@ -979,6 +980,7 @@ function renderMeetingChatArea() {
             await stopVoiceCall();
             voiceCallUI.hide();
             voiceCallUI = null;
+            voiceModeActive = false; // 关闭语音模式
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
@@ -999,7 +1001,6 @@ function renderMeetingChatArea() {
               if (newTarget) {
                 currentMeeting.activeVillagerId = newTarget.id;
                 if (input) input.placeholder = `向 ${newTarget.name} 说...`;
-                // 切换后主动让新发言人说话
                 await speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
               }
             } else {
@@ -1027,6 +1028,7 @@ function renderMeetingChatArea() {
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;
+          voiceModeActive = false; // 启动失败也关闭语音模式
           alert('无法启动线上会议');
           if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
         }
