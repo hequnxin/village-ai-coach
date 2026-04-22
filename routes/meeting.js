@@ -9,7 +9,7 @@ const router = express.Router();
 
 // ==================== 创建会议会话 ====================
 router.post('/session', async (req, res) => {
-  const { topic, villagers, agenda, timeLimit } = req.body;
+  const { topic, villagers, agenda, timeLimit, meetingType } = req.body;
   const userId = req.user.userId;
 
   const session = await createSession(userId, { title: topic, type: 'meeting' });
@@ -24,7 +24,7 @@ router.post('/session', async (req, res) => {
     satisfaction: 50,
     emotions: {},
     currentAgendaIndex: 0,
-    meetingType: req.body.meetingType || 'villager' // 新增：存储会议类型
+    meetingType: meetingType || 'villager' // 村民大会或村干部大会
   };
 
   await db.run(`UPDATE sessions SET scenario_id = $1 WHERE id = $2`, [JSON.stringify(config), session.id]);
@@ -76,20 +76,19 @@ router.post('/chat', async (req, res) => {
   let votes = config.votes || {};
   let resolvedItems = config.resolvedItems || [];
   let currentAgendaIndex = config.currentAgendaIndex || 0;
-  const meetingType = config.meetingType || 'villager'; // 获取会议类型
+  const meetingType = config.meetingType || 'villager';
 
-  // ===== 系统消息（直接保存，不调用AI） =====
+  // ===== 系统消息 =====
   if (isSystem) {
     await addMessage(sessionId, 'system', message, Date.now());
     return res.json({ reply: null, system: true });
   }
 
-  // ===== 自动发言（简短，用于轮流发言） =====
+  // ===== 自动发言（轮流发言或主动发言） =====
   if (autoSpeak) {
     const villager = villagers.find(v => v.id === villagerId);
     if (!villager) return res.status(400).json({ error: '村民不存在' });
 
-    // 根据会议类型添加角色提示
     let roleHint = '';
     if (meetingType === 'cadre') {
       roleHint = '你是一名村干部，要以村干部的身份和立场发言，考虑村集体利益和上级政策要求，发言要体现责任感和决策意识。';
@@ -98,7 +97,7 @@ router.post('/chat', async (req, res) => {
     }
 
     const prompt = `你正在模拟${meetingType === 'cadre' ? '村干部' : '村民'}"${villager.name}"。${roleHint}性格：${villager.personality}，立场：${villager.initialStance}，核心诉求：${villager.coreDemand || '无'}。请用1-2句话针对下面的话发表看法：${message}`;
-    const reply = await chat([{ role: 'user', content: prompt }], { temperature: 0.7, max_tokens: 100 });
+    const reply = await chat([{ role: 'user', content: prompt }], { temperature: 0.7, max_tokens: 150 });
     await addMessage(sessionId, 'assistant', reply, Date.now());
     return res.json({ reply });
   }
@@ -118,7 +117,6 @@ router.post('/chat', async (req, res) => {
     const totalVillagers = villagers.length;
     const votedCount = Object.keys(votes[currentAgendaIndex] || {}).length;
 
-    // 如果所有人都已投票，自动统计结果
     if (votedCount === totalVillagers) {
       const support = Object.values(votes[currentAgendaIndex]).filter(v => v === '支持').length;
       const oppose = Object.values(votes[currentAgendaIndex]).filter(v => v === '反对').length;
@@ -171,7 +169,6 @@ router.post('/chat', async (req, res) => {
 
   await addMessage(sessionId, 'user', message, Date.now());
 
-  // 获取最近几条消息用于讨论上下文
   const updatedSession = await getSession(userId, sessionId);
   const recentMessages = updatedSession.messages.slice(-5);
   const lastVillagerReply = recentMessages.filter(m => m.role === 'assistant' && m.content !== config.initial_message).pop();
@@ -179,10 +176,9 @@ router.post('/chat', async (req, res) => {
   let discussionHint = '';
   if (lastVillagerReply) {
     const lastSpeaker = villagers.find(v => lastVillagerReply.content.includes(v.name))?.name || '某位村民';
-    discussionHint = `\n刚刚 ${lastSpeaker} 发表了观点："${lastVillagerReply.content.substring(0, 100)}"。请你针对他/她的发言表达你的看法（例如：我同意/不同意，因为...）。你的性格是：${activeVillager.personality || '普通'}，请充分体现这一性格，避免使用与其他村民相同的句式。`;
+    discussionHint = `\n刚刚 ${lastSpeaker} 发表了观点："${lastVillagerReply.content.substring(0, 100)}"。请你针对他/她的发言表达你的看法（例如：我同意/不同意，因为...）。你的性格是：${activeVillager.personality || '普通'}，请充分体现这一性格。`;
   }
 
-  // 根据会议类型添加角色提示
   let roleHint = '';
   if (meetingType === 'cadre') {
     roleHint = '你是一名村干部，要以村干部的身份和立场发言，考虑村集体利益和上级政策要求，发言要体现责任感和决策意识。';
@@ -275,7 +271,6 @@ router.post('/vote', async (req, res) => {
   }
   config.votes[currentAgendaIndex][villagerId] = option;
 
-  // 检查是否所有村民都已投票
   const villagers = config.villagers || [];
   const total = villagers.length;
   const votedCount = Object.keys(config.votes[currentAgendaIndex]).length;

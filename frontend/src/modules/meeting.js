@@ -341,6 +341,65 @@ function getDynamicTip() {
 }
 // ==================== 核心会议函数 ====================
 
+// 让指定村民/村干部主动发言（结合上下文）
+async function speakAsVillager(villager, contextHint = '') {
+  if (!currentMeeting) return;
+  const container = document.getElementById('meetingMessages');
+  if (!container) return;
+
+  // 获取最近的几条消息作为上下文
+  const recentMessages = Array.from(container.querySelectorAll('.meeting-message'))
+    .slice(-5)
+    .map(msg => msg.querySelector('.message-bubble')?.innerText || '')
+    .filter(t => t.trim())
+    .join('\n');
+
+  const currentAgenda = currentMeeting.agenda[currentAgendaIndex]?.name || '当前议题';
+
+  let prompt = `当前议程：${currentAgenda}。`;
+  if (recentMessages) {
+    prompt += `\n最近讨论内容：${recentMessages.substring(0, 300)}`;
+  }
+  if (contextHint) {
+    prompt += `\n${contextHint}`;
+  } else {
+    prompt += `\n请结合你的立场（${villager.initialStance}）和核心诉求（${villager.coreDemand || '无'}），主动发表你对当前议题的看法。`;
+  }
+
+  // 显示思考中状态
+  const thinkingMsg = document.createElement('div');
+  thinkingMsg.className = 'meeting-message assistant thinking-message';
+  thinkingMsg.innerHTML = `<div class="message-avatar">${villager.avatar}</div><div class="message-bubble">💭 ${villager.name} 思考中...</div>`;
+  container.appendChild(thinkingMsg);
+  scrollMeetingMessages();
+
+  try {
+    const res = await fetchWithAuth('/api/meeting/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: currentMeeting.sessionId,
+        message: prompt,
+        villagerId: villager.id,
+        autoSpeak: true
+      })
+    });
+    const data = await res.json();
+    thinkingMsg.remove();
+    const reply = data.reply || `${villager.name}：嗯，我再想想。`;
+    appendMeetingMessage('assistant', villager.name, villager.avatar, reply);
+    if (data.stanceValue !== undefined) updateVillagerStance(villager, data.stanceValue);
+    if (data.satisfaction !== undefined) {
+      currentMeeting.satisfaction = data.satisfaction;
+      updateOverallSatisfaction(data.satisfaction);
+    }
+  } catch (err) {
+    console.error('主动发言失败', err);
+    thinkingMsg.innerHTML = `<div class="message-avatar">${villager.avatar}</div><div class="message-bubble">⚠️ ${villager.name} 暂时无法发言</div>`;
+    setTimeout(() => thinkingMsg.remove(), 2000);
+  }
+}
+
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
   roundRobinInProgress = true;
   meetingStage = 'roundRobin';
@@ -852,7 +911,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮 - 使用 PTT 模式，传入支持参数的 toggleMute
+  // 线上会议按钮 - 使用 PTT 模式，传入支持参数的 toggleMute，并在切换角色后主动发言
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -899,7 +958,6 @@ function renderMeetingChatArea() {
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
           },
-          // PTT: 支持参数化静音
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
           },
@@ -913,7 +971,11 @@ function renderMeetingChatArea() {
             if (success) {
               voiceCallUI.updateParticipants(participants, newSpeakerName);
               const newTarget = currentMeeting.villagers.find(v => v.name === newSpeakerName);
-              if (newTarget) currentMeeting.activeVillagerId = newTarget.id;
+              if (newTarget) {
+                currentMeeting.activeVillagerId = newTarget.id;
+                // 切换成功后，让新发言人主动发言
+                await speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
+              }
             } else {
               alert('切换发言人失败，请重试');
             }
@@ -1024,11 +1086,9 @@ export async function renderMeetingSetupView() {
 
   // 当会议类型切换时，刷新当前选中的预设模板角色
   typeSelect.addEventListener('change', () => {
-    // 如果当前选中的不是自定义主题，重新加载模板角色
     if (topicSelect.value !== 'custom') {
       topicSelect.dispatchEvent(new Event('change'));
     }
-    // 如果自定义角色为空，加载默认角色
     if (!rolesInput.value.trim()) {
       const defaultRoles = defaultRolesByType[typeSelect.value];
       if (defaultRoles) {
@@ -1047,7 +1107,6 @@ export async function renderMeetingSetupView() {
       const template = presetTemplates[selected];
       agendaInput.value = template.agenda.join('\n');
 
-      // 根据当前会议类型选择村民或村干部角色
       const meetingType = document.getElementById('meetingTypeSelect').value;
       let villagers = template.villagers;
       if (meetingType === 'cadre') {
@@ -1060,7 +1119,6 @@ export async function renderMeetingSetupView() {
     updateCustomInputVisibility();
   });
 
-  // 初始化时，如果自定义角色为空，加载默认角色
   if (!rolesInput.value.trim()) {
     const defaultRoles = defaultRolesByType[typeSelect.value];
     if (defaultRoles) {
