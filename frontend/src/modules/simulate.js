@@ -55,15 +55,15 @@ const scenarioGuideState = {
   'scenario_005': { stage: 0, lastSatisfaction: 50, triggeredFlags: new Set() }
 };
 
-// 场景配置（包含 guideRules 和 agendaNames）
+// ==================== 场景配置（增加 initialSatisfaction 字段） ====================
 const scenarioMultiConfig = {
   'scenario_001': {
     title: '调解邻里土地纠纷',
     description: '村民张三和李四因宅基地边界发生争执，双方情绪激动，需要你作为村干部进行调解。',
     villagers: [
-      { id: 'v1', name: '张三', avatar: '👨', personality: '暴躁、固执', coreDemand: '必须让对方退让，否则不罢休', initialStance: '反对', stanceValue: 0.1 },
-      { id: 'v2', name: '李四', avatar: '👨', personality: '倔强、爱面子', coreDemand: '寸土不让，要求对方道歉', initialStance: '反对', stanceValue: 0.1 },
-      { id: 'v3', name: '王婶', avatar: '👵', personality: '热心、和事佬', coreDemand: '希望双方和解，村里安宁', initialStance: '中立', stanceValue: 0.5 }
+      { id: 'v1', name: '张三', avatar: '👨', personality: '暴躁、固执', coreDemand: '必须让对方退让，否则不罢休', initialStance: '反对', stanceValue: 0.1, initialSatisfaction: 30 },
+      { id: 'v2', name: '李四', avatar: '👨', personality: '倔强、爱面子', coreDemand: '寸土不让，要求对方道歉', initialStance: '反对', stanceValue: 0.1, initialSatisfaction: 30 },
+      { id: 'v3', name: '王婶', avatar: '👵', personality: '热心、和事佬', coreDemand: '希望双方和解，村里安宁', initialStance: '中立', stanceValue: 0.5, initialSatisfaction: 70 }
     ],
     agendaNames: ['安抚情绪', '讲清政策', '达成共识'],
     guideRules: [
@@ -78,9 +78,9 @@ const scenarioMultiConfig = {
     title: '推动垃圾分类',
     description: '村里推行垃圾分类，但很多村民不配合，甚至乱扔垃圾。你需要入户宣传，说服村民参与。',
     villagers: [
-      { id: 'v1', name: '张大爷', avatar: '👴', personality: '固执、嫌麻烦', coreDemand: '不想多走路倒垃圾', initialStance: '反对', stanceValue: 0.2 },
-      { id: 'v2', name: '李大妈', avatar: '👵', personality: '爱干净、支持', coreDemand: '希望村里统一规划', initialStance: '支持', stanceValue: 0.8 },
-      { id: 'v3', name: '王叔', avatar: '👨', personality: '理性、观望', coreDemand: '担心费用和公平性', initialStance: '中立', stanceValue: 0.5 }
+      { id: 'v1', name: '张大爷', avatar: '👴', personality: '固执、嫌麻烦', coreDemand: '不想多走路倒垃圾', initialStance: '反对', stanceValue: 0.2, initialSatisfaction: 35 },
+      { id: 'v2', name: '李大妈', avatar: '👵', personality: '爱干净、支持', coreDemand: '希望村里统一规划', initialStance: '支持', stanceValue: 0.8, initialSatisfaction: 75 },
+      { id: 'v3', name: '王叔', avatar: '👨', personality: '理性、观望', coreDemand: '担心费用和公平性', initialStance: '中立', stanceValue: 0.5, initialSatisfaction: 60 }
     ],
     agendaNames: ['了解抵触原因', '宣讲政策与好处', '制定激励方案'],
     guideRules: [
@@ -94,9 +94,9 @@ const scenarioMultiConfig = {
     title: '人居环境整治（乱堆乱放）',
     description: '村民老赵在自家院外长期堆放柴草和废品，影响村容村貌，邻居投诉。你需上门劝导，动员清理。',
     villagers: [
-      { id: 'v1', name: '老赵', avatar: '👨', personality: '倔强、爱占便宜', coreDemand: '不想花钱清理，觉得碍不着别人', initialStance: '反对', stanceValue: 0.2 },
-      { id: 'v2', name: '刘婶', avatar: '👩', personality: '爱干净、爱管闲事', coreDemand: '要求村里强制清理', initialStance: '支持', stanceValue: 0.9 },
-      { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '理性、讲道理', coreDemand: '希望有公平的清理方案', initialStance: '中立', stanceValue: 0.5 }
+      { id: 'v1', name: '老赵', avatar: '👨', personality: '倔强、爱占便宜', coreDemand: '不想花钱清理，觉得碍不着别人', initialStance: '反对', stanceValue: 0.2, initialSatisfaction: 35 },
+      { id: 'v2', name: '刘婶', avatar: '👩', personality: '爱干净、爱管闲事', coreDemand: '要求村里强制清理', initialStance: '支持', stanceValue: 0.9, initialSatisfaction: 80 },
+      { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '理性、讲道理', coreDemand: '希望有公平的清理方案', initialStance: '中立', stanceValue: 0.5, initialSatisfaction: 65 }
     ],
     agendaNames: ['劝导清理', '协调解决方案', '建立长效机制'],
     guideRules: [
@@ -109,9 +109,9 @@ const scenarioMultiConfig = {
     title: '产业发展项目申报动员会',
     description: '村里想申请乡村振兴衔接资金发展特色农产品加工，但部分村民担心失败不愿配合。',
     villagers: [
-      { id: 'v1', name: '李大叔', avatar: '👨', personality: '保守、担心', coreDemand: '怕投资打水漂', initialStance: '反对', stanceValue: 0.2 },
-      { id: 'v2', name: '孙婶', avatar: '👩', personality: '积极、愿意尝试', coreDemand: '想多赚钱', initialStance: '支持', stanceValue: 0.9 },
-      { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '精明、算得清', coreDemand: '要看到详细财务预测', initialStance: '中立', stanceValue: 0.5 }
+      { id: 'v1', name: '李大叔', avatar: '👨', personality: '保守、担心', coreDemand: '怕投资打水漂', initialStance: '反对', stanceValue: 0.2, initialSatisfaction: 35 },
+      { id: 'v2', name: '孙婶', avatar: '👩', personality: '积极、愿意尝试', coreDemand: '想多赚钱', initialStance: '支持', stanceValue: 0.9, initialSatisfaction: 80 },
+      { id: 'v3', name: '周会计', avatar: '🧑‍💼', personality: '精明、算得清', coreDemand: '要看到详细财务预测', initialStance: '中立', stanceValue: 0.5, initialSatisfaction: 65 }
     ],
     agendaNames: ['分析项目可行性', '回应村民顾虑', '确定参与意向'],
     guideRules: [
@@ -124,9 +124,9 @@ const scenarioMultiConfig = {
     title: '邻里噪音纠纷调解',
     description: '村民小陈家晚上经常聚会打牌，邻居老刘多次投诉，双方产生口角。你前往调解。',
     villagers: [
-      { id: 'v1', name: '小陈', avatar: '🧑', personality: '年轻、爱热闹', coreDemand: '不想被管太多', initialStance: '反对', stanceValue: 0.2 },
-      { id: 'v2', name: '老刘', avatar: '👨', personality: '急躁、敏感', coreDemand: '要求立即停止噪音', initialStance: '反对', stanceValue: 0.1 },
-      { id: 'v3', name: '王阿姨', avatar: '👵', personality: '热心、爱调解', coreDemand: '希望双方各退一步', initialStance: '中立', stanceValue: 0.5 }
+      { id: 'v1', name: '小陈', avatar: '🧑', personality: '年轻、爱热闹', coreDemand: '不想被管太多', initialStance: '反对', stanceValue: 0.2, initialSatisfaction: 35 },
+      { id: 'v2', name: '老刘', avatar: '👨', personality: '急躁、敏感', coreDemand: '要求立即停止噪音', initialStance: '反对', stanceValue: 0.1, initialSatisfaction: 25 },
+      { id: 'v3', name: '王阿姨', avatar: '👵', personality: '热心、爱调解', coreDemand: '希望双方各退一步', initialStance: '中立', stanceValue: 0.5, initialSatisfaction: 65 }
     ],
     agendaNames: ['听取双方陈述', '协商解决方案', '达成约定'],
     guideRules: [
@@ -234,6 +234,7 @@ function createSimulateMessageElement(role, speakerName, speakerAvatar, content,
   }
   return msgDiv;
 }
+
 function showReportModal(reportData, finalScore, satisfaction, stagesCompleted, totalStages) {
   const modal = document.createElement('div');
   modal.className = 'modal';
@@ -562,7 +563,6 @@ function startPollingStatus(sessionId) {
     } catch(e) {}
   }, 3000);
 }
-
 export async function renderSimulateView(forceList = false) {
   if (statusPollInterval) {
     clearInterval(statusPollInterval);
@@ -718,7 +718,11 @@ async function startSimulate(scenarioId, difficulty, mode = 'single', timeLimit 
     if (mode === 'multi') {
       const multiConfig = scenarioMultiConfig[scenarioId];
       if (multiConfig && multiConfig.villagers) {
-        currentMultiVillagers = multiConfig.villagers.map(v => ({ ...v, satisfaction: 50, emotion: 'neutral' }));
+        currentMultiVillagers = multiConfig.villagers.map(v => ({
+          ...v,
+          satisfaction: v.initialSatisfaction ?? 50,
+          emotion: 'neutral'
+        }));
       } else {
         currentMultiVillagers = [
           { id: 'v1', name: '村民甲', avatar: '👤', personality: '普通', coreDemand: '', initialStance: '中立', satisfaction: 50, emotion: 'neutral' },
@@ -756,9 +760,9 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   scrollSimulate();
 }
 
-// 让指定角色主动发言（模拟对练中切换角色后自动发言）
+// 让指定角色主动发言（结合上下文）
 async function speakAsVillager(villager, contextHint = '') {
-  if (!currentTargetVillager) return;
+  if (!currentTargetVillager && simulateMode !== 'single') return;
   const container = document.getElementById('simulateMessages');
   if (!container) return;
 
@@ -799,7 +803,6 @@ async function speakAsVillager(villager, contextHint = '') {
       const satisfactionDiv = document.querySelector('.single-satisfaction');
       if (satisfactionDiv) satisfactionDiv.textContent = `${data.satisfaction}%`;
     }
-    // 语音模式下主动朗读
     if (voiceModeActive) {
       speakText(reply);
     }
@@ -858,7 +861,7 @@ export async function renderSimulateChat(session) {
   }
 
   if (currentMode === 'multi' && currentMultiVillagers.length) {
-    villagers = currentMultiVillagers.map(v => ({ ...v, satisfaction: villagersState[v.name]?.satisfaction ?? 50, emotion: villagersState[v.name]?.emotion ?? 'neutral' }));
+    villagers = currentMultiVillagers.map(v => ({ ...v, satisfaction: villagersState[v.name]?.satisfaction ?? v.satisfaction, emotion: villagersState[v.name]?.emotion ?? 'neutral' }));
     if (!currentTargetVillager && villagers.length) currentTargetVillager = villagers[0];
     if (config) {
       systemOpening = `🏛️ 【场景介绍】${config.description}\n👥 参会人员：${config.villagers.map(v => v.name).join('、')}\n📌 目标：${scenario.goal}`;
@@ -1140,7 +1143,7 @@ export async function renderSimulateChat(session) {
     };
   }
 
-  // 语音通话按钮 - 使用 PTT 模式，控制 voiceModeActive
+  // 语音通话按钮 - 使用 PTT 模式，控制 voiceModeActive，自动发送
   let voiceCallUI = null;
   let voiceCallActive = false;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
@@ -1155,6 +1158,7 @@ export async function renderSimulateChat(session) {
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+        delete window.simulateSendMessage;
       } else {
         voiceModeActive = true;
         // 预激活语音合成
@@ -1184,12 +1188,16 @@ export async function renderSimulateChat(session) {
           currentRoleName = currentTargetVillager?.name || participantsList[0]?.name;
         }
 
-        window.appendUserMessageToChat = (text) => {
-          const container = document.getElementById('simulateMessages');
-          if (container) {
-            const userMsg = createSimulateMessageElement('user', '村官', '👨‍🌾', text, 'neutral');
-            container.appendChild(userMsg);
-            scrollSimulate();
+        window.appendUserMessageToChat = async (text) => {
+          const input = document.getElementById('simulateInput');
+          if (input) {
+            input.value = text;
+            if (typeof window.simulateSendMessage === 'function') {
+              await window.simulateSendMessage();
+            } else {
+              const sendBtn = document.getElementById('simulateSendBtn');
+              if (sendBtn) sendBtn.click();
+            }
           }
         };
 
@@ -1211,6 +1219,7 @@ export async function renderSimulateChat(session) {
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
+            delete window.simulateSendMessage;
           },
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
@@ -1255,11 +1264,12 @@ export async function renderSimulateChat(session) {
 
         const success = await startVoiceCall({
           roomId,
-          sceneType: 'simulate',
           sessionId: session.id,
-          roleName: currentRoleName,
-          onRemoteAudioReady: () => voiceCallUI.updateStatus('ai_speaking'),
+          roleName: currentRoleName,  // 关键：传递角色名
           onVolumeChange: (vol) => voiceCallUI.updateVolume(vol),
+          onTranscript: (text) => {
+            if (window.appendUserMessageToChat) window.appendUserMessageToChat(text);
+          },
           onStatusChange: (status) => voiceCallUI.updateStatus(status)
         });
 
@@ -1267,11 +1277,20 @@ export async function renderSimulateChat(session) {
           voiceCallActive = true;
           voiceCallBtn.textContent = isMobile ? '🔴' : '🔴 挂断';
           voiceCallBtn.style.background = '#f44336';
+          // 将 sendMessage 挂载到 window，供语音识别回调调用
+          window.simulateSendMessage = sendMessage;
+          // 主动让当前角色说第一句话（立场声明）
+          const currentVillager = currentMode === 'multi' ? currentTargetVillager : singleRole;
+          if (currentVillager) {
+            setTimeout(() => {
+              speakAsVillager(currentVillager, `语音已连接，请${currentVillager.name}根据你的立场和诉求，主动向村官表明你的态度。`);
+            }, 500);
+          }
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;
           voiceModeActive = false;
-          alert('无法启动语音通话，请检查网络');
+          alert('无法启动语音通话，请检查麦克风权限');
           if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
         }
       }
