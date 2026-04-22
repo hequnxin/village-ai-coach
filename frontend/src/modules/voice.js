@@ -48,7 +48,8 @@ export async function startVoiceCall({ roomId, sceneType, sessionId, roleName, o
 
     const robotRes = await fetchWithAuth('/api/voice/start-robot', {
       method: 'POST',
-      body: { roomId, userId, sceneType, sessionId, roleName }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, userId, sceneType, sessionId, roleName })
     });
     const robotData = await robotRes.json();
     if (!robotRes.ok) throw new Error(robotData.error);
@@ -68,7 +69,8 @@ export async function stopRobot() {
   try {
     await fetchWithAuth('/api/voice/stop-robot', {
       method: 'POST',
-      body: { taskId: currentTaskId }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: currentTaskId, roomId: currentRoomId })
     });
     currentTaskId = null;
     console.log('✅ 机器人已停止');
@@ -87,7 +89,8 @@ export async function restartRobot({ sceneType, sessionId, roleName }) {
   try {
     const robotRes = await fetchWithAuth('/api/voice/start-robot', {
       method: 'POST',
-      body: { roomId: currentRoomId, userId: currentUserId, sceneType, sessionId, roleName }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: currentRoomId, userId: currentUserId, sceneType, sessionId, roleName })
     });
     const robotData = await robotRes.json();
     if (!robotRes.ok) throw new Error(robotData.error);
@@ -111,18 +114,15 @@ export async function stopVoiceCall() {
   currentSessionId = null;
 }
 
-// 支持参数化静音：如果传入 muted 参数，则强制静音或取消静音；否则切换状态
 export async function toggleMute(muted) {
   if (!localStream) return false;
   if (muted !== undefined) {
-    // 参数明确指定静音或取消静音
     if (muted) {
       localStream.muteAudio();
     } else {
       localStream.unmuteAudio();
     }
   } else {
-    // 无参数时切换状态
     const currentlyMuted = localStream._muted;
     if (currentlyMuted) {
       localStream.unmuteAudio();
@@ -207,7 +207,8 @@ async function storeTranscript(text) {
   try {
     await fetchWithAuth('/api/voice/transcript', {
       method: 'POST',
-      body: { sessionId: currentSessionId, text }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSessionId, text })
     });
   } catch (err) { console.error('存储转写失败', err); }
 }

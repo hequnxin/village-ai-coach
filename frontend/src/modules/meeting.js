@@ -15,34 +15,7 @@ let currentMeetingType = 'villager';
 let meetingPollInterval = null;
 let roundRobinInProgress = false;
 let meetingTyping = false;
-let voiceModeActive = false; // 语音通话模式是否激活（仅该模式下朗读）
-
-// ==================== 语音合成 ====================
-let speechSynthesisEnabled = true;
-function speakText(text, voiceName = 'Tingting') {
-  if (!voiceModeActive) return;
-  if (!speechSynthesisEnabled) return;
-  if (!window.speechSynthesis) {
-    console.warn('浏览器不支持语音合成');
-    return;
-  }
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'zh-CN';
-  utterance.rate = 1.1;
-  utterance.pitch = 1.0;
-  const speak = () => {
-    const voices = window.speechSynthesis.getVoices();
-    const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
-    if (cnVoice) utterance.voice = cnVoice;
-    window.speechSynthesis.speak(utterance);
-  };
-  if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = speak;
-  } else {
-    speak();
-  }
-}
+let voiceModeActive = false; // 语音通话模式是否激活（仅用于UI状态）
 
 // ==================== 预设模板（每个模板都有独立的村民和村干部） ====================
 const presetTemplates = {
@@ -180,9 +153,6 @@ function appendMeetingMessage(role, name, avatar, content) {
   `;
   container.appendChild(msgDiv);
   scrollMeetingMessages();
-  if (role === 'assistant' && voiceModeActive) {
-    speakText(content);
-  }
   if (currentMeeting) {
     const session = appState.sessions.find(s => s.id === currentMeeting.sessionId);
     if (session) {
@@ -353,59 +323,6 @@ async function autoVillagerSpeak(sessionId, villager, previousMessage = '') {
   } catch(e) {
     console.error('自动发言失败', e);
     return `${villager.name}：嗯，我再想想。`;
-  }
-}
-
-// 让指定角色主动发言（结合上下文）
-async function speakAsVillager(villager, contextHint = '') {
-  if (!currentMeeting) return;
-  const container = document.getElementById('meetingMessages');
-  if (!container) return;
-
-  const recentMessages = Array.from(container.querySelectorAll('.meeting-message'))
-    .slice(-5)
-    .map(msg => msg.querySelector('.message-bubble')?.innerText || '')
-    .filter(t => t.trim())
-    .join('\n');
-  const currentAgenda = currentMeeting.agenda[currentAgendaIndex]?.name || '当前议题';
-  let prompt = `当前议程：${currentAgenda}。`;
-  if (recentMessages) prompt += `\n最近讨论内容：${recentMessages.substring(0, 300)}`;
-  if (contextHint) prompt += `\n${contextHint}`;
-  else prompt += `\n请结合你的立场（${villager.initialStance}）和核心诉求（${villager.coreDemand || '无'}），主动发表你对当前议题的看法。`;
-
-  const thinkingMsg = document.createElement('div');
-  thinkingMsg.className = 'meeting-message assistant thinking-message';
-  thinkingMsg.innerHTML = `<div class="message-avatar">${villager.avatar}</div><div class="message-bubble">💭 ${villager.name} 思考中...</div>`;
-  container.appendChild(thinkingMsg);
-  scrollMeetingMessages();
-
-  try {
-    const res = await fetchWithAuth('/api/meeting/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId: currentMeeting.sessionId,
-        message: prompt,
-        villagerId: villager.id,
-        autoSpeak: true
-      })
-    });
-    const data = await res.json();
-    thinkingMsg.remove();
-    const reply = data.reply || `${villager.name}：嗯，我再想想。`;
-    appendMeetingMessage('assistant', villager.name, villager.avatar, reply);
-    if (voiceModeActive) {
-      speakText(reply);
-    }
-    if (data.stanceValue !== undefined) updateVillagerStance(villager, data.stanceValue);
-    if (data.satisfaction !== undefined) {
-      currentMeeting.satisfaction = data.satisfaction;
-      updateOverallSatisfaction(data.satisfaction);
-    }
-  } catch (err) {
-    console.error('主动发言失败', err);
-    thinkingMsg.innerHTML = `<div class="message-avatar">${villager.avatar}</div><div class="message-bubble">⚠️ ${villager.name} 暂时无法发言</div>`;
-    setTimeout(() => thinkingMsg.remove(), 2000);
   }
 }
 
@@ -919,11 +836,8 @@ function renderMeetingChatArea() {
                     satisfaction: v.satisfaction,
                     stance: v.stance || v.initialStance
                   })), name);
-                  speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
                 }
               });
-            } else {
-              speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
             }
           }
         };
@@ -944,7 +858,7 @@ function renderMeetingChatArea() {
     drawer.addEventListener('click', (e) => { if (e.target === drawer) drawer.style.display = 'none'; });
   }
 
-  // 线上会议按钮 - 使用 PTT 模式，控制 voiceModeActive，自动发送
+  // 线上会议按钮 - 使用 TRTC 机器人模式
   let voiceCallUI = null;
   const voiceCallBtn = document.getElementById('voiceCallBtn');
   if (voiceCallBtn) {
@@ -957,16 +871,8 @@ function renderMeetingChatArea() {
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
-        delete window.meetingSendMessage;
       } else {
         voiceModeActive = true;
-        // 预激活语音合成
-        if (window.speechSynthesis) {
-          window.speechSynthesis.getVoices();
-          const silent = new SpeechSynthesisUtterance(' ');
-          silent.volume = 0;
-          window.speechSynthesis.speak(silent);
-        }
         const roomId = Math.abs(currentMeeting.sessionId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
         const participants = currentMeeting.villagers.map(v => ({
           name: v.name,
@@ -978,16 +884,14 @@ function renderMeetingChatArea() {
           ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)?.name
           : participants[0]?.name;
 
+        // 语音识别回调：将识别的文本发送到聊天
         window.appendUserMessageToChat = async (text) => {
           const input = document.getElementById('meetingInput');
           if (input) {
             input.value = text;
-            if (typeof window.meetingSendMessage === 'function') {
-              await window.meetingSendMessage(text, false);
-            } else {
-              const sendBtn = document.getElementById('sendMeetingBtn');
-              if (sendBtn) sendBtn.click();
-            }
+            // 自动发送
+            const sendBtn = document.getElementById('sendMeetingBtn');
+            if (sendBtn) sendBtn.click();
           }
         };
 
@@ -1006,20 +910,13 @@ function renderMeetingChatArea() {
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
-            delete window.meetingSendMessage;
           },
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
           },
           onSpeakTip: (tipText) => {
-            if (voiceModeActive && window.speechSynthesis) {
-              const utterance = new SpeechSynthesisUtterance(tipText);
-              utterance.lang = 'zh-CN';
-              utterance.rate = 1.1;
-              utterance.volume = 0.8;
-              window.speechSynthesis.cancel();
-              window.speechSynthesis.speak(utterance);
-            }
+            // 语音提示由 TRTC 机器人自己播放，前端不需要额外处理
+            console.log('提示:', tipText);
           },
           onParticipantSelect: async (newSpeakerName) => {
             if (!voiceCallUI) return;
@@ -1034,7 +931,6 @@ function renderMeetingChatArea() {
               if (newTarget) {
                 currentMeeting.activeVillagerId = newTarget.id;
                 if (input) input.placeholder = `向 ${newTarget.name} 说...`;
-                await speakAsVillager(newTarget, `你刚刚被选为新发言人，请针对当前议题发表你的看法。`);
               }
             } else {
               alert('切换发言人失败，请重试');
@@ -1048,29 +944,17 @@ function renderMeetingChatArea() {
 
         const success = await startVoiceCall({
           roomId,
+          sceneType: 'meeting',
           sessionId: currentMeeting.sessionId,
-          roleName: currentSpeaker,  // 关键：传递角色名
+          roleName: currentSpeaker,
+          onRemoteAudioReady: () => voiceCallUI.updateStatus('ai_speaking'),
           onVolumeChange: (vol) => voiceCallUI.updateVolume(vol),
-          onTranscript: (text) => {
-            if (window.appendUserMessageToChat) window.appendUserMessageToChat(text);
-          },
           onStatusChange: (status) => voiceCallUI.updateStatus(status)
         });
 
         if (success) {
           voiceCallBtn.textContent = isMobile ? '🔴' : '🔴 挂断';
           voiceCallBtn.style.background = '#f44336';
-          // 挂载发送函数
-          window.meetingSendMessage = sendMeetingMessage;
-          // 主动让当前发言人表明立场
-          const currentSpeakerObj = currentMeeting.activeVillagerId
-            ? currentMeeting.villagers.find(v => v.id === currentMeeting.activeVillagerId)
-            : currentMeeting.villagers[0];
-          if (currentSpeakerObj) {
-            setTimeout(() => {
-              speakAsVillager(currentSpeakerObj, `语音已连接，请${currentSpeakerObj.name}根据你的立场和诉求，主动向村官表明你的态度。`);
-            }, 500);
-          }
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;

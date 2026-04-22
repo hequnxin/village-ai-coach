@@ -1,4 +1,5 @@
 // routes/voice.js
+
 const express = require('express');
 const TLSSigAPIv2 = require('tls-sig-api-v2');
 const { getSession, addMessage } = require('../services/sessionService');
@@ -11,7 +12,7 @@ const SECRETKEY = process.env.TRTC_SECRET_KEY || '';
 const TENCENT_SECRET_ID = process.env.TENCENT_SECRET_ID || process.env.TENCENTCLOUD_SECRET_ID;
 const TENCENT_SECRET_KEY = process.env.TENCENT_SECRET_KEY || process.env.TENCENTCLOUD_SECRET_KEY;
 
-// 存储房间当前的机器人任务ID（简单内存缓存，生产环境可改用 Redis）
+// 存储房间当前的机器人任务ID（简单内存缓存）
 const roomTaskMap = new Map(); // key: roomId (string), value: taskId
 
 // 生成 UserSig
@@ -27,7 +28,9 @@ const ROLE_VOICE_MAP = {
   '老赵': 'v-male-s5NqE0rZ', '刘婶': 'female-kefu-xiaomei', '周会计': 'v-male-A4b9KqP2',
   '李大叔': 'v-male-W1tH9jVc', '孙婶': 'v-female-R2s4N9qJ', '小陈': 'v-male-s5NqE0rZ',
   '老刘': 'v-male-W1tH9jVc', '王阿姨': 'female-kefu-xiaomei', '村支书': 'v-male-Bk7vD3xP',
-  '村主任': 'v-male-A4b9KqP2', '妇女主任': 'v-female-R2s4N9qJ', '民兵连长': 'v-male-W1tH9jVc'
+  '村主任': 'v-male-A4b9KqP2', '妇女主任': 'v-female-R2s4N9qJ', '民兵连长': 'v-male-W1tH9jVc',
+  '村会计': 'v-male-A4b9KqP2', '治保主任': 'v-male-W1tH9jVc', '团支部书记': 'v-male-s5NqE0rZ',
+  '村监委会主任': 'v-male-Bk7vD3xP', '环保专干': 'v-female-R2s4N9qJ', '德高望重老人': 'v-male-W1tH9jVc'
 };
 const DEFAULT_VOICE_ID = 'v-female-R2s4N9qJ';
 function getVoiceIdByRole(roleName) {
@@ -88,7 +91,6 @@ async function stopRobotInRoom(roomId) {
     return true;
   } catch (err) {
     console.warn(`停止房间 ${roomId} 机器人失败:`, err.message);
-    // 即使停止失败，也删除映射，避免卡死
     roomTaskMap.delete(String(roomId));
     return false;
   }
@@ -105,7 +107,7 @@ router.post('/start-robot', async (req, res) => {
     // 1. 先停止该房间现有的机器人（如果有）
     await stopRobotInRoom(roomId);
 
-    // 2. 等待一下，确保腾讯云后端彻底清理（重要！）
+    // 2. 等待一下，确保腾讯云后端彻底清理
     await new Promise(resolve => setTimeout(resolve, 800));
 
     // 3. 创建新的机器人
@@ -127,20 +129,30 @@ router.post('/start-robot', async (req, res) => {
     const selectedVoiceId = getVoiceIdByRole(roleName);
     console.log(`🎤 为角色 "${roleName}" 分配音色: ${selectedVoiceId}`);
 
+    // 根据场景类型构建不同的系统提示
+    let systemPrompt = '';
+    if (sceneType === 'simulate') {
+      systemPrompt = `你正在模拟一名村民/村干部，当前场景是模拟对练。你需要以“${roleName}”的身份和口吻回应村官的问题。回答要自然、口语化，符合角色性格。不要使用 Markdown 语法。`;
+    } else if (sceneType === 'meeting') {
+      systemPrompt = `你正在模拟一场乡村会议，当前会议类型为${sceneType === 'meeting' ? '会议模式' : '模拟对练'}，你扮演的角色是“${roleName}”。请以该角色的身份和口吻回应村官。回答要简洁、有逻辑。不要使用 Markdown 语法。`;
+    } else {
+      systemPrompt = `你是一名经验丰富的乡村治理专家，同时也是基层干部的"AI伙伴"。你的任务是用中文回答村官提出的各种实际问题。回答要有条理、循因导果、结尾引导。不要使用 Markdown 语法。当前场景：${sceneType === 'simulate' ? '模拟对练' : '会议模式'}，你扮演的角色是“${roleName || '村民'}”。请以该角色的身份和口吻回应村官。`;
+    }
+
     const llmConfig = {
       LLMType: 'openai',
       Model: 'deepseek-chat',
       APIKey: process.env.DEEPSEEK_API_KEY,
       APIUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1/chat/completions',
       Streaming: true,
-      SystemPrompt: `你是一名经验丰富的乡村治理专家，同时也是基层干部的"AI伙伴"。你的任务是用中文回答村官提出的各种实际问题。回答要有条理、循因导果、结尾引导。不要使用 Markdown 语法。当前场景：${sceneType === 'simulate' ? '模拟对练' : '会议模式'}，你扮演的角色是“${roleName || '村民'}”。请以该角色的身份和口吻回应村官。`
+      SystemPrompt: systemPrompt
     };
 
     const ttsConfig = {
       TTSType: 'flow',
       VoiceId: selectedVoiceId,
       Model: 'flow_01_turbo',
-      Speed: 1.0,
+      Speed: 1.1,  // 语速调快一点
       Volume: 1.0,
       Language: 'zh'
     };
