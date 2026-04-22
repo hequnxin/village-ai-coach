@@ -7,6 +7,7 @@ class BaseVoiceCallUI {
   constructor(options) {
     this.onHangup = options.onHangup || (() => {});
     this.onMuteToggle = options.onMuteToggle || (() => {});
+    this.onSpeakTip = options.onSpeakTip || (() => {}); // 新增：朗读提示的回调
     this.container = options.container || document.body;
     this.panel = null;
     this.timerInterval = null;
@@ -44,12 +45,12 @@ class BaseVoiceCallUI {
   _bindPttEvents(pttBtn) {
     if (!pttBtn) return;
     const startTalk = () => {
-      this.onMuteToggle(false); // 取消静音，开始说话
+      this.onMuteToggle(false);
       pttBtn.style.background = '#f44336';
       pttBtn.textContent = '🎙️ 说话中...';
     };
     const stopTalk = () => {
-      this.onMuteToggle(true); // 静音，停止说话
+      this.onMuteToggle(true);
       pttBtn.style.background = '#2196f3';
       pttBtn.textContent = '🎤 按住说话';
     };
@@ -58,7 +59,6 @@ class BaseVoiceCallUI {
     pttBtn.onmouseleave = () => {
       if (pttBtn.style.background === '#f44336') stopTalk();
     };
-    // 移动端触摸支持
     pttBtn.ontouchstart = (e) => { e.preventDefault(); startTalk(); };
     pttBtn.ontouchend = stopTalk;
     pttBtn.ontouchcancel = stopTalk;
@@ -85,7 +85,7 @@ class BaseVoiceCallUI {
   }
 }
 
-// 单人模式 UI - 深色主题 + PTT
+// 单人模式 UI - 深色主题 + PTT + 提示音
 class SingleVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -143,18 +143,16 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
+      case 'speaking':
+        text = '🎙️ 轮到你了，请按住按钮说话';
+        // 新增：朗读提示
+        this.onSpeakTip('轮到你了，请按住按钮说话');
+        break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
-    if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
-      utterance.lang = 'zh-CN';
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
-    }
   }
 
   updateVolume(volume) {
@@ -177,9 +175,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
     }
   }
 
-  setMuted(muted) {
-    // PTT 模式下不需要额外 UI 更新
-  }
+  setMuted(muted) { /* PTT 模式下不需要额外 UI 更新 */ }
 
   _addStyles() {
     if (document.getElementById('voice-call-ui-single-styles')) return;
@@ -348,7 +344,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 多人模式 UI - 深色主题 + PTT
+// 多人模式 UI - 深色主题 + PTT + 提示音
 class MultiVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -418,18 +414,15 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
+      case 'speaking':
+        text = '🎙️ 轮到你了，请按住按钮说话';
+        this.onSpeakTip('轮到你了，请按住按钮说话');
+        break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
-    if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
-      utterance.lang = 'zh-CN';
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
-    }
   }
 
   updateVolume(volume) {
@@ -452,9 +445,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     }
   }
 
-  setMuted(muted) {
-    // PTT 模式下不需要额外 UI 更新
-  }
+  setMuted(muted) { /* PTT 模式下不需要额外 UI 更新 */ }
 
   _bindGridClicks() {
     this.panel?.querySelectorAll('.participant-card[data-role="ai"]').forEach(el => {
@@ -645,7 +636,8 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     document.head.appendChild(style);
   }
 }
-// 会议模式 UI - 浅色主题 + 黑色文字 + PTT
+
+// 会议模式 UI - 浅色主题 + 黑色文字 + PTT + 提示音
 class MeetingVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -767,18 +759,15 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking': text = '🎙️ 按住说话按钮即可发言'; break;
+      case 'speaking':
+        text = '🎙️ 轮到你了，请按住按钮说话';
+        this.onSpeakTip('轮到你了，请按住按钮说话');
+        break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
     }
     statusSpan.textContent = text;
-    if (status === 'speaking' && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance('按住说话按钮发言');
-      utterance.lang = 'zh-CN';
-      utterance.rate = 0.9;
-      window.speechSynthesis.speak(utterance);
-    }
   }
 
   updateVolume(volume) {
@@ -801,9 +790,7 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     }
   }
 
-  setMuted(muted) {
-    // PTT 模式下不需要额外 UI 更新
-  }
+  setMuted(muted) { /* PTT 模式下不需要额外 UI 更新 */ }
 
   _bindMeetingEvents() {
     const voteBtn = this.panel?.querySelector('#voteBtn');
@@ -944,8 +931,13 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
         color: #222222 !important;
       }
       .agenda-item.current {
-        color: #ff9800 !important;
+        color: #000000 !important;
         font-weight: bold;
+        background: #ffffff;
+        border-left: 4px solid #ff9800;
+        border-radius: 4px;
+        padding: 4px 8px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
       }
       .agenda-item.completed {
         text-decoration: line-through;

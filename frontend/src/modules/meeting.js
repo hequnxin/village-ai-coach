@@ -20,21 +20,29 @@ let voiceModeActive = false; // 语音通话模式是否激活（仅该模式下
 // ==================== 语音合成 ====================
 let speechSynthesisEnabled = true;
 function speakText(text, voiceName = 'Tingting') {
-  if (!voiceModeActive) return; // 非语音模式不朗读
+  if (!voiceModeActive) return;
   if (!speechSynthesisEnabled) return;
   if (!window.speechSynthesis) {
     console.warn('浏览器不支持语音合成');
     return;
   }
+  // 取消当前正在播放的
+  window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
-  utterance.rate = 1.1; // 调快语速
+  utterance.rate = 1.1;
   utterance.pitch = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
-  if (cnVoice) utterance.voice = cnVoice;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+  const speak = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
+    if (cnVoice) utterance.voice = cnVoice;
+    window.speechSynthesis.speak(utterance);
+  };
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = speak;
+  } else {
+    speak();
+  }
 }
 
 // ==================== 预设模板（每个模板都有独立的村民和村干部） ====================
@@ -388,6 +396,10 @@ async function speakAsVillager(villager, contextHint = '') {
     thinkingMsg.remove();
     const reply = data.reply || `${villager.name}：嗯，我再想想。`;
     appendMeetingMessage('assistant', villager.name, villager.avatar, reply);
+    // 额外确保朗读（如果语音模式开启）
+    if (voiceModeActive) {
+      speakText(reply);
+    }
     if (data.stanceValue !== undefined) updateVillagerStance(villager, data.stanceValue);
     if (data.satisfaction !== undefined) {
       currentMeeting.satisfaction = data.satisfaction;
@@ -944,12 +956,19 @@ function renderMeetingChatArea() {
         await stopVoiceCall();
         voiceCallUI.hide();
         voiceCallUI = null;
-        voiceModeActive = false; // 关闭语音模式
+        voiceModeActive = false;
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
       } else {
-        voiceModeActive = true; // 开启语音模式
+        voiceModeActive = true;
+        // 预激活语音合成
+        if (window.speechSynthesis) {
+          window.speechSynthesis.getVoices();
+          const silent = new SpeechSynthesisUtterance(' ');
+          silent.volume = 0;
+          window.speechSynthesis.speak(silent);
+        }
         const participants = currentMeeting.villagers.map(v => ({
           name: v.name,
           avatar: v.avatar,
@@ -980,13 +999,23 @@ function renderMeetingChatArea() {
             await stopVoiceCall();
             voiceCallUI.hide();
             voiceCallUI = null;
-            voiceModeActive = false; // 关闭语音模式
+            voiceModeActive = false;
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 线上会议';
             voiceCallBtn.style.background = '#2196f3';
             if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
           },
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
+          },
+          onSpeakTip: (tipText) => {
+            if (voiceModeActive && window.speechSynthesis) {
+              const utterance = new SpeechSynthesisUtterance(tipText);
+              utterance.lang = 'zh-CN';
+              utterance.rate = 1.1;
+              utterance.volume = 0.8;
+              window.speechSynthesis.cancel();
+              window.speechSynthesis.speak(utterance);
+            }
           },
           onParticipantSelect: async (newSpeakerName) => {
             if (!voiceCallUI) return;
@@ -1028,7 +1057,7 @@ function renderMeetingChatArea() {
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;
-          voiceModeActive = false; // 启动失败也关闭语音模式
+          voiceModeActive = false;
           alert('无法启动线上会议');
           if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
         }

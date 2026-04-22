@@ -22,21 +22,28 @@ let voiceModeActive = false; // 语音通话模式是否激活（仅该模式下
 // ==================== 语音合成 ====================
 let speechSynthesisEnabled = true;
 function speakText(text, voiceName = 'Tingting') {
-  if (!voiceModeActive) return; // 非语音模式不朗读
+  if (!voiceModeActive) return;
   if (!speechSynthesisEnabled) return;
   if (!window.speechSynthesis) {
     console.warn('浏览器不支持语音合成');
     return;
   }
+  window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
-  utterance.rate = 1.1; // 调快语速
+  utterance.rate = 1.1;
   utterance.pitch = 1.0;
-  const voices = window.speechSynthesis.getVoices();
-  const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
-  if (cnVoice) utterance.voice = cnVoice;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+  const speak = () => {
+    const voices = window.speechSynthesis.getVoices();
+    const cnVoice = voices.find(v => v.lang === 'zh-CN' && (v.name.includes('Tingting') || v.name.includes('Xiaoxiao')));
+    if (cnVoice) utterance.voice = cnVoice;
+    window.speechSynthesis.speak(utterance);
+  };
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = speak;
+  } else {
+    speak();
+  }
 }
 
 // 场景剧情引导状态
@@ -398,7 +405,7 @@ async function sendSimulateMessage(sessionId, text, container, roleName, targetV
     let finalRoleName = roleName;
     if (targetVillager) {
       speakerAvatar = targetVillager.avatar;
-      finalRoleName = targetVillager.name; // 修复：使用目标村民的名字
+      finalRoleName = targetVillager.name;
     } else if (singleRole && singleRole.avatar) {
       speakerAvatar = singleRole.avatar;
       finalRoleName = singleRole.name;
@@ -737,7 +744,6 @@ async function startRoundRobin(sessionId, villagers, container, roleName, loadin
   for (let i = 0; i < villagers.length; i++) {
     const v = villagers[i];
     try {
-      // 修复：第三个参数使用 v.name 作为发言者名字
       await sendSimulateMessage(sessionId, `请${v.name}介绍一下自己的立场和诉求。`, container, v.name, v, true);
     } catch(e) { console.warn(`自动发言失败: ${v.name}`, e); }
     await new Promise(r => setTimeout(r, 1500));
@@ -792,6 +798,10 @@ async function speakAsVillager(villager, contextHint = '') {
     if (data.satisfaction !== undefined) {
       const satisfactionDiv = document.querySelector('.single-satisfaction');
       if (satisfactionDiv) satisfactionDiv.textContent = `${data.satisfaction}%`;
+    }
+    // 语音模式下主动朗读
+    if (voiceModeActive) {
+      speakText(reply);
     }
   } catch (err) {
     console.error('主动发言失败', err);
@@ -1140,13 +1150,20 @@ export async function renderSimulateChat(session) {
         await stopVoiceCall();
         voiceCallUI.hide();
         voiceCallUI = null;
-        voiceModeActive = false; // 关闭语音模式
+        voiceModeActive = false;
         voiceCallActive = false;
         voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
         voiceCallBtn.style.background = '#2196f3';
         if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
       } else {
-        voiceModeActive = true; // 开启语音模式
+        voiceModeActive = true;
+        // 预激活语音合成
+        if (window.speechSynthesis) {
+          window.speechSynthesis.getVoices();
+          const silent = new SpeechSynthesisUtterance(' ');
+          silent.volume = 0;
+          window.speechSynthesis.speak(silent);
+        }
         const roomId = Math.abs(session.id.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0)) % 1000000;
         let participantsList = [];
         let currentRoleName = '';
@@ -1189,7 +1206,7 @@ export async function renderSimulateChat(session) {
             await stopVoiceCall();
             voiceCallUI.hide();
             voiceCallUI = null;
-            voiceModeActive = false; // 关闭语音模式
+            voiceModeActive = false;
             voiceCallActive = false;
             voiceCallBtn.textContent = isMobile ? '🎤' : '🎤 语音通话';
             voiceCallBtn.style.background = '#2196f3';
@@ -1197,6 +1214,16 @@ export async function renderSimulateChat(session) {
           },
           onMuteToggle: async (muted) => {
             await toggleMute(muted);
+          },
+          onSpeakTip: (tipText) => {
+            if (voiceModeActive && window.speechSynthesis) {
+              const utterance = new SpeechSynthesisUtterance(tipText);
+              utterance.lang = 'zh-CN';
+              utterance.rate = 1.1;
+              utterance.volume = 0.8;
+              window.speechSynthesis.cancel();
+              window.speechSynthesis.speak(utterance);
+            }
           },
           onParticipantSelect: async (newRoleName) => {
             if (!voiceCallUI) return;
@@ -1223,7 +1250,6 @@ export async function renderSimulateChat(session) {
             }
           }
         });
-
         voiceCallUI.show();
         voiceCallUI.updateStatus('connecting');
 
@@ -1244,7 +1270,7 @@ export async function renderSimulateChat(session) {
         } else {
           voiceCallUI.hide();
           voiceCallUI = null;
-          voiceModeActive = false; // 启动失败也关闭语音模式
+          voiceModeActive = false;
           alert('无法启动语音通话，请检查网络');
           if (window.appendUserMessageToChat) delete window.appendUserMessageToChat;
         }
