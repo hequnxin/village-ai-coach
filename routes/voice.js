@@ -11,6 +11,9 @@ const SECRETKEY = process.env.TRTC_SECRET_KEY || '';
 const TENCENT_SECRET_ID = process.env.TENCENT_SECRET_ID || process.env.TENCENTCLOUD_SECRET_ID;
 const TENCENT_SECRET_KEY = process.env.TENCENT_SECRET_KEY || process.env.TENCENTCLOUD_SECRET_KEY;
 
+// 存储房间当前的机器人任务ID（简单内存缓存，生产环境可改用 Redis）
+const roomTaskMap = new Map(); // key: roomId (string), value: taskId
+
 // 生成 UserSig
 function genUserSig(userId, expire = 86400) {
   const api = new TLSSigAPIv2.Api(SDKAppID, SECRETKEY);
@@ -60,6 +63,37 @@ router.post('/transcript', async (req, res) => {
   }
 });
 
+// 内部函数：停止指定房间的机器人（如果存在）
+async function stopRobotInRoom(roomId) {
+  const taskId = roomTaskMap.get(String(roomId));
+  if (!taskId) return false;
+
+  console.log(`停止房间 ${roomId} 的机器人任务 ${taskId}...`);
+  try {
+    const tencentcloud = require('tencentcloud-sdk-nodejs-trtc');
+    const TrtcClient = tencentcloud.trtc.v20190722.Client;
+    const client = new TrtcClient({
+      credential: {
+        secretId: TENCENT_SECRET_ID,
+        secretKey: TENCENT_SECRET_KEY,
+      },
+      region: 'ap-guangzhou',
+      profile: {
+        httpProfile: { endpoint: 'trtc.tencentcloudapi.com' },
+      },
+    });
+    await client.StopAIConversation({ TaskId: taskId });
+    console.log(`✅ 已停止房间 ${roomId} 的机器人任务`);
+    roomTaskMap.delete(String(roomId));
+    return true;
+  } catch (err) {
+    console.warn(`停止房间 ${roomId} 机器人失败:`, err.message);
+    // 即使停止失败，也删除映射，避免卡死
+    roomTaskMap.delete(String(roomId));
+    return false;
+  }
+}
+
 // ========== 启动 AI 机器人（返回 taskId） ==========
 router.post('/start-robot', async (req, res) => {
   try {
@@ -68,9 +102,15 @@ router.post('/start-robot', async (req, res) => {
       return res.status(400).json({ error: '缺少 roomId 或 userId' });
     }
 
+    // 1. 先停止该房间现有的机器人（如果有）
+    await stopRobotInRoom(roomId);
+
+    // 2. 等待一下，确保腾讯云后端彻底清理（重要！）
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // 3. 创建新的机器人
     const tencentcloud = require('tencentcloud-sdk-nodejs-trtc');
     const TrtcClient = tencentcloud.trtc.v20190722.Client;
-
     const client = new TrtcClient({
       credential: {
         secretId: TENCENT_SECRET_ID,
@@ -122,6 +162,17 @@ router.post('/start-robot', async (req, res) => {
     console.log('启动机器人参数:', params);
     const response = await client.StartAIConversation(params);
     console.log('机器人启动成功:', response);
+
+    // 4. 记录新任务 ID
+    roomTaskMap.set(String(roomId), response.TaskId);
+
+    // 可选：设置超时自动清理（30分钟后如果机器人还在，自动释放）
+    setTimeout(() => {
+      if (roomTaskMap.get(String(roomId)) === response.TaskId) {
+        roomTaskMap.delete(String(roomId));
+      }
+    }, 30 * 60 * 1000);
+
     res.json({ success: true, data: response, taskId: response.TaskId });
   } catch (err) {
     console.error('启动 AI 机器人失败:', err);
@@ -129,17 +180,24 @@ router.post('/start-robot', async (req, res) => {
   }
 });
 
-// ========== 停止 AI 机器人 ==========
+// ========== 停止 AI 机器人（外部调用，可选） ==========
 router.post('/stop-robot', async (req, res) => {
   try {
-    const { taskId } = req.body;
-    if (!taskId) {
-      return res.status(400).json({ error: '缺少 taskId' });
+    const { taskId, roomId } = req.body;
+    if (!taskId && !roomId) {
+      return res.status(400).json({ error: '缺少 taskId 或 roomId' });
+    }
+
+    let actualTaskId = taskId;
+    if (!actualTaskId && roomId) {
+      actualTaskId = roomTaskMap.get(String(roomId));
+    }
+    if (!actualTaskId) {
+      return res.json({ success: true, message: '没有需要停止的机器人' });
     }
 
     const tencentcloud = require('tencentcloud-sdk-nodejs-trtc');
     const TrtcClient = tencentcloud.trtc.v20190722.Client;
-
     const client = new TrtcClient({
       credential: {
         secretId: TENCENT_SECRET_ID,
@@ -153,9 +211,9 @@ router.post('/stop-robot', async (req, res) => {
       },
     });
 
-    const params = { TaskId: taskId };
-    const response = await client.StopAIConversation(params);
+    const response = await client.StopAIConversation({ TaskId: actualTaskId });
     console.log('机器人已停止:', response);
+    if (roomId) roomTaskMap.delete(String(roomId));
     res.json({ success: true });
   } catch (err) {
     console.error('停止机器人失败:', err);
