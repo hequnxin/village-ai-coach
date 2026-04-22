@@ -16,6 +16,7 @@
     "jsonwebtoken": "^9.0.0",
     "openai": "^4.20.0",
     "pg": "^8.11.0",
+    "tencentcloud-sdk-nodejs-asr": "^4.1.205",
     "tencentcloud-sdk-nodejs-trtc": "^4.1.216",
     "tls-sig-api-v2": "^1.0.2",
     "uuid": "^9.0.0"

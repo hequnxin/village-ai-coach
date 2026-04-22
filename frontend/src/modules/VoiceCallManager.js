@@ -7,7 +7,7 @@ class BaseVoiceCallUI {
   constructor(options) {
     this.onHangup = options.onHangup || (() => {});
     this.onMuteToggle = options.onMuteToggle || (() => {});
-    this.onSpeakTip = options.onSpeakTip || (() => {}); // 新增：朗读提示的回调
+    this.onSpeakTip = options.onSpeakTip || (() => {});
     this.container = options.container || document.body;
     this.panel = null;
     this.timerInterval = null;
@@ -42,23 +42,66 @@ class BaseVoiceCallUI {
     if (minimizeBtn) minimizeBtn.onclick = () => this._minimize();
   }
 
+  // 核心 PTT 逻辑：按住时启动语音识别，松开停止并提交识别结果
   _bindPttEvents(pttBtn) {
     if (!pttBtn) return;
-    const startTalk = () => {
+    let currentRecognition = null;
+    let recognitionPromise = null;
+
+    const startTalk = async () => {
+      // 取消静音
       this.onMuteToggle(false);
       pttBtn.style.background = '#f44336';
       pttBtn.textContent = '🎙️ 说话中...';
+
+      // 启动语音识别（腾讯云 ASR）
+      if (window.__voiceRecognition && !window.__voiceRecognition.isActive()) {
+        try {
+          recognitionPromise = window.__voiceRecognition.start();
+          currentRecognition = await recognitionPromise; // 注意：新版返回的是文本，不是 recognition 实例
+          // 新版 voice.js 中 startAsrRecognition 返回 Promise<string>，没有 onresult 事件
+          // 因此需要调整：等待 Promise resolve 得到最终文本
+          // 但这里我们改为监听 Promise 完成
+          if (currentRecognition && typeof currentRecognition === 'string') {
+            // 如果直接返回了文本，说明已经完成
+            if (currentRecognition.trim()) {
+              if (window.appendUserMessageToChat) {
+                window.appendUserMessageToChat(currentRecognition);
+              } else {
+                const input = document.getElementById('simulateInput') || document.getElementById('meetingInput');
+                if (input) {
+                  input.value = currentRecognition;
+                  const sendBtn = document.getElementById('simulateSendBtn') || document.getElementById('sendMeetingBtn');
+                  if (sendBtn) sendBtn.click();
+                }
+              }
+            }
+          } else {
+            // 兼容旧版（如果返回的是 recognition 实例，需要等待 onend）
+            // 新版不会走到这里
+          }
+        } catch (err) {
+          console.error('启动语音识别失败', err);
+        }
+      }
     };
+
     const stopTalk = () => {
+      // 恢复静音
       this.onMuteToggle(true);
       pttBtn.style.background = '#2196f3';
       pttBtn.textContent = '🎤 按住说话';
+      // 停止语音识别（如果有正在进行的识别，会立即结束并可能触发 onend）
+      if (window.__voiceRecognition) {
+        window.__voiceRecognition.stop();
+      }
+      recognitionPromise = null;
+      currentRecognition = null;
     };
+
     pttBtn.onmousedown = startTalk;
     pttBtn.onmouseup = stopTalk;
-    pttBtn.onmouseleave = () => {
-      if (pttBtn.style.background === '#f44336') stopTalk();
-    };
+    pttBtn.onmouseleave = stopTalk;
     pttBtn.ontouchstart = (e) => { e.preventDefault(); startTalk(); };
     pttBtn.ontouchend = stopTalk;
     pttBtn.ontouchcancel = stopTalk;
@@ -85,7 +128,7 @@ class BaseVoiceCallUI {
   }
 }
 
-// 单人模式 UI - 深色主题 + PTT + 提示音
+// 单人模式 UI
 class SingleVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -143,11 +186,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking':
-        text = '🎙️ 轮到你了，请按住按钮说话';
-        // 新增：朗读提示
-        this.onSpeakTip('轮到你了，请按住按钮说话');
-        break;
+      case 'speaking': text = '🎙️ 轮到你了，请按住按钮说话'; this.onSpeakTip('轮到你了，请按住按钮说话'); break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
@@ -344,7 +383,7 @@ class SingleVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 多人模式 UI - 深色主题 + PTT + 提示音
+// 多人模式 UI
 class MultiVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -414,10 +453,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking':
-        text = '🎙️ 轮到你了，请按住按钮说话';
-        this.onSpeakTip('轮到你了，请按住按钮说话');
-        break;
+      case 'speaking': text = '🎙️ 轮到你了，请按住按钮说话'; this.onSpeakTip('轮到你了，请按住按钮说话'); break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';
@@ -637,7 +673,7 @@ class MultiVoiceCallUI extends BaseVoiceCallUI {
   }
 }
 
-// 会议模式 UI - 浅色主题 + 黑色文字 + PTT + 提示音
+// 会议模式 UI
 class MeetingVoiceCallUI extends BaseVoiceCallUI {
   constructor(options) {
     super(options);
@@ -759,10 +795,7 @@ class MeetingVoiceCallUI extends BaseVoiceCallUI {
     let text = '';
     switch (status) {
       case 'connecting': text = '🔌 连接中...'; break;
-      case 'speaking':
-        text = '🎙️ 轮到你了，请按住按钮说话';
-        this.onSpeakTip('轮到你了，请按住按钮说话');
-        break;
+      case 'speaking': text = '🎙️ 轮到你了，请按住按钮说话'; this.onSpeakTip('轮到你了，请按住按钮说话'); break;
       case 'ai_thinking': text = '🤔 AI 正在思考...'; break;
       case 'ai_speaking': text = '🔊 对方正在说话...'; break;
       default: text = '📞 通话中';

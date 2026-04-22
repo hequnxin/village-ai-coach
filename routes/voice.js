@@ -2,6 +2,7 @@
 
 const express = require('express');
 const TLSSigAPIv2 = require('tls-sig-api-v2');
+const crypto = require('crypto');
 const { getSession, addMessage } = require('../services/sessionService');
 
 const router = express.Router();
@@ -152,7 +153,7 @@ router.post('/start-robot', async (req, res) => {
       TTSType: 'flow',
       VoiceId: selectedVoiceId,
       Model: 'flow_01_turbo',
-      Speed: 1.1,  // 语速调快一点
+      Speed: 1.1,
       Volume: 1.0,
       Language: 'zh'
     };
@@ -230,6 +231,60 @@ router.post('/stop-robot', async (req, res) => {
   } catch (err) {
     console.error('停止机器人失败:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== 【新增】一句话识别（HTTP API） ==========
+const tencentcloudAsr = require('tencentcloud-sdk-nodejs-asr');
+const AsrClient = tencentcloudAsr.asr.v20190614.Client;
+
+// ========== 一句话识别（HTTP API） ==========
+router.post('/recognize', async (req, res) => {
+  try {
+    const { audioBase64 } = req.body;
+    if (!audioBase64) {
+      return res.status(400).json({ error: '缺少音频数据' });
+    }
+    const secretId = process.env.TENCENT_SECRET_ID;
+    const secretKey = process.env.TENCENT_SECRET_KEY;
+    if (!secretId || !secretKey) {
+      return res.status(500).json({ error: '未配置腾讯云密钥（TENCENT_SECRET_ID / TENCENT_SECRET_KEY）' });
+    }
+
+    // 动态导入 SDK，确保路径正确
+    const tencentcloud = await import('tencentcloud-sdk-nodejs-asr');
+    const AsrClient = tencentcloud.asr.v20190614.Client;
+
+    const client = new AsrClient({
+      credential: { secretId, secretKey },
+      region: 'ap-guangzhou',
+      profile: {
+        httpProfile: { endpoint: 'asr.tencentcloudapi.com' },
+      },
+    });
+
+    // 关键：音频数据解码为 Buffer
+    const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+    const params = {
+      EngSerViceType: '16k_zh',       // 引擎类型，请根据您的音频采样率选择（16k_zh 或 8k_zh）
+      SourceType: 1,                  // 语音数据来源，1：音频数据（post body）
+      VoiceFormat: 'webm',            // 因为前端 MediaRecorder 录制的是 webm 格式，这里改为 webm
+      Data: audioBase64,              // base64 编码的音频数据
+      DataLen: audioBuffer.length,    // 原始数据长度（字节）
+    };
+
+    const response = await client.SentenceRecognition(params);
+    const recognizedText = response.Result || '';
+    console.log(`✅ 一句话识别结果: ${recognizedText}`);
+    res.json({ text: recognizedText });
+  } catch (err) {
+    console.error('一句话识别失败:', err);
+    // 打印更详细的错误信息
+    if (err.code) {
+      console.error(`错误码: ${err.code}, 错误信息: ${err.message}`);
+    }
+    res.status(500).json({ error: err.message || '识别失败，请稍后重试' });
   }
 });
 
