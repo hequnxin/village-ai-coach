@@ -1,5 +1,3 @@
-// services/embeddingService.js
-// 加载环境变量
 require('dotenv').config();
 const https = require('https');
 

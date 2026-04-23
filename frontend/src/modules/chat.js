@@ -1,5 +1,3 @@
-// frontend/src/modules/chat.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession, createNewSession, loadSessions, loadMessageFavorites } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, setupVoiceInput, setActiveNavByView, flyPaperAirplane } from '../utils/helpers';
@@ -51,7 +49,7 @@ function addStopButton() {
     ti.parentNode.insertBefore(btn, ti.nextSibling);
 }
 
-// 格式化 AI 回复：移除 Markdown 加粗符号，并将纯文本标题行加粗
+// 格式化 AI 回复
 function formatAssistantContent(content) {
     if (!content) return '';
     let cleaned = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -482,7 +480,6 @@ export async function renderChatView(existingSession = null) {
 
     // 移动端适配
     if (isMobile) {
-        // 隐藏原来的绿色悬浮按钮
         const oldMenuToggle = document.getElementById('menuToggle');
         if (oldMenuToggle) oldMenuToggle.style.display = 'none';
         // 添加顶部栏汉堡菜单

@@ -1,9 +1,7 @@
-// services/pointsService.js
-
 const db = require('./db');
 const { v4: uuidv4 } = require('uuid');
 
-// ==================== 积分常量 ====================
+// 积分常量
 const POINTS = {
   DAILY_QUIZ_PER_QUESTION: 5,
   DAILY_QUIZ_BONUS_FULL: 10,
@@ -19,7 +17,7 @@ const POINTS = {
   DAILY_TASK_BONUS_ALL: 30
 };
 
-// ==================== 积分辅助函数 ====================
+//  积分辅助函数
 async function addPoints(userId, points, reason) {
   if (!userId || points <= 0) return;
   await db.run(
@@ -29,7 +27,7 @@ async function addPoints(userId, points, reason) {
   );
 }
 
-// ==================== 每日任务配置 ====================
+// 每日任务配置
 const DEFAULT_TASKS = [
   { id: 1, name: '发起3次对话', target: 3, current: 0, reward: 10, type: 'chat', completed: false },
   { id: 2, name: '完成1次趣味闯关', target: 1, current: 0, reward: 15, type: 'fun', completed: false },

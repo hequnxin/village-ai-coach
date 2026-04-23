@@ -1,5 +1,3 @@
-// frontend/src/modules/simulate.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration, showPointsFloat } from '../utils/helpers';
@@ -28,7 +26,7 @@ const scenarioGuideState = {
   'scenario_005': { stage: 0, lastSatisfaction: 50, triggeredFlags: new Set() }
 };
 
-// ==================== 场景配置（增加 initialSatisfaction 字段） ====================
+// 场景配置（增加 initialSatisfaction 字段）
 const scenarioMultiConfig = {
   'scenario_001': {
     title: '调解邻里土地纠纷',

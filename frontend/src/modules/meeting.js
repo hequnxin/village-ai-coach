@@ -1,5 +1,3 @@
-// frontend/src/modules/meeting.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState, switchSession } from './state';
 import { escapeHtml, playSound, updateTaskProgress, setupVoiceInput, setActiveNavByView, showCelebration } from '../utils/helpers';
@@ -17,7 +15,7 @@ let roundRobinInProgress = false;
 let meetingTyping = false;
 let voiceModeActive = false; // 语音通话模式是否激活（仅用于UI状态）
 
-// ==================== 预设模板（每个模板都有独立的村民和村干部） ====================
+// 预设模板（每个模板都有独立的村民和村干部）
 const presetTemplates = {
   '人居环境整治': {
     description: '村内部分区域存在垃圾乱倒、柴草乱堆、污水横流现象，村民投诉较多。需要制定整治方案并动员大家参与。',
@@ -126,7 +124,7 @@ const meetingTips = [
   '💡 引导大家聚焦议题，避免跑题。'
 ];
 
-// ==================== 辅助函数 ====================
+// 辅助函数
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function getEmotionIcon(emotion) {
@@ -344,7 +342,7 @@ function getDynamicTip() {
   }
   return meetingTips[Math.floor(Math.random() * meetingTips.length)];
 }
-// ==================== 核心会议函数 ====================
+// 核心会议函数
 
 async function startRoundRobin(sessionId, villagers, systemOpening, meetingType, loadingMsgElement = null) {
   roundRobinInProgress = true;
@@ -649,7 +647,7 @@ function showMeetingResolution(resolution) {
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
 }
 
-// ==================== 会议聊天界面渲染 ====================
+// 会议聊天界面渲染
 export async function renderMeetingChat(session) {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
   let extra = {};
@@ -997,7 +995,7 @@ function renderMeetingChatArea() {
   setActiveNavByView('meeting');
 }
 
-// ==================== 会议设置界面渲染 ====================
+// 会议设置界面渲染
 export async function renderMeetingSetupView() {
   if (meetingPollInterval) clearInterval(meetingPollInterval);
   const dynamicContent = document.getElementById('dynamicContent');

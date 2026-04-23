@@ -1,4 +1,3 @@
-// routes/knowledge.js
 const express = require('express');
 const db = require('../services/db');
 const { initVectorIndex } = require('../services/vectorSearch');

@@ -1,4 +1,3 @@
-// scripts/importKnowledge.js
 require('dotenv').config();
 const db = require('../services/db');
 const knowledgeData = require('../knowledge.json');

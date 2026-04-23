@@ -1,5 +1,3 @@
-// frontend/src/modules/ui.js
-
 import { appState, toggleSessionFavorite, deleteSession, switchSession, deleteSessions, switchToMessage } from './state';
 import { escapeHtml } from '../utils/helpers';
 
@@ -127,7 +125,6 @@ export function renderSessionList() {
       });
     }
 
-    // 绑定分组头部点击事件（整行可点击）
     headerDiv.onclick = (e) => {
       // 如果点击的是按钮本身，也正常触发折叠（不阻止冒泡）
       const groupKey = key;
@@ -142,13 +139,11 @@ export function renderSessionList() {
         // 折叠：先获取当前高度，再设为0
         const currentHeight = content.scrollHeight;
         content.style.maxHeight = currentHeight + 'px';
-        content.offsetHeight; // 强制重绘
+        content.offsetHeight;
         content.style.maxHeight = '0';
       } else {
-        // 展开：设为 auto 获取实际高度，再设为该高度
         content.style.maxHeight = content.scrollHeight + 'px';
       }
-      // 更新按钮图标
       const toggleBtn = headerDiv.querySelector('.group-toggle');
       if (toggleBtn) toggleBtn.innerHTML = newCollapsed ? '▶' : '▼';
     };

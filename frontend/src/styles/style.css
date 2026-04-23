@@ -1,4 +1,4 @@
-/* ========== 全局重置 ========== */
+/* 全局重置 */
 * {
   margin: 0;
   padding: 0;
@@ -33,7 +33,6 @@ body {
   padding: 0;
 }
 
-/* 3D 容器（保留，不影响动画） */
 #threeContainer {
   position: fixed;
   top: 0;
@@ -44,7 +43,7 @@ body {
   z-index: 0;
 }
 
-/* ========== 侧边栏 ========== */
+/* 侧边栏 */
 .sidebar {
   width: 280px;
   background: #2e5d34;
@@ -356,6 +355,7 @@ body {
   opacity: 0.7;
 }
 
+
 /* 分组头部可折叠样式 */
 .session-group-header {
   display: flex;
@@ -377,13 +377,12 @@ body {
   color: white;
 }
 
-/* 会话分组内容区 - 动画版本（通过 max-height 实现平滑展开/折叠） */
+/* 会话分组内容区 */
 .session-group-content {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-/* 展开时由 JS 动态设置 max-height 为一个足够大的值（如 2000px）或实际内容高度 */
 
 /* 多选删除栏 */
 .multi-delete-bar {
@@ -418,7 +417,7 @@ body {
   font-size: 0.8rem;
 }
 
-/* ========== 主内容区 ========== */
+/* 主内容区 */
 .main-content {
   flex: 1;
   display: flex;
@@ -444,7 +443,7 @@ body {
   100% { opacity: 1; filter: blur(0); }
 }
 
-/* ========== 顶部导航 ========== */
+/*  顶部导航 */
 .top-nav {
   display: flex;
   background: white;
@@ -479,7 +478,7 @@ body {
   font-weight: bold;
 }
 
-/* ================== 底部导航 ================== */
+/*  底部导航 */
 .bottom-nav {
   display: none;
   position: fixed;
@@ -515,7 +514,7 @@ body {
 }
 .bottom-nav-item:hover { transform: translateY(-1px); }
 
-/* ========== 问答界面 ========== */
+/* 问答界面 */
 .chat-view {
   display: flex;
   flex-direction: row;
@@ -673,7 +672,7 @@ body {
   box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
 
-/* ========== 知识库界面 ========== */
+/* 知识库界面  */
 .knowledge-view {
   height: 100%;
   overflow-y: auto;
@@ -736,7 +735,7 @@ body {
   margin-left: 8px;
 }
 
-/* ========== 模拟对练界面 ========== */
+/* 模拟对练界面 */
 .scenario-card {
   background: white;
   border-radius: 12px;
@@ -751,7 +750,7 @@ body {
   box-shadow: 0 8px 20px rgba(0,0,0,0.1);
 }
 
-/* ========== 会议模式界面 ========== */
+/* 会议模式界面  */
 .meeting-layout {
   display: flex;
   height: 100%;
@@ -841,7 +840,7 @@ body {
 .villager-stance.support { color: #4caf50; }
 .villager-stance.oppose { color: #f44336; }
 
-/* ========== 挑战中心（游戏大厅） ========== */
+/* 挑战中心（游戏大厅） */
 .game-lobby {
   padding: 10px;
   background: #f5f5f5;
@@ -916,7 +915,7 @@ body {
   transform: translateY(-2px) scale(1.02);
   box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
-/* ========== 趣味闯关主题选择 ========== */
+/* 趣味闯关主题选择  */
 .fullscreen-fun-selector {
   padding: 15px;
   background: #f5f5f5;
@@ -981,7 +980,7 @@ body {
   margin: 10px 0;
 }
 
-/* ========== 全屏答题界面（通用） ========== */
+/*  全屏答题界面（通用） */
 .fullscreen-quiz {
   display: flex;
   flex-direction: column;
@@ -1133,7 +1132,7 @@ body {
 }
 .submit-btn.success { background: #4caf50; }
 
-/* ========== 连连看游戏（增强动画） ========== */
+/* 连连看游戏（增强动画） */
 .fullscreen-match {
   padding: 15px;
   background: #f5f5f5;
@@ -1523,7 +1522,7 @@ body {
   .simulate-input-area button { padding: 0 12px; }
 }
 
-/* ========== 我的界面优化版 ========== */
+/* 我的界面 */
 .profile-new {
   max-width: 800px;
   margin: 0 auto;
@@ -1892,7 +1891,7 @@ body {
   margin-right: 4px;
 }
 
-/* ========== 特效专用样式 ========== */
+/*  特效专用样式  */
 .ripple {
   position: absolute;
   border-radius: 50%;
@@ -1956,7 +1955,7 @@ body {
   transform: translateY(1px);
 }
 
-/* ========== 卡片悬停微动效 ========== */
+/*  卡片悬停微动效  */
 .game-module,
 .scenario-card,
 .knowledge-item,
@@ -1970,9 +1969,8 @@ body {
   transform: translateY(-4px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
-/* ========== 移动端顶部栏和菜单优化 ========== */
+/*  移动端顶部栏和菜单优化  */
 @media (max-width: 768px) {
-  /* 隐藏原来的绿色悬浮按钮 */
   #menuToggle {
     display: none !important;
   }
@@ -2058,7 +2056,7 @@ body {
     font-size: 16px;
   }
 }
-/* ========== 移动端进一步优化 ========== */
+/* 移动端进一步优化  */
 @media (max-width: 768px) {
   /* 侧边栏底部留出空间，避免被底部导航遮挡 */
   .sidebar {
@@ -2156,7 +2154,7 @@ body {
   border-left: 3px solid #ff9800;
   padding-left: 12px;
 }
-/* ========== 移动端模拟对练优化 ========== */
+
 @media (max-width: 768px) {
   .simulate-villager-sidebar {
     display: none !important;
@@ -2286,9 +2284,8 @@ body {
     color: #888;
   }
 }
-/* ========== 移动端模拟对练优化（紧凑版） ========== */
+/* 移动端模拟对练优化 */
 @media (max-width: 768px) {
-  /* 隐藏原有的侧边栏 */
   .simulate-villager-sidebar {
     display: none !important;
   }
@@ -2302,7 +2299,7 @@ body {
     font-size: 11px !important;
   }
   #simulateStatus {
-    display: none !important; /* 隐藏独立满意度 */
+    display: none !important;
   }
 
   /* 村民标签栏 */
@@ -2382,7 +2379,7 @@ body {
     padding: 0 !important;
   }
 }
-/* ========== 会议模式移动端优化 ========== */
+/* 会议模式移动端优化 */
 @media (max-width: 768px) {
   .meeting-layout-mobile .meeting-messages {
     padding: 8px;
@@ -2471,7 +2468,7 @@ body {
 @media (min-width: 769px) {
   .meeting-layout .meeting-chat-area {
     flex: 1;
-    min-width: 0;  /* 防止flex溢出 */
+    min-width: 0;
   }
   .meeting-layout .meeting-input-area {
     width: 100%;
@@ -2485,12 +2482,12 @@ body {
   }
   .meeting-layout .meeting-input-area textarea {
     flex: 1;
-    min-width: 0;   /* 允许收缩 */
+    min-width: 0;
   }
 }
 .message-content {
-  white-space: pre-wrap;    /* 保留换行和空格，自动换行 */
-  word-break: break-word;   /* 长单词换行 */
+  white-space: pre-wrap;
+  word-break: break-word;
   font-family: inherit;
   line-height: 1.5;
 }

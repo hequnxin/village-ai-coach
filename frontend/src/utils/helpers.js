@@ -1,5 +1,3 @@
-// frontend/src/utils/helpers.js
-
 import { getDailyTasks, updateDailyTaskProgress, claimDailyReward } from './api';
 
 export function escapeHtml(str) {
@@ -139,17 +137,14 @@ function renderTaskPanel() {
     <span class="task-panel-title">📋 今日任务 (${completedCount}/${totalTasks})</span>
     <button class="task-panel-toggle">${isCollapsed ? '▼' : '▲'}</button>
   `;
-  // 让整个 header 可点击折叠/展开
   header.style.cursor = 'pointer';
   header.onclick = (e) => {
-    // 如果点击的是按钮本身，不重复处理（按钮点击会冒泡，但阻止一下以免重复）
     if (e.target.classList && e.target.classList.contains('task-panel-toggle')) {
-      // 按钮点击也触发，但需要避免二次触发
       e.stopPropagation();
     }
     const newCollapsed = !isCollapsed;
     localStorage.setItem('taskPanelCollapsed', newCollapsed);
-    renderTaskPanel(); // 重新渲染
+    renderTaskPanel();
   };
   panel.insertBefore(header, taskListDiv);
 
@@ -163,10 +158,9 @@ function renderTaskPanel() {
     if (claimBtn) claimBtn.style.display = 'block';
   }
 
-  // 更新按钮图标（注意：由于重新渲染，需要重新绑定按钮文字，但这里按钮文字已经在 header.innerHTML 中设置）
+  // 更新按钮图标
   const toggleBtn = header.querySelector('.task-panel-toggle');
   toggleBtn.innerHTML = isCollapsed ? '▼' : '▲';
-  // 防止按钮点击时触发 header 的点击两次（stopPropagation 已做，但为了保险，单独处理按钮）
   toggleBtn.onclick = (e) => {
     e.stopPropagation();
     const newCollapsed = !isCollapsed;
@@ -273,7 +267,7 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.remove(), 3000);
 }
 
-// ========== 特效函数 ==========
+// 特效函数
 export function showPointsFloat(points, x, y) {
   const div = document.createElement('div');
   div.className = 'points-float';

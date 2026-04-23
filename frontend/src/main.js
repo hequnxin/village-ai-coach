@@ -1,5 +1,3 @@
-// frontend/src/main.js
-
 import './styles/style.css';
 import { initAuth, bindAuthEvents } from './modules/auth';
 import { appState, loadSessions, loadMessageFavorites, loadLevelProgress, createNewSession, switchSession } from './modules/state';
@@ -63,7 +61,7 @@ function initBottomNav() {
   }
 }
 
-// 手机端菜单按钮：固定位置，点击弹出侧边栏，点击外部关闭
+// 手机端菜单按钮
 function initDraggableMenu() {
   if (window.innerWidth > 768) return;
 
@@ -87,13 +85,11 @@ function initDraggableMenu() {
     if (sidebar) sidebar.classList.toggle('open');
   });
 
-  // 点击侧边栏外部区域关闭侧边栏
   document.addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');
     const menuBtn = document.getElementById('menuToggle');
     if (!sidebar || !sidebar.classList.contains('open')) return;
 
-    // 如果点击的目标不是侧边栏内部元素，也不是菜单按钮，则关闭侧边栏
     if (!sidebar.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
       sidebar.classList.remove('open');
     }
@@ -115,9 +111,8 @@ export async function initApp() {
   setupGlobalEventListeners();
   setupSessionTabs();
   initBottomNav();
-  bindRippleEffect(); // 全局按钮涟漪效果
+  bindRippleEffect();
 
-  // 监听动态内容变化，重新绑定涟漪（确保新渲染的按钮也有特效）
   const observer = new MutationObserver(() => {
     bindRippleEffect();
   });

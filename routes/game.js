@@ -1,5 +1,3 @@
-// routes/game.js
-
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../services/db');
@@ -9,7 +7,7 @@ const pointsService = require('../services/pointsService');
 
 const router = express.Router();
 
-// ==================== 辅助函数 ====================
+// 辅助函数
 async function getUserTotalPoints(userId) {
   const sessionCount = (await db.get(`SELECT COUNT(*) as c FROM sessions WHERE user_id = $1`, [userId])).c;
   const favoriteCount = (await db.get(`SELECT COUNT(*) as c FROM favorites WHERE user_id = $1`, [userId])).c;
@@ -21,7 +19,7 @@ async function getUserTotalPoints(userId) {
   return basePoints + rewardPoints;
 }
 
-// ==================== 趣味闯关 ====================
+//  趣味闯关
 router.get('/policy-themes', async (req, res) => {
   const userId = req.user.userId;
   const themes = await db.all(`SELECT * FROM game_themes WHERE is_active = 1 ORDER BY sort_order`);
@@ -80,7 +78,7 @@ router.post('/policy-submit', async (req, res) => {
   res.json({ passed, reward });
 });
 
-// ==================== 翻牌配对 ====================
+// 翻牌配对
 router.get('/memory-pairs', async (req, res) => {
   const { difficulty = 'medium' } = req.query;
   let pairCount = 8;
@@ -158,7 +156,7 @@ router.get('/memory-rank', async (req, res) => {
   res.json(ranks);
 });
 
-// ==================== 每日一练 ====================
+// 每日一练
 router.get('/daily', async (req, res) => {
   const userId = req.user.userId;
   const today = new Date().toISOString().slice(0, 10);
@@ -248,7 +246,7 @@ router.get('/daily/status', async (req, res) => {
   }
 });
 
-// ==================== 每周竞赛 ====================
+//  每周竞赛
 let cachedWeeklyContest = null;
 let cachedWeekStart = null;
 
@@ -403,7 +401,7 @@ router.get('/weekly/rank/:contestId', async (req, res) => {
   res.json(ranks);
 });
 
-// ==================== 错题本 ====================
+// 错题本
 router.get('/wrong-questions', async (req, res) => {
   const userId = req.user.userId;
   const wrongs = await db.all(`
@@ -470,7 +468,7 @@ router.post('/wrong-questions/record', async (req, res) => {
   res.json({ recorded: true, correct: isCorrect, correctAnswer });
 });
 
-// ==================== 积分添加接口（供前端调用） ====================
+// 积分添加接口
 router.post('/add-points', async (req, res) => {
   const { points, reason } = req.body;
   const userId = req.user.userId;

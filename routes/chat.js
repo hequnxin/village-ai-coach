@@ -1,4 +1,3 @@
-// routes/chat.js
 const express = require('express');
 const { chat, chatStream } = require('../services/openai');
 const { searchKnowledge } = require('../services/vectorSearch');
@@ -110,6 +109,16 @@ router.post('/', async (req, res) => {
       console.warn('联网搜索失败，已进入离线模式');
     }
   }
+  console.log('触发联网搜索条件检查', { shouldSearch, hasKey: !!process.env.BAIDU_API_KEY, offlineMode: process.env.OFFLINE_MODE });
+if (shouldSearch && process.env.BAIDU_API_KEY && process.env.OFFLINE_MODE !== 'true') {
+  console.log('开始调用 webSearch...');
+  try {
+    webResults = await webSearch(message, 2);
+    console.log('webSearch 结果数量:', webResults.length);
+  } catch(e) { console.warn('联网搜索失败', e); }
+} else {
+  console.log('跳过联网搜索');
+}
 
   const history = updatedSession.messages.slice(-10).map(m => ({
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -165,7 +174,6 @@ router.post('/', async (req, res) => {
     if (fullReply.length > 50 && !errorOccurred) {
       answerCache.set(cacheKey, { answer: fullReply, timestamp: Date.now() });
     }
-    // 添加对话积分
     await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${message.substring(0,30)}`);
     sendEnd(assistantMsgId, finalSession.title);
   } catch (err) {
@@ -175,7 +183,6 @@ router.post('/', async (req, res) => {
     sendChunk(fullReply);
     const assistantMsgId = (await addMessage(sessionId, 'assistant', fullReply, Date.now())).messageId;
     const finalSession = await getSession(userId, sessionId);
-    // 离线模式也添加积分（虽然可能没有 AI 回复，但用户发起了对话）
     await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话(离线): ${message.substring(0,30)}`);
     sendEnd(assistantMsgId, finalSession.title);
   }

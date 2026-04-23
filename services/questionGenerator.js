@@ -1,9 +1,7 @@
-// services/questionGenerator.js
-
 const db = require('./db');
 const { chat } = require('./openai');
 
-// ================== 辅助函数 ==================
+// 辅助函数
 function extractKeyword(text, fallback = '政策') {
   const stopWords = ['的', '了', '是', '在', '和', '与', '或', '等', '以及', '其中', '对于'];
   const words = text.split(/[\s，,。？?！!、；;：:]+/).filter(w =>
@@ -26,7 +24,7 @@ async function getDistractors(keyword, currentCategory, limit = 3) {
   return unique.slice(0, limit);
 }
 
-// ================== 选择题（单选） ==================
+//  选择题（单选）
 async function generateChoiceByRule(knowledge) {
   const keyword = extractKeyword(knowledge.content, knowledge.title);
   const distractors = await getDistractors(keyword, knowledge.category, 3);
@@ -82,7 +80,7 @@ async function generateChoice(knowledge, useAI = true) {
   return await generateChoiceByRule(knowledge);
 }
 
-// ================== 填空题 ==================
+// 填空题
 async function generateFillByRule(knowledge) {
   const keyword = extractKeyword(knowledge.content, knowledge.title);
   let sentence = knowledge.content.replace(new RegExp(keyword, 'g'), '__________');
@@ -136,11 +134,9 @@ async function generateFill(knowledge, useAI = true) {
   return await generateFillByRule(knowledge);
 }
 
-// ================== 判断题（真正的判断句，根据知识内容判断正误） ==================
+// 判断题
 async function generateJudge(knowledge) {
-  // 从知识内容中提取一个陈述句作为判断题
   const sentences = knowledge.content.split(/[。；\\n]/).filter(s => s.trim().length > 10);
-  // 优先选择带有肯定或否定表述的句子
   const keywords = ['可以', '不能', '必须', '禁止', '不得', '应当', '只能', '需要', '属于', '是'];
   let selected = null;
   for (const s of sentences) {
@@ -153,7 +149,6 @@ async function generateJudge(knowledge) {
     selected = sentences[0].trim();
   }
   if (!selected) return null;
-  // 确保句子以句号结尾
   if (!selected.endsWith('。')) selected += '。';
 
   // 使用 AI 判断该陈述句的正确性
@@ -180,13 +175,11 @@ async function generateJudge(knowledge) {
       }
     } catch (err) {
       console.error('AI判断判断题失败，使用规则回退:', err);
-      // 回退：根据否定词简单判断（不准确，但备用）
       const negativeWords = ['不能', '不得', '禁止', '无法', '不可以', '不应', '不是'];
       const hasNegative = negativeWords.some(neg => selected.includes(neg));
       isTrue = !hasNegative;
     }
   } else {
-    // 无 AI 时，简单规则：含有否定词则判为错误，否则正确
     const negativeWords = ['不能', '不得', '禁止', '无法', '不可以', '不应', '不是'];
     const hasNegative = negativeWords.some(neg => selected.includes(neg));
     isTrue = !hasNegative;
@@ -207,7 +200,7 @@ async function generateJudge(knowledge) {
   };
 }
 
-// ================== 排序题 ==================
+// 排序题
 async function generateSort(knowledge) {
   const content = knowledge.content;
   let steps = [];
@@ -254,7 +247,7 @@ async function generateSort(knowledge) {
   };
 }
 
-// ================== 统一生成入口 ==================
+// 统一生成入口
 async function generateAndStoreQuestions(limit = 50, force = false) {
   const existingChoice = (await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE question_type = 'choice'`)).c;
   const existingFill = (await db.get(`SELECT COUNT(*) as c FROM quiz_questions WHERE question_type = 'fill'`)).c;

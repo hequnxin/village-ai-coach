@@ -1,5 +1,3 @@
-// frontend/src/modules/auth.js
-
 import { appState, setAppState } from './state';
 import { initApp } from '../main';
 

@@ -1,5 +1,3 @@
-// routes/meeting.js
-
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { chat } = require('../services/openai');
@@ -8,7 +6,7 @@ const db = require('../services/db');
 
 const router = express.Router();
 
-// ==================== 创建会议会话 ====================
+//  创建会议会话
 router.post('/session', async (req, res) => {
   const { topic, villagers, agenda, timeLimit, meetingType } = req.body;
   const userId = req.user.userId;
@@ -36,7 +34,7 @@ router.post('/session', async (req, res) => {
   res.json({ sessionId: session.id, config });
 });
 
-// ==================== 获取会议状态 ====================
+// 获取会议状态
 router.get('/status/:sessionId', async (req, res) => {
   const userId = req.user.userId;
   const session = await getSession(userId, req.params.sessionId);
@@ -57,7 +55,6 @@ router.get('/status/:sessionId', async (req, res) => {
   });
 });
 
-// ==================== 发送会议消息（核心） ====================
 router.post('/chat', async (req, res) => {
   const { sessionId, message, villagerId, action, option, isSystem, autoSpeak } = req.body;
   const userId = req.user.userId;
@@ -79,13 +76,13 @@ router.post('/chat', async (req, res) => {
   let currentAgendaIndex = config.currentAgendaIndex || 0;
   const meetingType = config.meetingType || 'villager';
 
-  // ===== 系统消息 =====
+  // 系统消息
   if (isSystem) {
     await addMessage(sessionId, 'system', message, Date.now());
     return res.json({ reply: null, system: true });
   }
 
-  // ===== 自动发言（轮流发言或主动发言） =====
+  //  自动发言（轮流发言或主动发言）
   if (autoSpeak) {
     const villager = villagers.find(v => v.id === villagerId);
     if (!villager) return res.status(400).json({ error: '村民不存在' });
@@ -103,7 +100,7 @@ router.post('/chat', async (req, res) => {
     return res.json({ reply });
   }
 
-  // ===== 投票动作 =====
+  //  投票动作
   if (action === 'vote') {
     if (!option) return res.status(400).json({ error: '缺少投票选项' });
     const currentAgenda = agenda[currentAgendaIndex];
@@ -146,7 +143,7 @@ router.post('/chat', async (req, res) => {
     return res.json({ success: true, satisfaction, agendaCompleted: agenda[currentAgendaIndex]?.completed || false, votes: votes[currentAgendaIndex] || {} });
   }
 
-  // ===== 手动推进议程 =====
+  //  手动推进议程
   if (action === 'nextAgenda') {
     if (currentAgendaIndex + 1 < agenda.length) {
       if (!agenda[currentAgendaIndex].completed) {
@@ -162,7 +159,7 @@ router.post('/chat', async (req, res) => {
     return res.json({ success: true, currentAgendaIndex });
   }
 
-  // ===== 普通发言（用户消息） =====
+  // 普通发言（用户消息）
   if (!message) return res.status(400).json({ error: '消息内容不能为空' });
 
   const activeVillager = villagers.find(v => v.id === villagerId) || (villagers.length ? villagers[0] : null);
@@ -253,7 +250,7 @@ router.post('/chat', async (req, res) => {
   }
 });
 
-// ==================== 投票专用接口 ====================
+//  投票专用接口
 router.post('/vote', async (req, res) => {
   const { sessionId, villagerId, option } = req.body;
   const userId = req.user.userId;
@@ -301,7 +298,7 @@ router.post('/vote', async (req, res) => {
   res.json({ success: true, passed: passed && votedCount === total });
 });
 
-// ==================== 结束会议并生成纪要 ====================
+// 结束会议并生成纪要
 router.post('/finish', async (req, res) => {
   const { sessionId } = req.body;
   const userId = req.user.userId;

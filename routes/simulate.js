@@ -1,4 +1,3 @@
-// routes/simulate.js
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { chat } = require('../services/openai');
@@ -7,7 +6,7 @@ const db = require('../services/db');
 
 const router = express.Router();
 
-// 内存存储村民记忆（生产环境应使用数据库）
+// 内存存储村民记忆
 const villagerMemory = new Map();
 
 function extractKeyFacts(text) {
@@ -15,7 +14,7 @@ function extractKeyFacts(text) {
   return promises || [];
 }
 
-// ========== 场景化阶段关键词配置 ==========
+//  场景化阶段关键词配置
 const SCENE_STAGE_KEYWORDS = {
   'scenario_001': {
     '安抚情绪': ['委屈', '理解', '别生气', '消消气', '我懂', '道歉', '对不起', '态度不好', '祖辈', '不容易', '别急', '慢慢说'],
@@ -53,7 +52,7 @@ function shouldForceStageProgress(scenarioId, userMessage, currentStageName) {
   return keywords.some(kw => userMessage.includes(kw));
 }
 
-// ========== 获取场景列表 ==========
+// 获取场景列表
 router.get('/scenarios', async (req, res) => {
   const scenarios = await db.all('SELECT * FROM scenarios ORDER BY created_at');
   scenarios.forEach(s => {
@@ -67,7 +66,7 @@ router.get('/scenarios', async (req, res) => {
   res.json(scenarios);
 });
 
-// ========== 创建模拟会话 ==========
+// 创建模拟会话
 router.post('/session', async (req, res) => {
   const { scenarioId, difficulty = 'medium', timeLimit = null, roleId = null } = req.body;
   const userId = req.user.userId;
@@ -126,7 +125,7 @@ router.post('/session', async (req, res) => {
   res.json({ sessionId: session.id, initialMessage: scenario.initial_message });
 });
 
-// ========== 智能提示 ==========
+// 智能提示
 router.post('/analyze-input', async (req, res) => {
   const { text, scenarioId } = req.body;
   if (!text) return res.json({ tips: [] });
@@ -153,7 +152,7 @@ router.post('/analyze-input', async (req, res) => {
   res.json({ tips });
 });
 
-// ========== 随机事件 ==========
+//  随机事件
 router.post('/event/:sessionId', async (req, res) => {
   const { sessionId } = req.params;
   const { satisfactionDelta, stageRollback } = req.body;
@@ -180,7 +179,7 @@ router.post('/event/:sessionId', async (req, res) => {
   res.json({ success: true });
 });
 
-// ========== 模拟对话 ==========
+// 模拟对话
 router.post('/chat', async (req, res) => {
   const { sessionId, message, villager } = req.body;
   const userId = req.user.userId;
@@ -424,7 +423,7 @@ ${roleName}：`;
   }
 });
 
-// ========== 结束对练并生成报告 ==========
+// 结束对练并生成报告
 router.post('/finish', async (req, res) => {
   const { sessionId } = req.body;
   const userId = req.user.userId;
@@ -503,7 +502,7 @@ router.post('/finish', async (req, res) => {
   }
 });
 
-// ========== 获取模拟会话状态 ==========
+//  获取模拟会话状态
 router.get('/status/:sessionId', async (req, res) => {
   const userId = req.user.userId;
   const session = await getSession(userId, req.params.sessionId);
@@ -523,7 +522,7 @@ router.get('/status/:sessionId', async (req, res) => {
   });
 });
 
-// ========== 获取报告（供结束后查看） ==========
+//  获取报告（供结束后查看）
 router.get('/report/:sessionId', async (req, res) => {
   const userId = req.user.userId;
   const session = await getSession(userId, req.params.sessionId);
@@ -557,7 +556,7 @@ router.get('/report/:sessionId', async (req, res) => {
   }
 });
 
-// ========== 强制推进议程 ==========
+// 强制推进议程
 router.post('/force-stage', async (req, res) => {
   const { sessionId } = req.body;
   const userId = req.user.userId;

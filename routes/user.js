@@ -1,5 +1,3 @@
-// routes/user.js
-
 const express = require('express');
 const { getUserSessions, getUserFavoriteMessages, toggleFavorite } = require('../services/sessionService');
 const db = require('../services/db');
@@ -78,11 +76,10 @@ router.post('/favorite', async (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== 修复后的积分历史接口（支持东八区时区、累计积分） ====================
 router.get('/points-history', async (req, res) => {
   const userId = req.user.userId;
   try {
-    // 生成最近7天的日期（东八区，格式 YYYY-MM-DD）
+    // 生成最近7天的日期
     const today = new Date();
     const dates = [];
     for (let i = 6; i >= 0; i--) {
@@ -104,7 +101,7 @@ router.get('/points-history', async (req, res) => {
       ORDER BY date ASC
     `, [userId]);
 
-    // 构建日期 -> 积分的映射
+    // 构建日期和积分的映射
     const pointsMap = new Map();
     for (const row of dailyPoints) {
       pointsMap.set(row.date, row.daily_total);

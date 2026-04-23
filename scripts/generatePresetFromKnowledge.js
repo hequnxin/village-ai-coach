@@ -1,4 +1,3 @@
-// scripts/generatePresetFromKnowledge.js
 require('dotenv').config();
 const db = require('../services/db');
 const knowledgeData = require('../knowledge.json');
@@ -62,7 +61,6 @@ function extractKeywords(text) {
 
 async function generatePresetFromKnowledge() {
     console.log('开始从知识库生成预设问答...');
-    // 筛选政策、常见问题、案例（可根据需要调整）
     const targetItems = knowledgeData.filter(item =>
         item.status === 'approved' &&
         (item.category === '政策' || item.category === '常见问题' || item.type === '政策法规')

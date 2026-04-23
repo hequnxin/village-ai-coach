@@ -1,4 +1,3 @@
-// routes/session.js
 const express = require('express');
 const sessionService = require('../services/sessionService');
 const db = require('../services/db');

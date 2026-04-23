@@ -1,11 +1,9 @@
-// frontend/src/modules/profile.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState } from './state';
 import { escapeHtml, setActiveNavByView } from '../utils/helpers';
 import Chart from 'chart.js/auto';
 
-// ==================== 辅助函数 ====================
+// 辅助函数
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
@@ -306,7 +304,7 @@ function goToKnowledge() {
   }).catch(err => console.error('加载案例库失败', err));
 }
 
-// ==================== 主渲染函数 ====================
+// 主渲染函数
 export async function renderProfileView() {
   const isMobile = window.innerWidth <= 768;
   const dynamicContent = document.getElementById('dynamicContent');

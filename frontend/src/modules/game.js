@@ -1,5 +1,3 @@
-// frontend/src/modules/game.js
-
 import { fetchWithAuth } from '../utils/api';
 import { appState, loadLevelProgress } from './state';
 import { escapeHtml, playSound, addPoints, updateTaskProgress, setActiveNavByView, showCelebration, showPointsFloat } from '../utils/helpers';
@@ -57,7 +55,7 @@ let memoryGameLockBoard = false;
 let memoryGameTotalPairs = 0;
 let memoryGameScore = 0;
 
-// ==================== 辅助函数 ====================
+// 辅助函数
 function formatAnswerLabel(question, answerIndex) {
   if (!question.options) return answerIndex;
   const text = question.options[answerIndex];
@@ -76,7 +74,7 @@ async function refreshPointsAndGrowth() {
   }
 }
 
-// ==================== 通用全屏答题组件 ====================
+// 通用全屏答题组件
 function renderGenericQuiz(config) {
   const {
     questions,
@@ -312,7 +310,7 @@ function renderGenericQuiz(config) {
     };
   }
 }
-// ==================== 每日一练 ====================
+// 每日一练
 async function startDailyQuiz() {
   const startBtn = document.getElementById('startDailyBtn');
   if (startBtn) {
@@ -379,7 +377,6 @@ async function startDailyQuiz() {
       alert(`练习完成！本次得分 ${finalScore/10}/${total}，获得 ${rewardPoints} 积分`);
       await updateTaskProgress('daily_quiz', 1);
       await loadModuleStats();
-      // 刷新侧边栏积分和成长曲线
       await refreshPointsAndGrowth();
     };
 
@@ -405,7 +402,7 @@ async function startDailyQuiz() {
   }
 }
 
-// ==================== 每周竞赛 ====================
+// 每周竞赛
 async function startWeeklyContest() {
   const startBtn = document.getElementById('startContestBtn');
   if (startBtn) {
@@ -475,7 +472,6 @@ async function startWeeklyContest() {
         alert(`竞赛完成！得分 ${result.score}/${result.total}，用时 ${Math.floor(timeUsed/60)}分${timeUsed%60}秒`);
         await updateTaskProgress('contest', 1);
         await loadModuleStats();
-        // 刷新侧边栏积分和成长曲线
         await refreshPointsAndGrowth();
         const rankModal = document.querySelector('.modal');
         if (rankModal && rankModal.style.display === 'flex') {
@@ -529,7 +525,7 @@ async function startWeeklyContest() {
   }
 }
 
-// ==================== 错题本 ====================
+// 错题本
 async function startWrongClear() {
   const res = await fetchWithAuth('/api/game/wrong-questions');
   const data = await res.json();
@@ -580,7 +576,6 @@ async function startWrongClear() {
         if (clearData.clearedCount > 0) {
           clearedCount++;
           totalScore += 10;
-          // 刷新侧边栏积分和成长曲线
           await refreshPointsAndGrowth();
           remainingCount--;
           questions.splice(index, 1);
@@ -662,7 +657,7 @@ async function startWrongClear() {
   }, 100);
 }
 
-// ==================== 翻牌配对 ====================
+// 翻牌配对
 async function startMemoryGame() {
   const difficulty = await new Promise((resolve) => {
     const modal = document.createElement('div');
@@ -881,7 +876,7 @@ async function showMemoryRanking() {
   modal.querySelector('.modal-close').onclick = () => modal.remove();
   modal.onclick = (e) => { if(e.target === modal) modal.remove(); };
 }
-// ==================== 每周竞赛排行榜 ====================
+// 每周竞赛排行榜
 async function showContestRanking() {
   try {
     const now = new Date();
@@ -932,7 +927,7 @@ async function showContestRanking() {
   }
 }
 
-// ==================== 主渲染 ====================
+ // 渲染
 export async function renderGameView() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -1015,7 +1010,7 @@ async function loadModuleStats() {
   } catch(e) { console.error('每周竞赛状态加载失败', e); }
 }
 
-// ==================== 趣味闯关主题选择 ====================
+// 趣味闯关主题选择
 async function showFunLevelsModal() {
   const dynamicContent = document.getElementById('dynamicContent');
   dynamicContent.innerHTML = `
@@ -1095,7 +1090,7 @@ async function showFunLevelsModal() {
   });
 }
 
-// ==================== 趣味闯关主逻辑 ====================
+// 趣味闯关主逻辑
 async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMode) {
   let questionCount = difficulty === 'easy' ? 5 : (difficulty === 'medium' ? 8 : 12);
   const res = await fetchWithAuth(`/api/game/fun-level-questions?theme=${encodeURIComponent(theme)}&difficulty=${difficulty}&count=${questionCount}`);
@@ -1105,8 +1100,8 @@ async function startFunChallengeFullscreen(theme, themeId, difficulty, timingMod
 
   const userAnswers = new Array(questions.length).fill(null);
   const userScores = new Array(questions.length).fill(false);
-  let totalScoreObj = { value: 0 };   // 改为对象
-  let livesObj = { value: 3 };        // 改为对象
+  let totalScoreObj = { value: 0 };
+  let livesObj = { value: 3 };
   let eventActive = data.event;
   let eventUsed = false;
   let isFinishing = false;

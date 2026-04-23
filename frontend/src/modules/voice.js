@@ -1,5 +1,3 @@
-// frontend/src/modules/voice.js
-
 import TRTC from 'trtc-js-sdk';
 import { fetchWithAuth } from '../utils/api';
 
@@ -8,129 +6,14 @@ let localStream = null;
 let currentRoomId = null;
 let currentUserId = null;
 let currentSessionId = null;
-let currentTaskId = null;
+let recognition = null;
+let isRecognizing = false;
+let audioContext = null;
+let analyserNode = null;
+let animationId = null;
 let statusCallback = null;
 let volumeCallback = null;
-
-// ========== 一句话识别相关变量 ==========
-let mediaRecorder = null;
-let audioChunks = [];
-let isAsrActive = false;
-
-// 简单的 Toast 提示
-function showToast(message, type = 'error') {
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  toast.style.position = 'fixed';
-  toast.style.bottom = '20px';
-  toast.style.left = '50%';
-  toast.style.transform = 'translateX(-50%)';
-  toast.style.backgroundColor = type === 'error' ? '#f44336' : '#4caf50';
-  toast.style.color = 'white';
-  toast.style.padding = '8px 16px';
-  toast.style.borderRadius = '30px';
-  toast.style.zIndex = '2000';
-  toast.style.fontSize = '0.8rem';
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
-
-// ========== 一句话识别核心功能 ==========
-async function startAsrRecognition() {
-  if (isAsrActive) {
-    showToast('请勿重复点击', 'error');
-    throw new Error('ASR 识别已在进行中');
-  }
-  isAsrActive = true;
-  audioChunks = [];
-
-  try {
-    // 1. 获取麦克风权限
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // 2. 创建 MediaRecorder，录制 PCM 格式音频 (需要与后端 VoiceFormat 匹配)
-    // 注意：MediaRecorder 默认格式通常是 webm 或 mp4，但腾讯云要求 pcm/wav/mp3 等。
-    // 为了简化并确保兼容性，我们限制录音时长为 3 秒，然后发送 base64 编码的数据。
-    // 更稳健的做法是使用 AudioContext 处理成 PCM，但为了快速解决问题，我们采用一个折中方案：
-    // 直接发送录制的 webm 音频，但修改后端 VoiceFormat 为 webm。
-    // 为了避免格式问题，我们直接使用 MediaRecorder 录制 webm 格式，并在后端修改 VoiceFormat 为 webm。
-    // 这里我们创建 MediaRecorder，录制 webm 格式。
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
-    };
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1]; // 去除 data:audio/webm;base64, 前缀
-        try {
-          // 3. 调用后端识别接口
-          const res = await fetchWithAuth('/api/voice/recognize', {
-            method: 'POST',
-            body: JSON.stringify({ audioBase64: base64Audio }),
-          });
-          const data = await res.json();
-          if (res.ok && data.text) {
-            // 4. 识别成功，将文本填入输入框并发送
-            if (window.appendUserMessageToChat) {
-              window.appendUserMessageToChat(data.text);
-            } else {
-              const input = document.getElementById('simulateInput') || document.getElementById('meetingInput');
-              if (input) {
-                input.value = data.text;
-                const sendBtn = document.getElementById('simulateSendBtn') || document.getElementById('sendMeetingBtn');
-                if (sendBtn) sendBtn.click();
-              }
-            }
-          } else {
-            showToast(data.error || '识别失败，请重试', 'error');
-          }
-        } catch (err) {
-          console.error('识别请求失败', err);
-          showToast('识别服务异常，请重试', 'error');
-        } finally {
-          // 5. 清理资源
-          stream.getTracks().forEach(track => track.stop());
-          isAsrActive = false;
-          mediaRecorder = null;
-          audioChunks = [];
-        }
-      };
-    };
-    mediaRecorder.start();
-    // 设置录音时长 (例如 3 秒，可根据需要调整)
-    setTimeout(() => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-      }
-    }, 3000);
-  } catch (err) {
-    console.error('启动语音识别失败', err);
-    showToast('无法获取麦克风权限或启动录音', 'error');
-    isAsrActive = false;
-    throw err;
-  }
-}
-
-function stopAsrRecognition() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-  }
-  isAsrActive = false;
-}
-
-// 挂载到全局供 UI 调用（PTT 按住说话）
-window.__voiceRecognition = {
-  start: startAsrRecognition,
-  stop: stopAsrRecognition,
-  isActive: () => isAsrActive
-};
-
-// ========== TRTC 通话相关（保持原有） ==========
+let currentTaskId = null;
 
 export async function startVoiceCall({ roomId, sceneType, sessionId, roleName, onRemoteAudioReady, onVolumeChange, onStatusChange }) {
   try {
@@ -157,7 +40,9 @@ export async function startVoiceCall({ roomId, sceneType, sessionId, roleName, o
     localStream = TRTC.createStream({ userId, audio: true, video: false });
     await localStream.initialize();
     await client.publish(localStream);
+
     if (onVolumeChange) startVolumeDetection(localStream, onVolumeChange);
+    startSpeechRecognition();
 
     const robotRes = await fetchWithAuth('/api/voice/start-robot', {
       method: 'POST',
@@ -218,7 +103,7 @@ export async function restartRobot({ sceneType, sessionId, roleName }) {
 
 export async function stopVoiceCall() {
   await stopRobot();
-  stopAsrRecognition();
+  stopSpeechRecognition();
   cleanup();
   if (client) await client.leave();
   client = null;
@@ -249,24 +134,28 @@ export async function toggleMute(muted) {
 export function isInVoiceCall() { return client !== null; }
 
 function cleanup() {
+  if (animationId) cancelAnimationFrame(animationId);
+  if (audioContext) audioContext.close();
+  if (analyserNode) analyserNode.disconnect();
   if (localStream) localStream.close();
   localStream = null;
+  analyserNode = null;
+  audioContext = null;
 }
 
 function startVolumeDetection(stream, callback) {
   if (!stream.getAudioTrack) return;
   const audioTrack = stream.getAudioTrack();
   if (!audioTrack) return;
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 256;
-  source.connect(analyser);
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  let animationId;
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+  analyserNode = audioContext.createAnalyser();
+  analyserNode.fftSize = 256;
+  source.connect(analyserNode);
+  const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
   function update() {
-    if (!analyser) return;
-    analyser.getByteFrequencyData(dataArray);
+    if (!analyserNode) return;
+    analyserNode.getByteFrequencyData(dataArray);
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
     let volume = Math.min(1, sum / dataArray.length / 128);
@@ -274,8 +163,50 @@ function startVolumeDetection(stream, callback) {
     animationId = requestAnimationFrame(update);
   }
   update();
-  window.__volumeDetectionCleanup = () => {
-    if (animationId) cancelAnimationFrame(animationId);
-    audioCtx.close();
+}
+
+function startSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return;
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'zh-CN';
+  let final = '';
+  recognition.onresult = async (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) final += transcript;
+      else interim += transcript;
+    }
+    if (final.trim()) {
+      await storeTranscript(final.trim());
+      if (window.appendUserMessageToChat) window.appendUserMessageToChat(final.trim());
+      final = '';
+    }
   };
+  recognition.onerror = (e) => console.warn('语音识别错误', e.error);
+  recognition.onend = () => { if (client && !isRecognizing) setTimeout(() => recognition?.start(), 500); };
+  recognition.start();
+  isRecognizing = true;
+}
+
+function stopSpeechRecognition() {
+  if (recognition) {
+    recognition.stop();
+    recognition = null;
+    isRecognizing = false;
+  }
+}
+
+async function storeTranscript(text) {
+  if (!currentSessionId) return;
+  try {
+    await fetchWithAuth('/api/voice/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: currentSessionId, text })
+    });
+  } catch (err) { console.error('存储转写失败', err); }
 }

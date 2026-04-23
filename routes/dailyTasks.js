@@ -1,4 +1,3 @@
-// routes/dailyTasks.js
 const express = require('express');
 const pointsService = require('../services/pointsService');
 

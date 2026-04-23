@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 require('express-async-errors');
 const express = require('express');
@@ -17,7 +16,7 @@ const knowledgeRoutes = require('./routes/knowledge');
 const userRoutes = require('./routes/user');
 const sessionRoutes = require('./routes/session');
 const meetingRoutes = require('./routes/meeting');
-const gameRoutes = require('./routes/game');  // 新增
+const gameRoutes = require('./routes/game');
 const chatAsyncRoutes = require('./routes/chatAsync');
 const voiceRoutes = require('./routes/voice');
 const app = express();

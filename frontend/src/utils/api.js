@@ -1,4 +1,3 @@
-// frontend/src/utils/api.js
 let refreshPromise = null;
 
 export async function refreshToken() {
@@ -67,7 +66,7 @@ export async function fetchWithAuth(url, options = {}) {
   return res;
 }
 
-// ========== 每日任务 API ==========
+// 每日任务 API
 export async function getDailyTasks() {
   const res = await fetchWithAuth('/api/daily-tasks');
   if (!res.ok) throw new Error('获取每日任务失败');
@@ -115,9 +114,8 @@ export function pollMessageStatus(messageId, onComplete, onPending, interval = 2
   };
 
   timer = setInterval(check, interval);
-  check(); // 立即执行一次
+  check();
 
-  // 返回取消函数
   return () => {
     stopped = true;
     if (timer) clearInterval(timer);

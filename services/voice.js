@@ -1,4 +1,3 @@
-// services/voice.js
 const TLSSigAPIv2 = require('tls-sig-api-v2');
 
 const SDKAppID = 1600137866;

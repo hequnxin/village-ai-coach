@@ -1,4 +1,3 @@
-// scripts/migrate_weekly_contest.js
 require('dotenv').config();
 const db = require('../services/db');
 
@@ -41,8 +40,6 @@ async function migrate() {
     }
     console.log('✅ 旧数据迁移完成');
 
-    // 可选：删除旧表（谨慎，可保留）
-    // await db.run(`DROP TABLE IF EXISTS weekly_contest_scores`);
     console.log('迁移完成');
   } catch (err) {
     console.error('迁移失败:', err);

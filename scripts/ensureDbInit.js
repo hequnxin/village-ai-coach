@@ -1,4 +1,3 @@
-// scripts/ensureDbInit.js
 require('dotenv').config();
 const db = require('../services/db');
 const { v4: uuidv4 } = require('uuid');
@@ -76,7 +75,7 @@ async function ensureMissingTables() {
   `);
   console.log('✅ 清理了无效的每日一练题目关联');
 
-  // ========== 为 messages 表添加 status 字段 ==========
+  // 为 messages 表添加 status 字段
   try {
     await db.run(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`);
     console.log('✅ messages.status 字段已确保存在');
@@ -92,7 +91,7 @@ async function ensureMissingTables() {
     console.warn('⚠️ 修改 content 类型失败（可能已为 TEXT）:', err.message);
   }
 
-  // ========== 新增：为 knowledge 表添加 tsv 列（用于全文检索） ==========
+  // 为 knowledge 表添加 tsv 列（用于全文检索）
   try {
     // 添加 tsv 列（如果不存在）
     await db.run(`ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS tsv tsvector`);

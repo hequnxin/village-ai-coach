@@ -1,4 +1,3 @@
-// scripts/initDb.js
 require('dotenv').config();
 const db = require('../services/db');
 const { v4: uuidv4 } = require('uuid');
@@ -18,7 +17,7 @@ async function initDb() {
     throw err;
   }
 
-  // ========== 创建所有表 ==========
+  // 创建所有表
   const tables = [
     `CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -292,7 +291,7 @@ async function initDb() {
     }
   }
 
-  // ========== 迁移：确保 scenarios 表有 single_roles 列 ==========
+  //  迁移：确保 scenarios 表有 single_roles 列
   try {
     const columnCheck = await db.get(`
       SELECT column_name FROM information_schema.columns 
@@ -308,7 +307,7 @@ async function initDb() {
     console.warn('⚠️ 添加 single_roles 列失败:', err.message);
   }
 
-  // ========== 迁移：确保字段存在 ==========
+  // 迁移：确保字段存在
   try {
     await db.run(`ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'choice'`);
     await db.run(`ALTER TABLE quiz_questions ALTER COLUMN answer TYPE TEXT`);
@@ -329,7 +328,7 @@ async function initDb() {
     console.log('✅ wrong_questions 表结构确认');
   } catch(e) { console.warn('⚠️ 迁移 wrong_questions 失败:', e.message); }
 
-  // ========== 插入默认场景数据（包含 single_roles） ==========
+  // 插入默认场景数据（包含 single_roles）
   const insertScenario = async (id, title, description, goal, role, initial_message, eval_dimensions, single_roles = null, stages = null) => {
     const sql = `INSERT INTO scenarios (id, title, description, goal, role, initial_message, eval_dimensions, single_roles, stages, created_at)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`;
@@ -445,7 +444,7 @@ async function initDb() {
 
   console.log('✅ 默认场景数据插入完成');
 
-  // ========== 迁移：为已有场景补充 single_roles（幂等） ==========
+  //  迁移：为已有场景补充 single_roles（幂等）
   console.log('🔧 检查并补充已有场景的 single_roles...');
   const existingScenarios = await db.all(`SELECT id, single_roles FROM scenarios`);
   for (const s of existingScenarios) {
@@ -491,7 +490,7 @@ async function initDb() {
     }
   }
 
-  // ========== 初始化游戏主题 ==========
+  // 初始化游戏主题
   try {
     const themeCount = await db.get(`SELECT COUNT(*) as count FROM game_themes`);
     if (themeCount.count === 0) {
@@ -514,7 +513,7 @@ async function initDb() {
     console.error('❌ 初始化游戏主题失败:', err.message);
   }
 
-  // ========== 插入预设问答数据 ==========
+  // 插入预设问答数据
   const presetCount = await db.get(`SELECT COUNT(*) as count FROM preset_qa`);
   if (presetCount.count === 0) {
     const presetAnswers = [
@@ -565,7 +564,7 @@ async function initDb() {
     console.log('预设问答数据已存在，跳过插入');
   }
 
-  // ========== 自动生成高质量题目 ==========
+  // 自动生成高质量题目
   try {
     const { generateAndStoreQuestions } = require('../services/questionGenerator');
     console.log('📝 开始自动生成高质量题目（单选、填空、判断、排序）...');

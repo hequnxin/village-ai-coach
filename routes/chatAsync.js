@@ -1,11 +1,9 @@
-// routes/chatAsync.js
-
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../services/db');
 const { chat } = require('../services/openai');
 const { searchKnowledge } = require('../services/vectorSearch');
-const { keywordSearch } = require('../services/knowledgeService');
+const { keywordSearch, webSearch } = require('../services/knowledgeService');
 const { getSession, addMessage, updateSession } = require('../services/sessionService');
 const pointsService = require('../services/pointsService');
 
@@ -63,8 +61,8 @@ const PRESET_CONTEXT = {
 - 操作建议：先咨询乡镇旅游办了解扶持政策（每间客房补贴2000-5000元），可委托代办机构。`
 };
 
-// 异步生成回复
-async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage, knowledgeContext, isPreset = false) {
+// 异步生成回复（包含知识检索、联网搜索、AI调用）
+async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage, isPreset = false) {
   try {
     const session = await getSession(userId, sessionId);
     if (!session) {
@@ -72,7 +70,52 @@ async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage
       return;
     }
 
-    // 直接进入生成状态（预设问题跳过检索状态）
+    // 更新状态：检索知识库 + 联网搜索
+    await db.run('UPDATE messages SET status = $1 WHERE id = $2', ['retrieving', assistantMsgId]);
+
+    let knowledgeContext = '';
+    let knowledgeRefs = [];
+
+    // 预设问题：直接使用预置上下文
+    if (isPreset && PRESET_CONTEXT[userMessage]) {
+      knowledgeContext = PRESET_CONTEXT[userMessage];
+      console.log(`预设问题，使用预置上下文`);
+    } else {
+      // 非预设问题：知识检索
+      let knowledgeResults = [];
+      try {
+        knowledgeResults = await searchKnowledge(userMessage, 3);
+      } catch (err) {
+        console.warn('向量检索失败，使用关键词降级', err);
+        knowledgeResults = await keywordSearch(userMessage, 3);
+      }
+      if (knowledgeResults && knowledgeResults.length) {
+        knowledgeContext = '\n\n【相关知识库内容】\n' + knowledgeResults.map(k =>
+          `- ${k.title}：${k.content.substring(0,200)}${k.content.length>200?'...':''}`
+        ).join('\n');
+        knowledgeRefs.push(...knowledgeResults.map(k => ({ title: k.title, id: k.id, type: 'knowledge' })));
+      }
+
+      // 联网搜索
+      const shouldSearch = userMessage.includes('联网搜索') || userMessage.includes('查一下') || userMessage.includes('搜索一下');
+      console.log('联网搜索条件检查:', { shouldSearch, hasKey: !!process.env.BAIDU_API_KEY, offlineMode: process.env.OFFLINE_MODE });
+      if (shouldSearch && process.env.BAIDU_API_KEY && process.env.OFFLINE_MODE !== 'true') {
+        try {
+          console.log('开始调用 webSearch...');
+          const webResults = await webSearch(userMessage, 2);
+          console.log('webSearch 结果数量:', webResults.length);
+          if (webResults && webResults.length) {
+            knowledgeContext += '\n\n【网络搜索结果】\n' + webResults.map(w =>
+              `- ${w.title}：${w.snippet.substring(0,200)}${w.snippet.length>200?'...':''}`
+            ).join('\n');
+            knowledgeRefs.push(...webResults.map(w => ({ title: w.title, snippet: w.snippet, link: w.link, type: 'web' })));
+          }
+        } catch (e) {
+          console.warn('联网搜索失败:', e.message);
+        }
+      }
+    }
+
     await db.run('UPDATE messages SET status = $1 WHERE id = $2', ['generating', assistantMsgId]);
 
     const history = (session.messages || []).slice(-10).map(m => ({
@@ -80,23 +123,18 @@ async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage
       content: m.content
     }));
 
-    let finalContext = knowledgeContext;
-    if (isPreset && PRESET_CONTEXT[userMessage]) {
-      finalContext = PRESET_CONTEXT[userMessage];
-    }
-
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...history,
-      { role: 'user', content: `用户问题：${userMessage}\n${finalContext}\n请回答。` }
+      { role: 'user', content: `用户问题：${userMessage}\n${knowledgeContext}\n请回答。` }
     ];
 
-    // 预设问题使用更小的 max_tokens 加快速度
     const maxTokens = isPreset ? 1200 : 2000;
     const temperature = isPreset ? 0.8 : 0.7;
     const reply = await chat(messages, { temperature, max_tokens: maxTokens });
 
     await db.run('UPDATE messages SET content = $1, status = $2 WHERE id = $3', [reply, 'completed', assistantMsgId]);
+
     await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${userMessage.substring(0,30)}`);
   } catch (err) {
     console.error('异步生成失败:', err);
@@ -128,33 +166,15 @@ router.post('/', async (req, res) => {
     await updateSession(userId, sessionId, { title: newTitle });
   }
 
-  // 判断是否为预设问题
   const isPreset = PRESET_QUESTIONS.includes(message.trim());
 
-  let knowledgeContext = '';
-  if (!isPreset) {
-    // 非预设问题：正常知识检索
-    let knowledgeResults = [];
-    try {
-      knowledgeResults = await searchKnowledge(message, 3);
-    } catch (err) {
-      console.warn('向量检索失败，使用关键词降级', err);
-      knowledgeResults = await keywordSearch(message, 3);
-    }
-    if (knowledgeResults && knowledgeResults.length) {
-      knowledgeContext = '\n\n【相关知识库内容】\n' + knowledgeResults.map(k => `- ${k.title}：${k.content.substring(0,200)}${k.content.length>200?'...':''}`).join('\n');
-    }
-  }
-
-  // 创建占位 assistant 消息
   const assistantMsgId = uuidv4();
   await db.run(
     'INSERT INTO messages (id, session_id, role, content, status, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
     [assistantMsgId, sessionId, 'assistant', '正在准备...', 'pending', Date.now()]
   );
 
-  // 异步生成回复
-  generateReplyAsync(sessionId, assistantMsgId, userId, message, knowledgeContext, isPreset).catch(console.error);
+  generateReplyAsync(sessionId, assistantMsgId, userId, message, isPreset).catch(console.error);
 
   res.json({ assistantMessageId: assistantMsgId });
 });

@@ -1,4 +1,3 @@
-// frontend/src/modules/state.js
 import { fetchWithAuth } from '../utils/api';
 import { renderSessionList, renderMessageFavoriteList } from './ui';
 import { updateSidebarLevel } from '../utils/helpers';
@@ -16,7 +15,7 @@ export const appState = {
   userNextLevelPoints: 100,
   knowledgeData: [],
   isTyping: false,
-  selectedSessions: []  // 存储选中的会话ID数组
+  selectedSessions: []
 };
 
 export function setAppState(newState) {
@@ -94,7 +93,6 @@ export async function deleteSessions(sessionIds) {
   });
   if (!res.ok) throw new Error('批量删除失败');
   appState.sessions = appState.sessions.filter(s => !sessionIds.includes(s.id));
-  // 清除选中的ID
   appState.selectedSessions = [];
   if (sessionIds.includes(appState.currentSessionId)) {
     if (appState.sessions.length > 0) {
@@ -151,13 +149,9 @@ export async function createNewSession(title = '新会话') {
   });
   const data = await res.json();
   if (!data.session) { alert('创建失败'); return; }
-  // 将新会话插入到列表最前面
   appState.sessions.unshift(data.session);
-  // 重新排序（按创建时间倒序）
   appState.sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  // 刷新侧边栏
   renderSessionList();
-  // 切换到新会话
   await switchSession(data.sessionId);
 }
 

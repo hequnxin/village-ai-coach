@@ -1,5 +1,3 @@
-// frontend/src/modules/VoiceCallManager.js
-
 import { startVoiceCall, stopVoiceCall, toggleMute } from './voice';
 
 // 基类
@@ -58,10 +56,7 @@ class BaseVoiceCallUI {
       if (window.__voiceRecognition && !window.__voiceRecognition.isActive()) {
         try {
           recognitionPromise = window.__voiceRecognition.start();
-          currentRecognition = await recognitionPromise; // 注意：新版返回的是文本，不是 recognition 实例
-          // 新版 voice.js 中 startAsrRecognition 返回 Promise<string>，没有 onresult 事件
-          // 因此需要调整：等待 Promise resolve 得到最终文本
-          // 但这里我们改为监听 Promise 完成
+          currentRecognition = await recognitionPromise;
           if (currentRecognition && typeof currentRecognition === 'string') {
             // 如果直接返回了文本，说明已经完成
             if (currentRecognition.trim()) {
@@ -77,8 +72,6 @@ class BaseVoiceCallUI {
               }
             }
           } else {
-            // 兼容旧版（如果返回的是 recognition 实例，需要等待 onend）
-            // 新版不会走到这里
           }
         } catch (err) {
           console.error('启动语音识别失败', err);
