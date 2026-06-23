@@ -79,7 +79,24 @@ async function generateReplyAsync(sessionId, assistantMsgId, userId, userMessage
     // 预设问题：直接使用预置上下文
     if (isPreset && PRESET_CONTEXT[userMessage]) {
       knowledgeContext = PRESET_CONTEXT[userMessage];
-      console.log(`预设问题，使用预置上下文`);
+      console.log('预设问题，使用预置上下文');
+      try {
+        // 查一下 preset_qa 表里有没有现成答案
+        const presetRow = await db.get('SELECT answer FROM preset_qa WHERE question = $1', [userMessage]);
+        if (presetRow) {
+          // 1. 直接把准备好的答案和 "completed" 状态写入数据库消息表中
+          await db.run('UPDATE messages SET content = $1, status = $2 WHERE id = $3', [presetRow.answer, 'completed', assistantMsgId]);
+
+          // 2. 正常发放积分（绝对不能漏掉这一步，否则没积分）
+          await pointsService.addPoints(userId, pointsService.CHAT_MESSAGE, `对话: ${userMessage.substring(0,30)}`);
+          console.log(`✅ 预设问答【${userMessage}】命中缓存，已秒回`);
+          return; // 👈 核心：直接结束当前函数，不执行后面的DeepSeek AI调用
+        }
+        console.warn(`⚠️ 预设问题【${userMessage}】未在 preset_qa 表中找到答案，将使用 AI 生成`);
+      } catch (err) {
+        // 万一数据库查询失败，不影响，继续走下面的AI生成流程
+        console.error('❌ 预设答案数据库查询失败，降级走AI生成:', err.message);
+      }
     } else {
       // 非预设问题：知识检索
       let knowledgeResults = [];
